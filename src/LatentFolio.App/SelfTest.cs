@@ -584,8 +584,10 @@ public static class SelfTest
                 Check(Math.Abs(panel.FirstChildTop - top0) < panel.ItemHeight * 0.7,
                     "列数变了之后视口锚在原处", $"Y {top0:F0} -> {panel.FirstChildTop:F0}");
                 int idx1 = panel.FirstRealizedIndex;
-                Check(idx0 >= idx1 && idx0 < idx1 + panel.Columns, "锚定那张还在第一行里",
-                    $"索引 {idx0} 落在 [{idx1}, {idx1 + panel.Columns})");
+                // 列数一变，换行位置就跟着变：这里锚的是像素位置（顶部那行留在原处），
+                // 原来顶行的第一张可能刚好被挤到下一行，所以容一行误差
+                Check(Math.Abs(idx0 - idx1) <= panel.Columns, "重排后顶部那行只挪了不到一行",
+                    $"索引 {idx0} -> {idx1}（{panel.Columns} 列）");
                 panel.SetVerticalOffset(0);
                 for (int i = 0; i < 4; i++) await Pulse(window);
             }

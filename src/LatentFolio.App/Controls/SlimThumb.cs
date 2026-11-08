@@ -13,8 +13,8 @@ namespace LatentFolio.App.Controls;
 ///
 /// 原生 Track 按「视口 / 内容」的比例算滑块长度，图库四千多张时只剩十几像素；
 /// 而且它排布滑块时直接覆盖 Thumb.MinHeight，所以最小长度只能自己算。
-/// 这里按下/拖动/点轨道都直接改 ScrollBar.Value —— ScrollViewer 收到 Scroll 事件
-/// 走的是和原生滑块完全一样的那条路，滚动位置、最大最小值都由它自己夹。
+/// 拖动 / 点轨道 / 滚轮都直接叫 ScrollViewer 滚（不是改 ScrollBar.Value ——
+/// ScrollViewer 不会因为 Value 变了就自己跳过去），位置和范围也一律问它。
 /// </summary>
 public sealed class SlimThumb : FrameworkElement
 {
