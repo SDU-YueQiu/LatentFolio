@@ -1,0 +1,42 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的 release tag，例如 v1.0.0"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish (self-contained win-x64)
+        run: dotnet publish src/LatentFolio.App/LatentFolio.App.csproj -c Release -r win-x64 --self-contained true -o dist
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -Recurse -Filter *.pdb | Remove-Item -Force
+          $ver = "${{ inputs.tag }}".TrimStart('v')
+          $asset = "LatentFolio-$ver-win-x64.zip"
+          tar -a -c -f $asset -C dist .
+          "ASSET=$asset" >> $env:GITHUB_ENV
+
+      - name: Upload to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" $env:ASSET --clobber
