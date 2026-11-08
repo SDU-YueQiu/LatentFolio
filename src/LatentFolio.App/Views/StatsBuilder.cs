@@ -946,6 +946,8 @@ public static class StatsBuilder
     /// 搜索框只做子串匹配（见 AppVm.CurrentTree），所以角色/画师/模型/tag/词典条目
     /// 直接写 SearchText 就行；先清空再赋值，保证点同一个词条也能重新触发刷新。
     /// </summary>
+    internal static void JumpToSearchForTest(string query) => JumpToSearch(query);
+
     private static void JumpToSearch(string query)
     {
         if (query.Length == 0) return;

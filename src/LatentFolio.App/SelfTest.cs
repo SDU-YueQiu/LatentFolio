@@ -306,6 +306,29 @@ public static class SelfTest
         await Pulse(window);
         Check(vm.Items.Count == all, "清筛选后恢复", $"{vm.Items.Count}");
 
+        // 鼠标侧键：后退要先清搜索（查看器关着的时候）
+        if (window is MainWindow mwNav)
+        {
+            vm.SearchText = "zzzz";
+            await Pulse(window);
+            mwNav.NavBackForTest();
+            await Pulse(window);
+            Check(vm.SearchText.Length == 0, "鼠标后退清掉搜索", $"“{vm.SearchText}”");
+        }
+
+        // 统计页点词条跳搜索结果（走的是 StatsBuilder 里那条真实路径）
+        if (window is MainWindow mwSt)
+        {
+            Views.StatsBuilder.Build(mwSt.StatsHostForTest, vm);
+            await Pulse(window, 2);
+            Views.StatsBuilder.JumpToSearchForTest("jinx_(league_of_legends)");
+            await Pulse(window);
+            Check(vm.SearchText == "jinx_(league_of_legends)" && vm.Items.Count > 0,
+                "统计页点词条跳到搜索结果", $"{vm.Items.Count} 张");
+            vm.SearchText = "";
+            await Pulse(window);
+        }
+
         // ---------- 12. 相似图组「堆叠 ≥N 张」 ----------
         var simCtx = vm.MakeContext();
         int maxStack = simCtx.GroupSize is null ? 0 : simCtx.GroupSize.Values.DefaultIfEmpty(0).Max();
@@ -363,6 +386,20 @@ public static class SelfTest
             vm.DeleteColumn(vm.Columns[^1].Id);
             vm.RenameColumn(col.Id, oldName);
             vm.SetColumnColor(col.Id, "");
+            await Pulse(window);
+        }
+
+        // 点「我的栏」那一行必须立刻切过去——这条走的是 XAML 里的 SelectionChanged，
+        // 光测 VM 测不出来（真出过一次事件没接上的事故）
+        if (window is MainWindow mwCol && vm.Columns.Count > 0)
+        {
+            var target = vm.Columns[0];
+            mwCol.ColListForTest.SelectedIndex = -1;
+            await Pulse(window);
+            mwCol.ColListForTest.SelectedIndex = 0;
+            await Pulse(window);
+            Check(vm.Title == target.Name, "点「我的栏」立刻切到那一栏", $"{vm.Title}");
+            vm.ShowOverviewCommand.Execute(null);
             await Pulse(window);
         }
         else Ok("我的栏改名", "没有栏，跳过");
@@ -742,6 +779,14 @@ public static class SelfTest
             $"{sideNarrow:F0}px -> {vm.PeopleCardSide:F0}px");
         Check(vm.PeopleCols is >= 2 and <= 5 && vm.PeopleCardSide > 20, "人物是自适应方块网格",
             $"{colsNarrow} 列 / {sideNarrow:F0}px → {vm.PeopleCols} 列 / {vm.PeopleCardSide:F0}px");
+
+        // 拉高也要能把格子撑大（会换行：列少行多）
+        double sideShort = vm.PeopleCardSide;
+        vm.SetLeftPeopleHeight(620);
+        await Pulse(window);
+        Check(vm.PeopleCardSide > sideShort + 6, "人物格子跟着高度缩放",
+            $"{sideShort:F0}px -> {vm.PeopleCardSide:F0}px");
+        vm.SetLeftPeopleHeight(phKeep);
         vm.SetLeftWidth(wKeep);
         vm.SetLeftPeopleHeight(phKeep);
         await Pulse(window);

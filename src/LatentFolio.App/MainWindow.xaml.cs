@@ -18,6 +18,12 @@ public partial class MainWindow : Window
     internal ListBox GridListForTest => GridList;
     internal Button LeftTabForTest => LeftTab;
     internal Button DetailTabForTest => DetailTab;
+    // 自检要能验证「点我的栏会切过去」和「鼠标侧键前进后退」这两条 UI 接线，
+    // 光测 VM 测不出来（上一轮就是 VM 对了、XAML 里事件没接）
+    internal System.Windows.Controls.ListBox ColListForTest => ColList;
+    internal void NavBackForTest() => GoBack();
+    internal void NavForwardForTest() => GoForward();
+    internal Panel StatsHostForTest => StatsHost;
 
     public MainWindow()
     {

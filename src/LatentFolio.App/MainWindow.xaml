@@ -1090,10 +1090,6 @@
                                            PreviewMouseRightButtonUp="OnViewerRightUp" />
                                 </c:ZoomBox>
                                 <Border Style="{StaticResource P.Viewer.GlassPill}"
-                                        Visibility="{Binding ViewerLoading, Converter={StaticResource B2V}}">
-                                    <TextBlock Text="加载中…" Foreground="{StaticResource B.Text2}" FontSize="12.5" />
-                                </Border>
-                                <Border Style="{StaticResource P.Viewer.GlassPill}"
                                         Visibility="{Binding VsrBusy, Converter={StaticResource B2V}}">
                                     <TextBlock Text="RTX VSR 处理中…" Foreground="{StaticResource B.Text2}" FontSize="12.5" />
                                 </Border>

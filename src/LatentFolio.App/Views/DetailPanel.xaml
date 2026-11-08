@@ -93,7 +93,7 @@
             <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="0" />
+            <Setter Property="Padding" Value="0,0,10,0" />
             <Setter Property="VerticalContentAlignment" Value="Top" />
             <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
             <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
@@ -116,7 +116,7 @@
             <Setter Property="Foreground" Value="{StaticResource B.Text3}" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="0" />
+            <Setter Property="Padding" Value="0,0,10,0" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
@@ -244,7 +244,7 @@
             <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="0" />
+            <Setter Property="Padding" Value="0,0,10,0" />
             <Setter Property="VerticalContentAlignment" Value="Top" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -368,7 +368,7 @@
                     <TextBlock Text="正向提示词" Style="{StaticResource P.Detail.Section}" />
                     <Button Style="{StaticResource P.Detail.CopyText}" Content="复制" Click="OnCopyPrompt" />
                 </Grid>
-                <Border Style="{StaticResource P.Detail.InsetBlock}" MaxHeight="135">
+                <Border Style="{StaticResource P.Detail.InsetBlock}" MaxHeight="260">
                     <TextBox Style="{StaticResource P.Detail.PromptBox}" Text="{Binding Current.Prompt, Mode=OneWay}" />
                 </Border>
             </StackPanel>
@@ -379,7 +379,7 @@
                     <Button Style="{StaticResource P.Detail.CopyText}" Content="复制" Click="OnCopyNegative" />
                 </Grid>
                 <TextBlock Text="{Binding Current.NegHint}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource B.Danger}" Margin="0,0,0,6" Visibility="{Binding Current.NegHint, Converter={StaticResource NE2V}}" />
-                <Border Style="{StaticResource P.Detail.InsetBlock}" MaxHeight="78">
+                <Border Style="{StaticResource P.Detail.InsetBlock}" MaxHeight="140">
                     <TextBox Style="{StaticResource P.Detail.PromptBox}" Text="{Binding Current.Negative, Mode=OneWay}" />
                 </Border>
             </StackPanel>
