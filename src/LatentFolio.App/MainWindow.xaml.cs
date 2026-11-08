@@ -25,6 +25,44 @@ public partial class MainWindow : Window
     internal void NavForwardForTest() => GoForward();
     internal Panel StatsHostForTest => StatsHost;
     internal Border DetailHostForTest => LibraryDetailHost;
+    internal Border DetailEdgeBandForTest => DetailEdgeBand;
+    internal System.Windows.Controls.Primitives.ScrollBar? GridScrollBarForTest =>
+        FindScrollBar(GridList, Orientation.Vertical);
+
+    internal Controls.SlimThumb? GridScrollThumbForTest =>
+        GridScrollBarForTest is { } sb ? FindChild<Controls.SlimThumb>(sb) : null;
+
+    private static System.Windows.Controls.Primitives.ScrollBar? FindScrollBar(DependencyObject root, Orientation o)
+    {
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            if (c is System.Windows.Controls.Primitives.ScrollBar sb && sb.Orientation == o) return sb;
+            if (FindScrollBar(c, o) is { } found) return found;
+        }
+        return null;
+    }
+
+    internal static T? FindChild<T>(DependencyObject root) where T : DependencyObject
+    {
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            if (c is T t) return t;
+            if (FindChild<T>(c) is { } found) return found;
+        }
+        return null;
+    }
+
+    /// <summary>自检：走一遍真实的拖宽算法（和鼠标事件里用的是同一套）。</summary>
+    internal void WidthDragForTest(bool isDetail, double x0, double x1)
+    {
+        BeginWidthDrag(isDetail, x0);
+        MoveWidthDrag(x1);
+        EndWidthDrag();
+    }
 
     public MainWindow()
     {
@@ -337,69 +375,84 @@ public partial class MainWindow : Window
         Vm.ShowColumnCommand.Execute(col);
     }
 
-    // ================= 右栏宽度拖拽 =================
+    // ================= 栏宽拖拽 =================
 
-    private bool _detailDragging;
-    private double _detailDragX0;
-    private double _detailDragW0;
+    // 两条边共用一套：按下记起点和当时的宽度，之后按横向位移改宽度。
+    // 详情栏在右边，往左拖变宽；左栏在左边，往右拖变宽。
+    private bool _widthDrag;
+    private bool _dragIsDetail;
+    private double _dragX0;
+    private double _dragW0;
 
-    // 折叠手柄自己就能拖：按下不动 = 折叠/展开，按住横拖 = 调栏宽。
-    // （以前另铺一条透明拖拽带，正好盖在手柄上把点击吃掉——那是"只有中间一小块能点"的根因）
+    private void BeginWidthDrag(bool isDetail, double x)
+    {
+        _widthDrag = true;
+        _dragIsDetail = isDetail;
+        _dragX0 = x;
+        _dragW0 = isDetail ? Vm.DetailWidth : Vm.LeftWidth;
+    }
+
+    private void MoveWidthDrag(double x)
+    {
+        if (!_widthDrag) return;
+        double dx = x - _dragX0;
+        if (_dragIsDetail) Vm.SetDetailWidth(_dragW0 - dx);
+        else Vm.SetLeftWidth(_dragW0 + dx);
+    }
+
+    private void EndWidthDrag() => _widthDrag = false;
+
+    // 折叠手柄：按下不动 = 折叠/展开，按住横拖 = 调栏宽（超过 4px 才算拖，免得手抖）。
     private bool _handleDrag;
     private double _handleX0;
-    private double _handleW0;
-    private bool _handleIsDetail;
 
     private void OnHandleDown(object sender, MouseButtonEventArgs e)
     {
         _handleDrag = false;
-        _handleIsDetail = ReferenceEquals(sender, DetailTab);
         _handleX0 = e.GetPosition(this).X;
-        _handleW0 = _handleIsDetail ? Vm.DetailWidth : Vm.LeftWidth;
+        BeginWidthDrag(ReferenceEquals(sender, DetailTab), _handleX0);
     }
 
     private void OnHandleMove(object sender, MouseEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed) return;
-        double dx = e.GetPosition(this).X - _handleX0;
+        double x = e.GetPosition(this).X;
         if (!_handleDrag)
         {
-            if (Math.Abs(dx) < 4) return;
+            if (Math.Abs(x - _handleX0) < 4) return;
             _handleDrag = true;
         }
-        if (_handleIsDetail) Vm.SetDetailWidth(_handleW0 - dx);
-        else Vm.SetLeftWidth(_handleW0 + dx);
+        MoveWidthDrag(x);
     }
 
     private void OnHandleUp(object sender, MouseButtonEventArgs e)
     {
+        EndWidthDrag();
         if (!_handleDrag) return;
         _handleDrag = false;
         e.Handled = true;   // 拖过了就别再当成一次点击去折叠
     }
 
-    private void OnDetailDragStart(object sender, MouseButtonEventArgs e)
+    // 详情栏整条边框都能按住横拖：带子贴边框内侧，手柄以外的位置拖就是调栏宽。
+    // 以前这条带子铺在栏里面，把手柄和按钮的点击吃了；现在只压内边距，手柄又压在它上面。
+    private void OnEdgeDown(object sender, MouseButtonEventArgs e)
     {
-        _detailDragging = true;
-        _detailDragX0 = e.GetPosition(this).X;
-        _detailDragW0 = Vm.DetailWidth;
+        BeginWidthDrag(ReferenceEquals(sender, DetailEdgeBand), e.GetPosition(this).X);
         if (sender is UIElement el) el.CaptureMouse();
         e.Handled = true;
     }
 
-    private void OnDetailDragMove(object sender, MouseEventArgs e)
+    private void OnEdgeMove(object sender, MouseEventArgs e)
     {
-        if (!_detailDragging) return;
-        // 手柄在右栏左边缘：往左拖 = 变宽
-        double dx = e.GetPosition(this).X - _detailDragX0;
-        Vm.SetDetailWidth(_detailDragW0 - dx);
+        if (!_widthDrag || e.LeftButton != MouseButtonState.Pressed) return;
+        MoveWidthDrag(e.GetPosition(this).X);
     }
 
-    private void OnDetailDragEnd(object sender, MouseButtonEventArgs e)
+    private void OnEdgeUp(object sender, MouseButtonEventArgs e)
     {
-        if (!_detailDragging) return;
-        _detailDragging = false;
-        if (sender is UIElement el) el.ReleaseMouseCapture();
+        EndWidthDrag();
+        if (sender is UIElement el && el.IsMouseCaptured) el.ReleaseMouseCapture();
+        e.Handled = true;
     }
 
     private void OnFolderSelected(object sender, SelectionChangedEventArgs e)

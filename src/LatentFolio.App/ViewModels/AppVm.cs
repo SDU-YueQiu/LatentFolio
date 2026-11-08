@@ -331,10 +331,14 @@ public sealed partial class AppVm : ObservableObject
     /// <summary>详情栏折叠把手：贴着面板左缘；面板收起时贴窗口右边。</summary>
     public Thickness DetailHandleMargin => new(0, 0, DetailWidth > 0 ? DetailWidth - 11 : -11, 0);
 
+    /// <summary>详情栏边框的拖拽带：贴边框内侧 9px，整条边按住就能横拖。</summary>
+    public Thickness DetailEdgeMargin => new(0, 0, DetailWidth > 0 ? DetailWidth - 9 : -9, 0);
+
     private void RaiseDetailWidth()
     {
         OnPropertyChanged(nameof(DetailWidth));
         OnPropertyChanged(nameof(DetailHandleMargin));
+        OnPropertyChanged(nameof(DetailEdgeMargin));
     }
 
     partial void OnPanelCollapsedChanged(bool value)

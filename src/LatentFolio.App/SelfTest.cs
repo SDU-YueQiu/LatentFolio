@@ -683,6 +683,73 @@ public static class SelfTest
             var c2 = dt.TranslatePoint(new Point(dt.ActualWidth / 2, 0), mwT);
             double edge = mwT.ActualWidth - vm.DetailWidth;
             Check(Math.Abs(c2.X - edge) < 2.5, "详情把手压在详情栏边界上", $"{c2.X:F0} vs {edge:F0}");
+
+            // 手柄中心命中的必须是手柄自己：被任何东西盖住都会在这里现形
+            var hp = dt.TranslatePoint(new Point(dt.ActualWidth / 2, dt.ActualHeight / 2), mwT);
+            var hitH = mwT.InputHitTest(hp) as DependencyObject;
+            Check(hitH is not null && IsUnder(hitH, dt), "折叠手柄的点击区域没被遮住",
+                hitH?.GetType().Name ?? "null");
+
+            // 手柄之外的整条边框：命中的是拖拽带（以前这里什么都没有，只能抓那个小把手）
+            var band = mwT.DetailEdgeBandForTest;
+            var bp = band.TranslatePoint(new Point(band.ActualWidth / 2, 30), mwT);
+            var hitB = mwT.InputHitTest(bp) as DependencyObject;
+            Check(band.IsVisible && ReferenceEquals(hitB, band), "详情栏整条边框都能按住横拖",
+                $"命中 {hitB?.GetType().Name ?? "null"}");
+
+            // 左栏那条缝（9px）也一样，命中的是分隔条
+            var lp = new Point(vm.LeftWidth + 4, c1.Y - 30);
+            var hitL = mwT.InputHitTest(lp) as DependencyObject;
+            var leftSplit = mwT.FindName("LeftSplitter") as System.Windows.Controls.GridSplitter;
+            Check(leftSplit is not null && hitL is not null && IsUnder(hitL, leftSplit),
+                "左栏整条边框都能按住横拖", hitL?.GetType().Name ?? "null");
+
+            // 走真实拖拽算法：往左拖 40 → 详情栏宽 40
+            double wB = vm.DetailWidth;
+            mwT.WidthDragForTest(true, 1200, 1160);
+            await Pulse(window);
+            Check(Math.Abs(vm.DetailWidth - (wB + 40)) < 1.5, "拖边框能改详情栏宽度",
+                $"{wB:F0} -> {vm.DetailWidth:F0}");
+            mwT.WidthDragForTest(true, 1160, 1200);
+            await Pulse(window);
+
+            // 手柄的 Click 真的接上了收起/展开（不只是「点得中」）
+            bool pc0 = vm.PanelCollapsed;
+            dt.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent, dt));
+            await Pulse(window);
+            Check(vm.PanelCollapsed != pc0, "点折叠手柄真的会收起/展开",
+                $"{pc0} -> {vm.PanelCollapsed}");
+            dt.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent, dt));
+            await Pulse(window);
+        }
+
+        // ---------- 21c. 滚动条：滑块有最小长度、点得中、拖得动 ----------
+        if (window is MainWindow mwS)
+        {
+            var sbS = mwS.GridScrollBarForTest;
+            var thS = mwS.GridScrollThumbForTest;
+            var gp = FindChild<Controls.JustifiedGridPanel>(mwS.GridListForTest);
+            if (sbS is not null && thS is not null)
+            {
+                Check(thS.ThumbLengthForTest >= 44,
+                    "图库滚动条滑块不短于 44（四千多张也抓得住）",
+                    $"{thS.ThumbLengthForTest:F0}px，轨道 {thS.ActualHeight:F0}，滑槽宽 {sbS.ActualWidth:F0}，视口 {sbS.ViewportSize:F0}，内容 {sbS.Maximum + sbS.ViewportSize:F0}");
+
+                var tp = thS.TranslatePoint(new Point(thS.ActualWidth / 2, thS.ThumbStartForTest + 6), mwS);
+                var hitT = mwS.InputHitTest(tp) as DependencyObject;
+                Check(hitT is not null && IsUnder(hitT, thS), "滑块点得中（没被别的层盖住）",
+                    hitT?.GetType().Name ?? "null");
+
+                double v0s = sbS.Value;
+                thS.NudgeForTest(120);
+                for (int i = 0; i < 4; i++) await Pulse(window);
+                Check(sbS.Value > v0s && gp is not null && gp.VerticalOffset > 0,
+                    "拖滑块能滚动图库", $"{v0s:F0} -> {sbS.Value:F0}，偏移 {gp?.VerticalOffset:F0}");
+
+                thS.ScrollToForTest(0);
+                for (int i = 0; i < 4; i++) await Pulse(window);
+            }
+            else Check(false, "图库滚动条换成 SlimThumb", "没找到 ScrollBar 或滑块");
         }
 
         // ---------- 21b. 可拖的分区高度、排序都记进设置 ----------

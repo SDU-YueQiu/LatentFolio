@@ -363,7 +363,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="{Binding LeftWidth, Converter={StaticResource D2G}}"
                                       MinWidth="56" MaxWidth="460" />
-                    <ColumnDefinition Width="5" />
+                    <ColumnDefinition Width="9" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
@@ -682,10 +682,10 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- 左栏分隔条 + 折叠手柄 -->
+                <!-- 左栏分隔条 + 折叠手柄：整条边框都能按住横拖（9px），手柄照旧压在最上面 -->
                 <Grid Grid.Column="1" Background="Transparent">
-                    <Border Style="{StaticResource VLine}" HorizontalAlignment="Center" />
-                    <GridSplitter x:Name="LeftSplitter" Width="5" HorizontalAlignment="Stretch"
+                    <Border Style="{StaticResource VLine}" HorizontalAlignment="Left" />
+                    <GridSplitter x:Name="LeftSplitter" Width="9" HorizontalAlignment="Stretch"
                                   Background="Transparent" ResizeBehavior="PreviousAndNext"
                                   ResizeDirection="Columns" Cursor="SizeWE"
                                   DragDelta="OnLeftSplitterDrag"
@@ -1208,6 +1208,15 @@
 
                 <!-- 折叠把手叠层：跨所有列、盖在最上面，两个把手同一套尺寸、同一个垂直中线 -->
                 <Grid Grid.Column="0" Grid.ColumnSpan="3" Panel.ZIndex="80">
+                    <!-- 详情栏的整条边框都能按住横拖：带子贴边框内侧，只压内边距，不盖栏里的任何控件。
+                         手柄画在它上面，所以手柄那一块仍然是「按下不动 = 收起」。 -->
+                    <Border x:Name="DetailEdgeBand" Width="9" HorizontalAlignment="Right"
+                            Background="Transparent" Cursor="SizeWE"
+                            Margin="{Binding DetailEdgeMargin}"
+                            Visibility="{Binding IsPanelVisible, Converter={StaticResource B2V}}"
+                            MouseLeftButtonDown="OnEdgeDown" MouseMove="OnEdgeMove"
+                            MouseLeftButtonUp="OnEdgeUp"
+                            AutomationProperties.Name="拖动详情栏宽度" />
                     <Button x:Name="LeftTab" HorizontalAlignment="Left" VerticalAlignment="Center"
                             PreviewMouseLeftButtonDown="OnHandleDown" PreviewMouseMove="OnHandleMove"
                             PreviewMouseLeftButtonUp="OnHandleUp"
