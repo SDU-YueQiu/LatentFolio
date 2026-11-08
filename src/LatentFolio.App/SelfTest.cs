@@ -408,6 +408,17 @@ public static class SelfTest
         Check(!vm.LeftCollapsed && vm.DetailWidth >= 300, "两栏都能再展开",
             $"{vm.LeftWidth:F0} / {vm.DetailWidth:F0}");
 
+        // 右栏宽度可以拖（外面那条 5px 拖拽带调的就是这个）
+        double dw0 = vm.DetailWidth;
+        vm.SetDetailWidth(460);
+        await Pulse(window);
+        Check(Math.Abs(vm.DetailWidth - 460) < 0.5, "右栏宽度可拖", $"{dw0:F0} -> {vm.DetailWidth:F0}");
+        vm.SetDetailWidth(120);   // 低于下限要被夹住
+        await Pulse(window);
+        Check(vm.DetailWidth >= 300, "右栏宽度有下限", $"{vm.DetailWidth:F0}");
+        vm.SetDetailWidth(dw0);
+        await Pulse(window);
+
         Check(vm.Filmstrip.Count is > 0 and <= 81, "胶片条覆盖前后各 40 张", $"{vm.Filmstrip.Count}");
         Check(vm.Filmstrip.Count >= Math.Min(vm.Items.Count, 41), "胶片条至少覆盖到窗口一侧",
             $"{vm.Filmstrip.Count} / 共 {vm.Items.Count}");
