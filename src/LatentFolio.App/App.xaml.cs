@@ -36,7 +36,7 @@ public partial class App : Application
                                           or "--bench" or "--show-stats" or "--show-editor"
                                           or "--show-people" or "--show-tags" or "--show-candidates"
                                           or "--show-filter" or "--show-settings" or "--mem-report" or "--retag"
-                                          or "--bench-decode");
+                                          or "--bench-decode" or "--sort-rating");
         if (!diagnostic)
         {
             _instanceMutex = new Mutex(true, @"Local\LatentFolio.SingleInstance", out bool isNew);

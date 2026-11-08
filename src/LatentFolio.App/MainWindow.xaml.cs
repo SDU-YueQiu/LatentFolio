@@ -267,6 +267,13 @@ public partial class MainWindow : Window
         if (Vm.LastScanLost > 0) AskAboutLostFiles(Vm.LastScanLost);
 
         var args = Environment.GetCommandLineArgs();
+        // 截图/演示用：按评分倒序。README 里的图都这么拍——高分图一般没有太敏感的
+        if (args.Contains("--sort-rating"))
+        {
+            Vm.SortKeyIndex = 1;    // 评分
+            Vm.SortDesc = true;     // 高在前
+            SortBox.SelectedIndex = 1;
+        }
         if (args.Contains("--self-test"))
         {
             await SelfTest.RunAsync(this, Vm);
