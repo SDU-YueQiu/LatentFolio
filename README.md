@@ -30,7 +30,11 @@ LatentFolio 以 `ComfyUI/output` 为数据源：扫描每张 PNG 里嵌入的提
 
 ## 快速开始
 
-Windows 10 1809+ / 11。构建需要 .NET 10 SDK；只运行的话，Desktop Runtime 即可。
+Windows 10 1809+ / 11（x64）。
+
+预编译版本见 [Releases](https://github.com/SDU-YueQiu/LatentFolio/releases/latest)：win-x64 免安装包（67 MB，自带 .NET 运行时），解压后双击 `LatentFolio.exe` 即可。
+
+从源码构建（需要 .NET 10 SDK）：
 
 ```powershell
 git clone https://github.com/SDU-YueQiu/LatentFolio.git
@@ -39,7 +43,7 @@ dotnet build LatentFolio.slnx -c Release
 .\src\LatentFolio.App\bin\Release\net10.0-windows\LatentFolio.exe
 ```
 
-也可以直接双击仓库根目录的 `LatentFolio.lnk`。
+构建完成后也可以双击仓库根目录的 `LatentFolio.lnk` 启动。
 
 首次启动选择一次 `ComfyUI/output`（找不到时会尝试常见路径），之后自动扫描。
 索引与缩略图位于 `%LOCALAPPDATA%\LatentFolio`，删除该目录即重置。
