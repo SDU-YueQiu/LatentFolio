@@ -18,7 +18,7 @@
          设计语言「Quiet Studio」
          · 中性冷灰打底，界面本体全是留白，让图片当主角
          · 一个虹蓝主色（#4B5CF5），只出现在选中、焦点、进度上，不做装饰
-         · 半径：控件 8 / 行 9 / 卡片 12 / 胶囊 999
+         · 半径：控件 8 / 行 9 / 卡片 12 / 小徽标 4（全站不用胶囊，一律圆角矩形）
          · 阴影只给浮层和卡片，列表项一律靠描边和底色分层（性能）
          ================================================================ -->
 
@@ -408,7 +408,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="White" BorderBrush="{StaticResource B.Border}"
-                            BorderThickness="1" CornerRadius="999" Padding="{TemplateBinding Padding}">
+                            BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -437,7 +437,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="{StaticResource B.AccentSoft}" BorderBrush="Transparent"
-                            BorderThickness="1" CornerRadius="999" Padding="{TemplateBinding Padding}">
+                            BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -853,7 +853,7 @@
 
     <Style x:Key="Pill" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource B.Inset}" />
-        <Setter Property="CornerRadius" Value="999" />
+        <Setter Property="CornerRadius" Value="8" />
         <Setter Property="Padding" Value="7,2" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>

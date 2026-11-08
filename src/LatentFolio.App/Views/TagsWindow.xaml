@@ -132,7 +132,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" Background="Transparent" CornerRadius="999"
+                        <Border x:Name="bd" Background="Transparent" CornerRadius="8"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
@@ -239,7 +239,7 @@
 
                 <!-- 搜索：标题下面单独一行，胶囊 + E721 -->
                 <Border Grid.Row="1" Width="260" Height="30" HorizontalAlignment="Left"
-                        Background="{StaticResource B.Inset}" CornerRadius="999"
+                        Background="{StaticResource B.Inset}" CornerRadius="8"
                         Padding="10,0" Margin="0,10,0,0">
                     <Grid>
                         <Grid.ColumnDefinitions>

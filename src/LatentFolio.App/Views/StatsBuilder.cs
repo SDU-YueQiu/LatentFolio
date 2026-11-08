@@ -186,7 +186,7 @@ public static class StatsBuilder
             Background = active ? R("B.AccentSoft") : R("B.Window"),
             BorderBrush = active ? R("B.Accent") : R("B.Border"),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(999),
+            CornerRadius = new CornerRadius(8),
             Padding = new Thickness(11, 0, 11, 0),
             Child = text,
             SnapsToDevicePixels = true,

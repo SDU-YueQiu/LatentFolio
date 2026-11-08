@@ -278,6 +278,8 @@ public sealed partial class AppVm : ObservableObject
             CurrentParams.Add(new("CFG", value.CfgText));
             CurrentParams.Add(new("种子", value.SeedText));
         }
+        // 点一张图就把右栏亮出来：用户手动收起过也一样（收起是临时状态，不是"永久关掉详情"）
+        if (value is not null && PanelCollapsed) PanelCollapsed = false;
         IsPanelVisible = value is not null && !PanelCollapsed;
         RaiseDetailWidth();
         RebuildFilmstrip();

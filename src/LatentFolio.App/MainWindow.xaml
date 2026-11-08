@@ -36,7 +36,7 @@
                                c:ThumbLoader.PixelWidth="{Binding DataContext.TileSize,
                                            RelativeSource={RelativeSource AncestorType=Window}}" />
                     </Border>
-                    <Border Background="{StaticResource B.Danger}" CornerRadius="999" Padding="8,2"
+                    <Border Background="{StaticResource B.Danger}" CornerRadius="8" Padding="8,2"
                             HorizontalAlignment="Center" VerticalAlignment="Center"
                             Visibility="{Binding IsMissing, Converter={StaticResource B2V}}">
                         <TextBlock Text="源文件丢失" Foreground="White" FontSize="11" />
@@ -137,7 +137,7 @@
                             <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill"
                                    RenderOptions.BitmapScalingMode="HighQuality"
                                    c:ThumbLoader.PixelWidth="204" />
-                            <Border Background="{StaticResource B.GlassDark}" CornerRadius="999"
+                            <Border Background="{StaticResource B.GlassDark}" CornerRadius="8"
                                     Padding="6,2" Margin="8" HorizontalAlignment="Right"
                                     VerticalAlignment="Top">
                                 <TextBlock Text="{Binding Count}" FontSize="10" Foreground="White" />
@@ -163,7 +163,7 @@
         <!-- ── 已生效的筛选条件钉（悬停加深一档） ── -->
         <Style x:Key="P.Shell.Chip" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource B.AccentSoft}" />
-            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="9,4" />
             <Setter Property="Margin" Value="0,0,6,6" />
             <Style.Triggers>
@@ -197,7 +197,7 @@
             <Setter Property="Background" Value="{StaticResource B.Inset}" />
             <Setter Property="BorderBrush" Value="{StaticResource B.Hairline}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="CornerRadius" Value="8" />
             <Style.Triggers>
                 <Trigger Property="IsKeyboardFocusWithin" Value="True">
                     <Setter Property="Background" Value="{StaticResource B.Window}" />
@@ -987,7 +987,7 @@
                             <!-- 浮在图片上的胶囊：加载中 / VSR 处理中 -->
                             <Style x:Key="P.Viewer.GlassPill" TargetType="Border">
                                 <Setter Property="Background" Value="{StaticResource B.GlassDark}" />
-                                <Setter Property="CornerRadius" Value="999" />
+                                <Setter Property="CornerRadius" Value="8" />
                                 <Setter Property="Padding" Value="16,9" />
                                 <Setter Property="HorizontalAlignment" Value="Center" />
                                 <Setter Property="VerticalAlignment" Value="Center" />
@@ -1036,7 +1036,7 @@
                                            VerticalAlignment="Center" />
 
                                 <Border Grid.Column="3" Background="{StaticResource B.AccentSoft}"
-                                        CornerRadius="999" Padding="9,3" Margin="10,0,0,0"
+                                        CornerRadius="8" Padding="9,3" Margin="10,0,0,0"
                                         VerticalAlignment="Center" ToolTip="{Binding VsrBadge}"
                                         Visibility="{Binding VsrBadge, Converter={StaticResource NE2V}}">
                                     <TextBlock Text="{Binding VsrBadge}" FontSize="11.5"

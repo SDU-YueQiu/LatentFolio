@@ -306,7 +306,7 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Background="{StaticResource B.Inset}" CornerRadius="999" Padding="8,4"
+                            <Border Background="{StaticResource B.Inset}" CornerRadius="8" Padding="8,4"
                                     Margin="0,0,6,6">
                                 <TextBlock Text="{Binding}" Style="{StaticResource P.Detail.Tag}" />
                             </Border>
