@@ -27,6 +27,35 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
         App.Root.StatsRequested += ShowStats;
         PreviewKeyDown += OnPreviewKey;
+        // 鼠标侧键：后退 = 关查看器 / 清搜索 / 清筛选 / 回总览，前进 = 重新打开当前那张
+        PreviewMouseDown += OnNavMouseDown;
+    }
+
+    private void OnNavMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.XButton1)
+        {
+            GoBack();
+            e.Handled = true;
+        }
+        else if (e.ChangedButton == MouseButton.XButton2)
+        {
+            GoForward();
+            e.Handled = true;
+        }
+    }
+
+    private void GoBack()
+    {
+        if (Vm.ViewerOpen) { OnCloseViewer(this, new RoutedEventArgs()); return; }
+        if (Vm.SearchText.Length > 0) { Vm.SearchText = ""; return; }
+        if (Vm.HasTempFilter) { Vm.SetTempFilter(null); return; }
+        OnOverviewClick(this, new RoutedEventArgs());
+    }
+
+    private void GoForward()
+    {
+        if (!Vm.ViewerOpen && Vm.Current is not null) Vm.OpenViewerCommand.Execute(Vm.Current);
     }
 
     private void FitToWorkArea()

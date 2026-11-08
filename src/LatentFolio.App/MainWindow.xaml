@@ -451,7 +451,7 @@
                     </Grid>
 
                     <Grid Grid.Row="2" Margin="6,0,6,0">
-                        <ListBox x:Name="ColList" Background="Transparent" BorderThickness="0"
+                        <ListBox x:Name="ColList" Background="Transparent" BorderThickness="0" SelectionChanged="OnColumnSelected" Margin="0,0,12,0"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                  ItemsSource="{Binding Columns}"
                                  ItemContainerStyle="{StaticResource P.Shell.NavRow}"
@@ -582,7 +582,7 @@
                             </Button>
                         </Grid>
                         <ListBox x:Name="FolderList" Grid.Row="1" Background="Transparent" BorderThickness="0"
-                                 Margin="6,0,6,4"
+                                 Margin="6,0,12,4"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                  ItemsSource="{Binding Folders}" SelectionChanged="OnFolderSelected"
                                  ItemContainerStyle="{StaticResource FolderRow}">
@@ -970,11 +970,11 @@
                         <Grid.Resources>
                             <!-- 舞台：深灰纵向渐变，画面上只有图片是亮的 -->
                             <LinearGradientBrush x:Key="P.Viewer.Stage" StartPoint="0,0" EndPoint="0,1">
-                                <GradientStop Color="#FF101217" Offset="0" />
-                                <GradientStop Color="#FF191D24" Offset="1" />
+                                <GradientStop Color="#FFFAFBFC" Offset="0" />
+                                <GradientStop Color="#FFEDEFF4" Offset="1" />
                             </LinearGradientBrush>
-                            <!-- 舞台与工具条之间的 1px 深色分隔 -->
-                            <SolidColorBrush x:Key="P.Viewer.Rule" Color="#FF0B0D11" />
+                            <!-- 舞台与工具条之间的 1px 分隔 -->
+                            <SolidColorBrush x:Key="P.Viewer.Rule" Color="#FFE2E5EC" />
                             <!-- 工具条里的小图标 / 文字 -->
                             <Style x:Key="P.Viewer.Glyph" TargetType="TextBlock">
                                 <Setter Property="FontFamily" Value="{StaticResource F.Icon}" />
@@ -990,7 +990,7 @@
                             </Style>
                             <!-- 浮在图片上的胶囊：加载中 / VSR 处理中 -->
                             <Style x:Key="P.Viewer.GlassPill" TargetType="Border">
-                                <Setter Property="Background" Value="{StaticResource B.GlassDark}" />
+                                <Setter Property="Background" Value="{StaticResource B.Glass}" />
                                 <Setter Property="CornerRadius" Value="8" />
                                 <Setter Property="Padding" Value="16,9" />
                                 <Setter Property="HorizontalAlignment" Value="Center" />
@@ -1084,18 +1084,18 @@
                                 BorderBrush="{StaticResource P.Viewer.Rule}" BorderThickness="0,1,0,0"
                                 ClipToBounds="True">
                             <Grid>
-                                <c:ZoomBox x:Name="BigZoom" Margin="0">
+                                <c:ZoomBox x:Name="BigZoom" Margin="0" Focusable="False" FocusVisualStyle="{x:Null}">
                                     <Image x:Name="BigImage" Source="{Binding ViewerImage.Source}" Stretch="Uniform"
                                            RenderOptions.BitmapScalingMode="HighQuality" Margin="24"
                                            PreviewMouseRightButtonUp="OnViewerRightUp" />
                                 </c:ZoomBox>
                                 <Border Style="{StaticResource P.Viewer.GlassPill}"
                                         Visibility="{Binding ViewerLoading, Converter={StaticResource B2V}}">
-                                    <TextBlock Text="加载中…" Foreground="White" FontSize="12.5" />
+                                    <TextBlock Text="加载中…" Foreground="{StaticResource B.Text2}" FontSize="12.5" />
                                 </Border>
                                 <Border Style="{StaticResource P.Viewer.GlassPill}"
                                         Visibility="{Binding VsrBusy, Converter={StaticResource B2V}}">
-                                    <TextBlock Text="RTX VSR 处理中…" Foreground="White" FontSize="12.5" />
+                                    <TextBlock Text="RTX VSR 处理中…" Foreground="{StaticResource B.Text2}" FontSize="12.5" />
                                 </Border>
                             </Grid>
                         </Border>

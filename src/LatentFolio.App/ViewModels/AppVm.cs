@@ -329,7 +329,7 @@ public sealed partial class AppVm : ObservableObject
     public Thickness LeftHandleMargin => new(LeftWidth - 11, 0, 0, 0);
 
     /// <summary>详情栏折叠把手：贴着面板左缘；面板收起时贴窗口右边。</summary>
-    public Thickness DetailHandleMargin => new(0, 0, DetailWidth > 0 ? DetailWidth - 11 : 0, 0);
+    public Thickness DetailHandleMargin => new(0, 0, DetailWidth > 0 ? DetailWidth - 11 : -11, 0);
 
     private void RaiseDetailWidth()
     {
@@ -1634,7 +1634,7 @@ public sealed partial class AppVm : ObservableObject
     /// 人物块：固定 5 列，边长先按栏宽算，行数按可用高度算；
     /// 高度有富余时允许把边长放大一档去补空，但绝不会比宽度算出来的小。
     /// </summary>
-    public int PeopleCols => 5;
+    public int PeopleCols => PeopleGrid.Cols;
 
     private const double PeopleHeaderHeight = 44;
     private const double PeopleCellGap = 4;
@@ -1650,33 +1650,39 @@ public sealed partial class AppVm : ObservableObject
 
     private double PeopleUsableHeight => Math.Max(0, LeftPeopleHeight - PeopleHeaderHeight);
 
-    public int PeopleRows
+    /// <summary>装 10 个人左右：列数在 3–5 之间挑能让格子最大的那一种。</summary>
+    private (int Cols, int Rows) PeopleGrid
     {
         get
         {
-            double sideW = PeopleSideByWidth;
-            double usable = PeopleUsableHeight;
-            // 基准是 10 个（5 列 × 2 行）：高度不够时先缩格子，够时先放大格子，
-            // 边长顶到栏宽上限之后还有一整行的高度，才多排一行、顺延补 5 个人
-            int rows = 2;
-            double side = Math.Floor(usable / rows - PeopleCellGap);
-            if (side > sideW) side = sideW;
-            while (rows < 6 && usable >= (rows + 1) * (side + PeopleCellGap)) rows++;
-            return Math.Clamp(rows, 1, 6);
+            double w = Math.Max(60, LeftWidth - 20);
+            double h = PeopleUsableHeight;
+            int bestCols = 5;
+            double best = -1;
+            for (int c = 5; c >= 3; c--)
+            {
+                int r = Math.Max(1, (int)Math.Ceiling(10.0 / c));
+                double side = Math.Min(w / c, h / r);
+                if (side > best + 0.5) { best = side; bestCols = c; }
+            }
+            return (bestCols, Math.Max(1, (int)Math.Ceiling(10.0 / bestCols)));
         }
     }
 
+    public int PeopleRows => PeopleGrid.Rows;
+
+    /// <summary>
+    /// 格子是正方形，边长取宽、高两个方向里更紧的那个约束：
+    /// 拉宽 → 边长涨；拉高 → 会换行（列少行多），边长同样涨。
+    /// </summary>
     public double PeopleCardSide
     {
         get
         {
-            double side = PeopleSideByWidth;
-            int rows = PeopleRows;
-            // 行数定了之后把边长收到刚好铺满高度；但不能超过「按宽度算出来的那一档」，
-            // 否则左栏变宽时边长反而不涨（自检会挂）
-            double fit = Math.Floor(PeopleUsableHeight / rows - PeopleCellGap);
-            if (fit < 20) fit = 20;
-            return Math.Min(fit, side);
+            var g = PeopleGrid;
+            double w = Math.Max(60, LeftWidth - 20);
+            double h = PeopleUsableHeight;
+            return Math.Max(16, Math.Floor(Math.Min(w / g.Cols, h / g.Rows) - PeopleCellGap));
         }
     }
 
