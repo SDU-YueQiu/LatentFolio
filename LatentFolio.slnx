@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LatentFolio.App/LatentFolio.App.csproj" />
+    <Project Path="src/LatentFolio.Core/LatentFolio.Core.csproj" />
+    <Project Path="src/LatentFolio.Vsr/LatentFolio.Vsr.csproj" />
+  </Folder>
+</Solution>

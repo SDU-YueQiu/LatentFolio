@@ -1,0 +1,19 @@
+# build
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# sdk / 大文件不进版本库
+third_party/
+*.zip
+*.7z
+
+# 运行时产物
+*.db
+*.db-wal
+*.db-shm
+logs/
+post/
+cache/
