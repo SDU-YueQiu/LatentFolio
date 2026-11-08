@@ -57,21 +57,31 @@ public sealed class RatingBar : FrameworkElement
         return new Size(double.IsInfinity(availableSize.Width) ? w : Math.Min(w, availableSize.Width), DotSize);
     }
 
+    /// <summary>
+    /// 自定义绘制的元素默认只在自己画了东西的地方能点中 —— 点在两点之间的空隙上
+    /// 事件就丢了。整个矩形都算命中。
+    /// </summary>
+    protected override HitTestResult? HitTestCore(PointHitTestParameters hitTestParameters)
+    {
+        var r = new Rect(0, 0, Math.Max(ActualWidth, 5 * DotSize + 4 * Gap), Math.Max(ActualHeight, DotSize));
+        return r.Contains(hitTestParameters.HitPoint)
+            ? new PointHitTestResult(this, hitTestParameters.HitPoint)
+            : null;
+    }
+
     protected override void OnRender(DrawingContext dc)
     {
         double d = DotSize, g = Gap;
-        double total = 5 * d + 4 * g;
-        double x0 = 0;
+        double top = Math.Max(0, (RenderSize.Height - d) / 2);
         int shown = _hover >= 0 ? _hover : Value;
 
         for (int i = 0; i < 5; i++)
         {
-            double cx = x0 + i * (d + g) + d / 2;
-            double cy = d / 2;
+            double cx = i * (d + g) + d / 2;
+            double cy = top + d / 2;
             Brush b = i < shown ? On : (_hover > i ? OffHover : Off);
             dc.DrawEllipse(b, null, new Point(cx, cy), d / 2, d / 2);
         }
-        _ = total;
     }
 
     protected override void OnMouseMove(MouseEventArgs e)

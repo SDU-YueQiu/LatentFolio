@@ -755,6 +755,7 @@ public sealed partial class AppVm : ObservableObject
         }
         tx.Commit();
         foreach (var vm in list) Items.Remove(vm);
+        Selection.RemoveAll(x => list.Contains(x));
         HitCount = Items.Count;
         TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
         RefreshStatus();
@@ -772,6 +773,7 @@ public sealed partial class AppVm : ObservableObject
         }
         tx.Commit();
         foreach (var vm in list) Items.Remove(vm);
+        Selection.RemoveAll(x => list.Contains(x));
         HitCount = Items.Count;
         TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
         RefreshStatus();

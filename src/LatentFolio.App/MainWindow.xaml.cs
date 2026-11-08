@@ -328,6 +328,13 @@ public partial class MainWindow : Window
         if (e.Key == Key.OemComma && Vm.Selection.Count > 0) { OnAddTag(); e.Handled = true; }
     }
 
+    /// <summary>格子上直接点评分。</summary>
+    private void OnTileRating(object sender, int value)
+    {
+        if (sender is FrameworkElement { DataContext: ImageVm vm })
+            Vm.SetRating([vm], value);
+    }
+
     /// <summary>右键先把光标下的格子选中，再弹菜单。</summary>
     private void OnGridPreviewRightDown(object sender, MouseButtonEventArgs e)
     {
