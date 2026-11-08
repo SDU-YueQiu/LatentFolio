@@ -58,13 +58,10 @@ public partial class SettingsWindow : Window
             var b = new Button
             {
                 Content = label,
-                Style = (Style)FindResource("Btn.Outline"),
-                FontSize = 11.5,
-                Height = 27,
-                Padding = new Thickness(11, 0, 11, 0),
-                Margin = new Thickness(0, 0, 6, 0),
-                Background = _vm.StatsThreshold == v ? R("B.AccentSoft") : Brushes.White,
-                BorderBrush = _vm.StatsThreshold == v ? R("B.Accent") : R("B.BorderStrong"),
+                Style = (Style)FindResource("Btn.Seg"),
+                Height = 26,
+                Padding = new Thickness(12, 0, 12, 0),
+                Background = _vm.StatsThreshold == v ? R("B.AccentSoft") : Brushes.Transparent,
                 Foreground = _vm.StatsThreshold == v ? R("B.Accent") : R("B.Text2"),
             };
             b.Click += (_, _) => { _vm.StatsThreshold = v; BuildChips(); };
@@ -78,13 +75,10 @@ public partial class SettingsWindow : Window
             var b = new Button
             {
                 Content = label,
-                Style = (Style)FindResource("Btn.Outline"),
-                FontSize = 11.5,
-                Height = 27,
-                Padding = new Thickness(14, 0, 14, 0),
-                Margin = new Thickness(0, 0, 6, 0),
-                Background = _vm.VsrScale == v ? R("B.AccentSoft") : Brushes.White,
-                BorderBrush = _vm.VsrScale == v ? R("B.Accent") : R("B.BorderStrong"),
+                Style = (Style)FindResource("Btn.Seg"),
+                Height = 26,
+                Padding = new Thickness(12, 0, 12, 0),
+                Background = _vm.VsrScale == v ? R("B.AccentSoft") : Brushes.Transparent,
                 Foreground = _vm.VsrScale == v ? R("B.Accent") : R("B.Text2"),
             };
             b.Click += (_, _) => { _vm.VsrScale = v; BuildChips(); };

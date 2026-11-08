@@ -1,7 +1,9 @@
 param(
     [string]$Args = "",
     [Parameter(Mandatory = $true)][string]$Name,
-    [int]$WaitMs = 7000
+    [int]$WaitMs = 7000,
+    # 弹窗类（设置/标签/列编辑器）用标题定位那个模态窗口
+    [string]$Title = ""
 )
 $ErrorActionPreference = 'Stop'
 $repo = 'D:\Projects\LatentFolio'
@@ -21,7 +23,9 @@ for ($i = 0; $i -lt 80; $i++) {
 Start-Sleep -Milliseconds $WaitMs
 
 $tmp = Join-Path $env:TEMP "lf-$Name.png"
-& (Join-Path $repo 'tools\screenshot.ps1') -Out $tmp | Out-Null
+$shot = @{ Out = $tmp }
+if ($Title.Length -gt 0) { $shot['Title'] = $Title }
+& (Join-Path $repo 'tools\screenshot.ps1') @shot | Out-Null
 
 Add-Type -AssemblyName System.Drawing
 $img = [System.Drawing.Image]::FromFile($tmp)

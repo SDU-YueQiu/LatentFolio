@@ -75,7 +75,7 @@
 - **图标按钮** `Btn.Icon`（30×30）/ `Btn.IconSm`（24×24）：glyph 13px，`B.Text2`，悬停给底色。**所有只有图标的动作都必须带 ToolTip。**
 - **胶囊按钮** `Btn.Pill`：筛选入口这类"可展开的条件"。
 - **条件钉** `Chip`：已生效的条件，`B.AccentSoft` 底 + 主色字。
-- **分段控件**：`Border Style="{StaticResource Seg.Track}"` 里放若干 `Btn.Seg`，选中项由代码设 `Background=White`、`Foreground=B.Accent`，并加 `Fx.Card`（或用 `B.AccentSoft` 底）。**不要用 TabControl。**
+- **分段控件**：`Border Style="{StaticResource Seg.Track}"` 里放若干 `Btn.Seg`。选中项 = **白底 + `B.Accent` 字 + `Fx.Card` 阴影**，未选中 = 透明底 + `B.Text2` 字。**不要用 `B.AccentSoft` 当选中底**（它和 `B.Inset` 只差一点，看不出来）。**不要用 TabControl。**
 - **卡片** `Card`：白底 + `B.Border` + 圆角 12 + Padding 16。卡片之间留 10–12。
 - **字段行**：左标签 `T.Label`（宽 72–88，右对齐或左对齐但要统一），右值 `T.Value`，行高 24，行间不加分隔线；段落之间才加 `HLine`。
 - **列表行**：`RowItem`，高 32–34，左内边距 10，右内边距 10，文字 12.5，计数 11.5 `B.Text3`。
@@ -122,7 +122,7 @@
 
 ### 6.2 查看器（`MainWindow.xaml` 里 `ViewerPane`，由第二阶段负责）
 
-- 舞台底 `B.Stage`，大图圆角 12 + `Fx.Image` 阴影，居中留白 24。
+- 舞台底用深灰纵向渐变（`#101217 → #191D24`，页面内定义 `P.Viewer.Stage`），大图直角、居中留白 24。**大图上不加阴影/圆角**：缩放时每帧重算阴影会卡。
 - 舞台顶部一条 46px 工具条：`‹ 返回`、文件名 `T.Title` + 尺寸 `T.Sub`、右侧 `RTX VSR`（开启时主色底白字，关闭时 `Btn.Outline`）、原图/结果分段、上一张/下一张（E76B/E76C）、`在文件夹中显示`。
 - 胶片条：白底 + 顶部 `HLine`，缩略图圆角 6，当前那张 2px 主色描边，其余不透明度 0.7、悬停 1.0；条高仍由 `FilmImageHeight` 决定。
 - 分隔条（7px）不用画线，悬停时给 `B.Accent`。

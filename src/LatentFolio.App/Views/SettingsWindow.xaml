@@ -2,127 +2,212 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="设置" Height="720" Width="620"
-        WindowStartupLocation="CenterOwner" Background="{StaticResource B.Window}"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource B.Canvas}"
         FontFamily="{StaticResource F.UI}">
+    <Window.Resources>
+        <!-- 分组卡片：白底 + 描边，组间 14 -->
+        <Style x:Key="P.Set.Card" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="Margin" Value="0,0,0,14" />
+        </Style>
+
+        <!-- 字段行：统一 32 高，行内控件靠右 -->
+        <Style x:Key="P.Set.Row" TargetType="Grid">
+            <Setter Property="MinHeight" Value="32" />
+        </Style>
+
+        <!-- 字段名：固定 96，保证各行值列起点一致 -->
+        <Style x:Key="P.Set.Label" TargetType="TextBlock" BasedOn="{StaticResource T.Label}">
+            <Setter Property="Width" Value="96" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- 组内次要按钮：白底描边，高 30 -->
+        <Style x:Key="P.Set.Action" TargetType="Button" BasedOn="{StaticResource Btn.Outline}">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="12,0" />
+        </Style>
+
+        <!-- 危险动作：仍是白底描边按钮，只有文字转红 -->
+        <Style x:Key="P.Set.Danger" TargetType="Button" BasedOn="{StaticResource P.Set.Action}">
+            <Setter Property="Foreground" Value="{StaticResource B.Danger}" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource B.Danger}" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource B.Danger}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 能力胶囊里的字 -->
+        <Style x:Key="P.Set.CapText" TargetType="TextBlock" BasedOn="{StaticResource T.Sub}">
+            <Setter Property="Foreground" Value="{StaticResource B.Accent}" />
+        </Style>
+    </Window.Resources>
+
     <Grid Margin="20">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Text="设置" Style="{StaticResource T.Title}" />
+        <TextBlock Text="设置" Style="{StaticResource T.Page}" />
+        <Border Grid.Row="1" Style="{StaticResource HLine}" Margin="0,12,0,0" />
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,14,0,0">
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,14,0,0">
             <StackPanel>
                 <!-- 图库与导入 -->
-                <TextBlock Text="图库与导入" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
-                <Border Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
-                        BorderThickness="1" CornerRadius="9" Padding="14,12" Margin="0,0,0,14">
+                <Border Style="{StaticResource P.Set.Card}">
                     <StackPanel>
-                        <TextBlock Text="跟随的 ComfyUI 输出目录" Style="{StaticResource T.Label}" />
-                        <TextBlock x:Name="RootText" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,10"
-                                   Foreground="{StaticResource B.Text}" />
-                        <StackPanel Orientation="Horizontal">
-                            <Button Content="更换目录…" Style="{StaticResource Btn.Outline}" Height="30"
-                                    Padding="12,0" Click="OnChangeRoot" />
-                            <Button Content="重新扫描" Style="{StaticResource Btn.Outline}" Height="30"
-                                    Padding="12,0" Margin="8,0,0,0" Click="OnRescan" />
+                        <TextBlock Text="图库与导入" Style="{StaticResource T.CardTitle}" />
+                        <StackPanel Margin="0,12,0,0">
+                            <Grid Style="{StaticResource P.Set.Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="输出目录" Style="{StaticResource P.Set.Label}" />
+                                <TextBlock x:Name="RootText" Grid.Column="1" Style="{StaticResource T.Mono}"
+                                           TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,6,0,6" />
+                            </Grid>
+                            <Grid Style="{StaticResource P.Set.Row}">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            VerticalAlignment="Center">
+                                    <Button Content="更换目录…" Style="{StaticResource P.Set.Action}"
+                                            Click="OnChangeRoot" />
+                                    <Button Content="重新扫描" Style="{StaticResource P.Set.Action}"
+                                            Margin="8,0,0,0" Click="OnRescan" />
+                                </StackPanel>
+                            </Grid>
+                            <!-- 判重记录：9 圆角凹槽块 -->
+                            <Border Style="{StaticResource Card.Inset}" Padding="12" Margin="0,8,0,0">
+                                <Grid Style="{StaticResource P.Set.Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox x:Name="DedupeBox" Content="同样的图只收一份（按内容哈希）"
+                                              VerticalAlignment="Center" Click="OnDedupeChanged" />
+                                    <Button Grid.Column="1" Content="清空判重记录" Style="{StaticResource P.Set.Danger}"
+                                            Margin="12,0,0,0" VerticalAlignment="Center" Click="OnClearSkip" />
+                                </Grid>
+                            </Border>
                         </StackPanel>
-                        <Grid Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <CheckBox x:Name="DedupeBox" Content="同样的图只收一份（按内容哈希）"
-                                      FontSize="12.5" Click="OnDedupeChanged" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Content="清空判重记录" Style="{StaticResource Btn.Ghost}"
-                                    FontSize="11.5" Padding="8,2" Click="OnClearSkip"
-                                    VerticalAlignment="Center" />
-                        </Grid>
                     </StackPanel>
                 </Border>
 
                 <!-- 缩略图与缓存 -->
-                <TextBlock Text="缩略图与缓存" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
-                <Border Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
-                        BorderThickness="1" CornerRadius="9" Padding="14,12" Margin="0,0,0,14">
+                <Border Style="{StaticResource P.Set.Card}">
                     <StackPanel>
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="网格缩略图缓存（可随时重建）" Style="{StaticResource T.Label}"
-                                       VerticalAlignment="Center" />
-                            <TextBlock x:Name="GridCacheText" Grid.Column="1" FontSize="12.5" />
-                        </Grid>
-                        <Grid Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="归档缩略图（已删除/丢失，永久保留）" Style="{StaticResource T.Label}"
+                            <TextBlock Text="缩略图与缓存" Style="{StaticResource T.CardTitle}"
                                        VerticalAlignment="Center" />
-                            <TextBlock x:Name="ArchiveText" Grid.Column="1" FontSize="12.5" />
+                            <TextBlock x:Name="GridCacheText" Grid.Column="1" Style="{StaticResource T.Sub}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Center"
+                                       Margin="12,0,0,0" />
                         </Grid>
-                        <CheckBox x:Name="ArchiveBox" Content="为已删除图片保留预览（约 12 KB/张）"
-                                  Margin="0,12,0,0" FontSize="12.5" Click="OnArchiveChanged" />
-                        <Button Content="清空网格缩略图缓存" Style="{StaticResource Btn.Outline}" Height="30"
-                                Padding="12,0" HorizontalAlignment="Left" Margin="0,10,0,0"
-                                Click="OnClearCache" />
+                        <!-- 缩略图缓存数据：9 圆角凹槽块 -->
+                        <Border Style="{StaticResource Card.Inset}" Padding="12" Margin="0,12,0,0">
+                            <StackPanel>
+                                <Grid Style="{StaticResource P.Set.Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="归档缩略图" Style="{StaticResource P.Set.Label}" />
+                                    <TextBlock x:Name="ArchiveText" Grid.Column="1" Style="{StaticResource T.Value}"
+                                               HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Margin="12,0,0,0" />
+                                </Grid>
+                                <Grid Style="{StaticResource P.Set.Row}">
+                                    <CheckBox x:Name="ArchiveBox" Content="为已删除图片保留预览（约 12 KB/张）"
+                                              VerticalAlignment="Center" Click="OnArchiveChanged" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Grid Style="{StaticResource P.Set.Row}" Margin="0,8,0,0">
+                            <Button Content="清空网格缩略图缓存" Style="{StaticResource P.Set.Danger}"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Click="OnClearCache" />
+                        </Grid>
                     </StackPanel>
                 </Border>
 
                 <!-- 统计 -->
-                <TextBlock Text="统计" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
-                <Border Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
-                        BorderThickness="1" CornerRadius="9" Padding="14,12" Margin="0,0,0,14">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="排行门槛" Style="{StaticResource T.Label}" VerticalAlignment="Center"
-                                   Margin="0,0,12,0" />
-                        <StackPanel x:Name="ThresholdBar" Orientation="Horizontal" />
+                <Border Style="{StaticResource P.Set.Card}">
+                    <StackPanel>
+                        <TextBlock Text="统计" Style="{StaticResource T.CardTitle}" />
+                        <Grid Style="{StaticResource P.Set.Row}" Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="排行门槛" Style="{StaticResource P.Set.Label}" />
+                            <Border Grid.Column="1" Style="{StaticResource Seg.Track}"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <StackPanel x:Name="ThresholdBar" Orientation="Horizontal" />
+                            </Border>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
                 <!-- 处理 · RTX VSR -->
-                <TextBlock Text="处理 · RTX VSR" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
-                <Border Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
-                        BorderThickness="1" CornerRadius="9" Padding="14,12" Margin="0,0,0,14">
+                <Border Style="{StaticResource P.Set.Card}">
                     <StackPanel>
-                        <TextBlock x:Name="GpuText" FontSize="12.5" TextWrapping="Wrap" />
-                        <Grid Margin="0,12,0,0">
+                        <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Border Background="{StaticResource B.AccentSoft}" CornerRadius="12" Padding="10,4">
-                                <TextBlock Text="HIGHBITRATE" FontSize="11.5" Foreground="{StaticResource B.Accent}" />
-                            </Border>
-                            <Border Grid.Column="1" Background="{StaticResource B.AccentSoft}" CornerRadius="12"
-                                    Padding="10,4" Margin="6,0,0,0">
-                                <TextBlock Text="ULTRA" FontSize="11.5" Foreground="{StaticResource B.Accent}" />
-                            </Border>
-                            <TextBlock Grid.Column="2" Text="已锁定" FontSize="11.5"
-                                       Foreground="{StaticResource B.Text3}"
-                                       VerticalAlignment="Center" Margin="10,0,0,0" />
+                            <TextBlock Text="处理 · RTX VSR" Style="{StaticResource T.CardTitle}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="GpuText" Grid.Column="1" Style="{StaticResource T.Sub}"
+                                       TextWrapping="Wrap" TextAlignment="Right" VerticalAlignment="Center"
+                                       Margin="12,0,0,0" />
                         </Grid>
-                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                            <TextBlock Text="默认放大倍数" Style="{StaticResource T.Label}"
-                                       VerticalAlignment="Center" Margin="0,0,12,0" />
-                            <StackPanel x:Name="ScaleBar" Orientation="Horizontal" />
+                        <StackPanel Margin="0,12,0,0">
+                            <Grid Style="{StaticResource P.Set.Row}">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            VerticalAlignment="Center">
+                                    <Border Style="{StaticResource Pill.Accent}">
+                                        <TextBlock Text="HIGHBITRATE" Style="{StaticResource P.Set.CapText}" />
+                                    </Border>
+                                    <Border Style="{StaticResource Pill.Accent}" Margin="6,0,0,0">
+                                        <TextBlock Text="ULTRA" Style="{StaticResource P.Set.CapText}" />
+                                    </Border>
+                                    <TextBlock Text="已锁定" Style="{StaticResource T.Sub}"
+                                               VerticalAlignment="Center" Margin="10,0,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid Style="{StaticResource P.Set.Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="默认放大倍数" Style="{StaticResource P.Set.Label}" />
+                                <Border Grid.Column="1" Style="{StaticResource Seg.Track}"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <StackPanel x:Name="ScaleBar" Orientation="Horizontal" />
+                                </Border>
+                            </Grid>
+                            <TextBlock Text="处理结果只在本次运行有效，不写库、不进 output 目录。"
+                                       Style="{StaticResource T.Sub}" TextWrapping="Wrap" Margin="0,8,0,0" />
                         </StackPanel>
-                        <TextBlock Text="处理结果只在本次运行有效，不写库、不进 output 目录。"
-                                   FontSize="11.5" Foreground="{StaticResource B.Text3}"
-                                   Margin="0,10,0,0" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>
             </StackPanel>
         </ScrollViewer>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button Content="关闭" Style="{StaticResource Btn.Primary}" Width="96" Height="34"
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="关闭" Style="{StaticResource Btn.Primary}" Width="96" Height="32"
                     Click="OnClose" />
         </StackPanel>
     </Grid>

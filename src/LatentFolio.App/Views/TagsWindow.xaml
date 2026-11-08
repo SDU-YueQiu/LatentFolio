@@ -3,42 +3,169 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="标签体系" Height="760" Width="1080" MinWidth="900" MinHeight="560"
         WindowStartupLocation="CenterOwner" Background="{StaticResource B.Window}"
-        FontFamily="{StaticResource F.UI}">
-    <Grid Margin="18">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+        UseLayoutRounding="True" FontFamily="{StaticResource F.UI}">
+    <Window.Resources>
+        <!-- 页面标题：候选形态直接显示「候选」，不额外加一行字 -->
+        <Style x:Key="P.Tags.PageTitle" TargetType="TextBlock" BasedOn="{StaticResource T.Page}">
+            <Setter Property="Text" Value="标签" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedItem.Name, ElementName=CatList}" Value="候选">
+                    <Setter Property="Text" Value="候选" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
 
-        <Grid Grid.Row="0" Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="标签" Style="{StaticResource T.Title}" VerticalAlignment="Center" />
-            <TextBox x:Name="FilterBox" Grid.Column="1" Width="240" Height="32" Margin="16,0,0,0"
-                     HorizontalAlignment="Left" VerticalContentAlignment="Center" FontSize="12.5"
-                     TextChanged="OnFilter" AutomationProperties.Name="搜索标签" />
-            <TextBlock x:Name="CountText" Grid.Column="2" Style="{StaticResource T.Sub}"
-                       VerticalAlignment="Center" />
-        </Grid>
+        <!-- 胶囊搜索框里的输入：把默认的白色方底/描边全部去掉，只留文字 -->
+        <Style x:Key="P.Tags.SearchInput" TargetType="TextBox">
+            <Setter Property="FontFamily" Value="{StaticResource F.UI}" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource B.Text}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="CaretBrush" Value="{StaticResource B.Accent}" />
+            <Setter Property="SelectionBrush" Value="{StaticResource B.AccentSoft2}" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                      VerticalAlignment="Center"
+                                      HorizontalScrollBarVisibility="Hidden"
+                                      VerticalScrollBarVisibility="Hidden" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="176" />
-                <ColumnDefinition Width="12" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="12" />
-                <ColumnDefinition Width="286" />
-            </Grid.ColumnDefinitions>
+        <!-- 左栏分组行：沿用 RowItem 的选中底 + 左侧主色杆，只把行高压到 32 -->
+        <Style x:Key="P.Tags.CatRow" TargetType="ListBoxItem" BasedOn="{StaticResource RowItem}">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
 
-            <!-- 分类 -->
-            <Border Grid.Column="0" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
-                    CornerRadius="10" Background="{StaticResource B.Panel}" Padding="6">
-                <ListBox x:Name="CatList" Background="Transparent" BorderThickness="0"
-                         ItemContainerStyle="{StaticResource RowItem}"
+        <!-- 表格行：只有一条底部发丝线，不加圆角、不加斑马纹 -->
+        <Style x:Key="P.Tags.TableRow" TargetType="ListBoxItem">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="bd" Background="Transparent"
+                                BorderBrush="{StaticResource B.Hairline}" BorderThickness="0,0,0,1"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Hover}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.AccentSoft}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 页头动作：统一 30 高 -->
+        <Style x:Key="P.Tags.BtnPrimarySm" TargetType="Button" BasedOn="{StaticResource Btn.Primary}">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="12,0" />
+        </Style>
+
+        <Style x:Key="P.Tags.BtnOutlineSm" TargetType="Button" BasedOn="{StaticResource Btn.Outline}">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style x:Key="P.Tags.BtnGhostSm" TargetType="Button" BasedOn="{StaticResource Btn.Ghost}">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
+        </Style>
+
+        <!-- 行内动作：确认用条件钉配色，其余用安静的文字胶囊 -->
+        <Style x:Key="P.Tags.ChipAccent" TargetType="Button" BasedOn="{StaticResource Chip}">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="10,0" />
+        </Style>
+
+        <Style x:Key="P.Tags.ChipQuiet" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="Transparent" CornerRadius="999"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Hover}" />
+                                <Setter Property="Foreground" Value="{StaticResource B.Text}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Pressed}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ================= 左栏：搜索 + 分组 ================= -->
+        <Border Grid.Column="0" Background="{StaticResource B.Panel}"
+                BorderBrush="{StaticResource B.Border}" BorderThickness="0,0,1,0">
+            <Grid Margin="12,14,12,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- 胶囊搜索框 -->
+                <Border Grid.Row="0" Height="30" Background="{StaticResource B.Inset}"
+                        CornerRadius="999" Padding="10,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="&#xE721;" FontFamily="{StaticResource F.Icon}" FontSize="12"
+                                   Foreground="{StaticResource B.Text3}" VerticalAlignment="Center"
+                                   Margin="0,0,6,0" IsHitTestVisible="False" />
+                        <TextBox x:Name="FilterBox" Grid.Column="1" Style="{StaticResource P.Tags.SearchInput}"
+                                 AutomationProperties.Name="搜索标签" TextChanged="OnFilter" />
+                    </Grid>
+                </Border>
+
+                <ListBox x:Name="CatList" Grid.Row="1" Margin="0,10,0,0" Background="Transparent"
+                         BorderThickness="0" Padding="0" FocusVisualStyle="{x:Null}"
+                         ItemContainerStyle="{StaticResource P.Tags.CatRow}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
                          SelectionChanged="OnCategoryChanged">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
@@ -47,155 +174,228 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Name}" FontSize="12.5" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Name}" FontSize="12.5" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
                                 <TextBlock Grid.Column="1" Text="{Binding CountText}" Style="{StaticResource T.Sub}"
-                                           VerticalAlignment="Center" />
+                                           VerticalAlignment="Center" Margin="8,0,0,0" />
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-            </Border>
+            </Grid>
+        </Border>
 
-            <!-- 列表 -->
-            <Border Grid.Column="2" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
-                    CornerRadius="10" Background="{StaticResource B.Panel}">
-                <Grid>
+        <!-- ================= 右栏：标题 / 表格 / 统计 ================= -->
+        <Grid Grid.Column="1" Margin="20,16,20,12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- 标题区 -->
+            <Grid Grid.Row="0" Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource P.Tags.PageTitle}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding SelectedItem.CountText, ElementName=CatList}"
+                               Style="{StaticResource T.Sub}" VerticalAlignment="Bottom" Margin="10,0,0,4" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="重新识别全库" Style="{StaticResource P.Tags.BtnOutlineSm}"
+                            Click="OnRetag" />
+                    <Button Content="导出词表 CSV" Style="{StaticResource P.Tags.BtnGhostSm}"
+                            Margin="6,0,0,0" Click="OnExport" />
+                    <StackPanel x:Name="BatchBar" Orientation="Horizontal" Margin="12,0,0,0"
+                                Visibility="Collapsed">
+                        <Button x:Name="BatchIgnoreBtn" Content="忽略选中"
+                                Style="{StaticResource P.Tags.BtnOutlineSm}" Click="OnBatchIgnore" />
+                        <Button x:Name="BatchConfirmBtn" Content="确认选中"
+                                Style="{StaticResource P.Tags.BtnPrimarySm}" Margin="6,0,0,0"
+                                Click="OnBatchConfirm" />
+                    </StackPanel>
+                    <Button Content="保存" Style="{StaticResource P.Tags.BtnPrimarySm}" Margin="12,0,0,0"
+                            Click="OnSavePerson"
+                            Visibility="{Binding Visibility, ElementName=PersonPane}" />
+                </StackPanel>
+            </Grid>
+
+            <!-- 表格 + 人物详情 -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- 表头 -->
-                    <Grid Grid.Row="0" Margin="12,10,12,6">
+                    <!-- 表头：只给灰字和一条 HLine -->
+                    <Grid Grid.Row="0" Height="30" Margin="10,0,20,0">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="2.1*" />
-                            <ColumnDefinition Width="76" />
-                            <ColumnDefinition Width="70" />
-                            <ColumnDefinition Width="1.2*" />
-                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="64" />
+                            <ColumnDefinition Width="68" />
+                            <ColumnDefinition Width="92" />
+                            <ColumnDefinition Width="104" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="标签" Style="{StaticResource T.Label}" />
-                        <TextBlock Grid.Column="1" Text="类型" Style="{StaticResource T.Label}" />
-                        <TextBlock Grid.Column="2" Text="命中" Style="{StaticResource T.Label}" />
-                        <TextBlock Grid.Column="3" Text="来源" Style="{StaticResource T.Label}" />
+                        <TextBlock Text="标签" Style="{StaticResource T.Sub}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="类型" Style="{StaticResource T.Sub}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="命中" Style="{StaticResource T.Sub}"
+                                   TextAlignment="Right" Margin="0,0,12,0" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="3" Text="来源" Style="{StaticResource T.Sub}"
+                                   VerticalAlignment="Center" />
                     </Grid>
-                    <Border Grid.Row="0" Style="{StaticResource HLine}" Margin="12,34,12,0" />
+                    <Border Grid.Row="0" Style="{StaticResource HLine}" VerticalAlignment="Bottom" />
 
-                    <ListBox x:Name="RowList" Grid.Row="1" Background="Transparent" BorderThickness="0"
-                             Margin="4,4,4,4" ItemContainerStyle="{StaticResource RowItem}"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             VirtualizingPanel.IsVirtualizing="True"
-                             SelectionMode="Extended"
-                             SelectionChanged="OnRowSelected"
-                             MouseDoubleClick="OnRowDoubleClick">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="0,1" AutomationProperties.Name="{Binding Key}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="2.1*" />
-                                        <ColumnDefinition Width="76" />
-                                        <ColumnDefinition Width="70" />
-                                        <ColumnDefinition Width="1.2*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Title}" FontSize="12.5"
-                                                   TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding Sub}" FontSize="10.5"
+                    <Grid Grid.Row="1">
+                        <ListBox x:Name="RowList" Background="Transparent" BorderThickness="0"
+                                 Padding="0" FocusVisualStyle="{x:Null}"
+                                 ItemContainerStyle="{StaticResource P.Tags.TableRow}"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 SelectionMode="Extended"
+                                 SelectionChanged="OnRowSelected"
+                                 MouseDoubleClick="OnRowDoubleClick">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid AutomationProperties.Name="{Binding Key}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="64" />
+                                            <ColumnDefinition Width="68" />
+                                            <ColumnDefinition Width="92" />
+                                            <ColumnDefinition Width="104" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- 主名 + 次要信息同一行，两行会给 34 的行高添乱 -->
+                                        <TextBlock FontSize="12.5" TextTrimming="CharacterEllipsis"
+                                                   ClipToBounds="True" VerticalAlignment="Center">
+                                            <Run Text="{Binding Title}" />
+                                            <Run Text="{Binding Sub, StringFormat='  {0}'}" FontSize="11"
+                                                 Foreground="{StaticResource B.Text3}" />
+                                        </TextBlock>
+
+                                        <TextBlock Grid.Column="1" Text="{Binding Type}" FontSize="11.5"
                                                    Foreground="{StaticResource B.Text3}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   Visibility="{Binding Sub, Converter={StaticResource NE2V}}" />
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="{Binding Type}" FontSize="11.5"
-                                               Foreground="{StaticResource B.Text3}" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="2" Text="{Binding HitsText}" FontSize="11.5"
-                                               VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="3" Text="{Binding Source}" FontSize="11"
-                                               Foreground="{StaticResource B.Text3}" VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <StackPanel Grid.Column="4" Orientation="Horizontal"
-                                                Visibility="{Binding IsCandidate, Converter={StaticResource B2V}}">
-                                        <Button Content="确认" Style="{StaticResource Btn.Outline}" FontSize="11"
-                                                Height="24" Padding="8,0" Click="OnConfirmCandidate" />
-                                        <Button Content="忽略" Style="{StaticResource Btn.Ghost}" FontSize="11"
-                                                Height="24" Padding="8,0" Margin="4,0,0,0"
-                                                Click="OnIgnoreCandidate" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="4" Orientation="Horizontal"
-                                                Visibility="{Binding IsPerson, Converter={StaticResource B2V}}">
-                                        <Button Content="编辑" Style="{StaticResource Btn.Ghost}"
-                                                FontSize="11" Height="24" Padding="8,0"
-                                                Click="OnEditPerson" />
-                                        <Button Content="合并" Style="{StaticResource Btn.Ghost}"
-                                                FontSize="11" Height="24" Padding="8,0" Margin="2,0,0,0"
-                                                ToolTip="同一个人被认成多个 tag 时，合并到其中一个"
-                                                Click="OnMergePerson" />
-                                    </StackPanel>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+
+                                        <TextBlock Grid.Column="2" Text="{Binding HitsText}"
+                                                   Style="{StaticResource T.Value}" TextAlignment="Right"
+                                                   Margin="0,0,12,0" VerticalAlignment="Center" />
+
+                                        <TextBlock Grid.Column="3" Text="{Binding Source}" FontSize="11"
+                                                   Foreground="{StaticResource B.Text3}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+
+                                        <StackPanel Grid.Column="4" Orientation="Horizontal"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                    Visibility="{Binding IsCandidate, Converter={StaticResource B2V}}">
+                                            <Button Content="确认" Style="{StaticResource P.Tags.ChipAccent}"
+                                                    Click="OnConfirmCandidate" />
+                                            <Button Content="忽略" Style="{StaticResource P.Tags.ChipQuiet}"
+                                                    Margin="6,0,0,0" Click="OnIgnoreCandidate" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="4" Orientation="Horizontal"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                    Visibility="{Binding IsPerson, Converter={StaticResource B2V}}">
+                                            <Button Content="编辑" Style="{StaticResource P.Tags.ChipQuiet}"
+                                                    Click="OnEditPerson" />
+                                            <Button Content="合并" Style="{StaticResource P.Tags.ChipQuiet}"
+                                                    Margin="6,0,0,0"
+                                                    ToolTip="同一个人被认成多个 tag 时，合并到其中一个"
+                                                    Click="OnMergePerson" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <TextBlock Text="暂无标签" Style="{StaticResource T.Empty}"
+                                   IsHitTestVisible="False"
+                                   Visibility="{Binding HasItems, ElementName=RowList,
+                                                Converter={StaticResource InvB2V}}" />
+                    </Grid>
                 </Grid>
-            </Border>
 
-            <!-- 人物条目 -->
-            <Border x:Name="PersonPane" Grid.Column="4" BorderBrush="{StaticResource B.Border}"
-                    BorderThickness="1" CornerRadius="10" Background="{StaticResource B.Panel}" Padding="12"
-                    Visibility="Collapsed">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
-                        <TextBlock x:Name="PersonTagText" FontSize="12" FontWeight="SemiBold"
-                                   TextWrapping="Wrap" Foreground="{StaticResource B.Text2}" />
-                        <Border Height="96" Margin="0,10,0,0" Background="{StaticResource B.Tile}"
-                                CornerRadius="8" ClipToBounds="True">
-                            <Image x:Name="PersonAvatar" Stretch="UniformToFill" />
-                        </Border>
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Content="用当前图作封面" Style="{StaticResource Btn.Outline}" Height="26"
-                                    FontSize="11" Padding="8,0" Click="OnAvatarFromCurrent" />
-                            <Button Content="恢复默认" Style="{StaticResource Btn.Ghost}" Height="26"
-                                    FontSize="11" Padding="8,0" Margin="6,0,0,0" Click="OnAvatarReset" />
+                <!-- 人物详情：只有选中人物行时才出现 -->
+                <Border x:Name="PersonPane" Grid.Column="1" Width="260" Margin="12,0,0,0"
+                        Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+                        BorderThickness="1,0,0,0" Visibility="Collapsed">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="14,14,8,14">
+                            <TextBlock x:Name="PersonTagText" FontSize="12.5" FontWeight="SemiBold"
+                                       TextWrapping="Wrap" Foreground="{StaticResource B.Text2}" />
+
+                            <Border Height="96" Margin="0,10,0,0" Background="{StaticResource B.Tile}"
+                                    CornerRadius="8" ClipToBounds="True">
+                                <Image x:Name="PersonAvatar" Stretch="UniformToFill" />
+                            </Border>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="用当前图作封面" Style="{StaticResource P.Tags.BtnOutlineSm}"
+                                        Height="26" FontSize="11" Padding="8,0" Click="OnAvatarFromCurrent" />
+                                <Button Content="恢复默认" Style="{StaticResource P.Tags.BtnGhostSm}"
+                                        Height="26" FontSize="11" Padding="8,0" Margin="6,0,0,0"
+                                        Click="OnAvatarReset" />
+                            </StackPanel>
+
+                            <TextBlock Text="中文名" Style="{StaticResource T.Label}" Margin="0,12,0,4" />
+                            <TextBox x:Name="NameZhBox" Height="30" FontSize="12.5"
+                                     VerticalContentAlignment="Center" />
+                            <TextBlock Text="英文名" Style="{StaticResource T.Label}" Margin="0,8,0,4" />
+                            <TextBox x:Name="NameEnBox" Height="30" FontSize="12.5"
+                                     VerticalContentAlignment="Center" />
+                            <TextBlock Text="作品" Style="{StaticResource T.Label}" Margin="0,8,0,4" />
+                            <TextBox x:Name="WorkBox" Height="30" FontSize="12.5"
+                                     VerticalContentAlignment="Center" />
+                            <TextBlock Text="简介" Style="{StaticResource T.Label}" Margin="0,8,0,4" />
+                            <TextBox x:Name="BioBox" Height="72" FontSize="12.5" AcceptsReturn="True"
+                                     TextWrapping="Wrap" VerticalContentAlignment="Top" />
+
+                            <TextBlock Text="别名" Style="{StaticResource T.Label}" Margin="0,10,0,4" />
+                            <TextBlock x:Name="AliasText" Style="{StaticResource T.Sub}"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
 
-                        <TextBlock Text="中文名" Style="{StaticResource T.Label}" Margin="0,12,0,4" />
-                        <TextBox x:Name="NameZhBox" Height="30" FontSize="12.5" VerticalContentAlignment="Center" />
-                        <TextBlock Text="英文名" Style="{StaticResource T.Label}" Margin="0,8,0,4" />
-                        <TextBox x:Name="NameEnBox" Height="30" FontSize="12.5" VerticalContentAlignment="Center" />
-                        <TextBlock Text="作品" Style="{StaticResource T.Label}" Margin="0,8,0,4" />
-                        <TextBox x:Name="WorkBox" Height="30" FontSize="12.5" VerticalContentAlignment="Center" />
-                        <TextBlock Text="简介" Style="{StaticResource T.Label}" Margin="0,8,0,4" />
-                        <TextBox x:Name="BioBox" Height="72" FontSize="12.5" AcceptsReturn="True"
-                                 TextWrapping="Wrap" VerticalContentAlignment="Top" />
-
-                        <TextBlock Text="别名" Style="{StaticResource T.Label}" Margin="0,10,0,4" />
-                        <TextBlock x:Name="AliasText" FontSize="11.5" TextWrapping="Wrap"
-                                   Foreground="{StaticResource B.Text3}" />
-
-                        <Button Content="保存" Style="{StaticResource Btn.Primary}" Height="32" Margin="0,12,0,0"
-                                Click="OnSavePerson" />
+            <!-- 底部统计：HLine 与内容分开 -->
+            <Grid Grid.Row="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Border Grid.Row="0" Style="{StaticResource HLine}" />
+                <Grid Grid.Row="1" Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="StatusText" Style="{StaticResource T.Sub}"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               Margin="0,0,16,0" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <TextBlock x:Name="CountText" Style="{StaticResource T.Sub}"
+                                   VerticalAlignment="Center" Margin="0,0,14,0" />
+                        <Button Content="关闭" Style="{StaticResource P.Tags.BtnGhostSm}"
+                                Click="OnClose" />
                     </StackPanel>
-                </ScrollViewer>
-            </Border>
-        </Grid>
-
-        <Grid Grid.Row="2" Margin="0,12,0,0">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                <Button Content="重新识别全库" Style="{StaticResource Btn.Outline}" Height="32" Padding="12,0"
-                        Click="OnRetag" />
-                <Button Content="导出词表 CSV" Style="{StaticResource Btn.Ghost}" Height="32" Padding="12,0"
-                        Margin="8,0,0,0" Click="OnExport" />
-                <StackPanel x:Name="BatchBar" Orientation="Horizontal" Margin="16,0,0,0"
-                            Visibility="Collapsed">
-                    <Button x:Name="BatchIgnoreBtn" Content="忽略选中" Style="{StaticResource Btn.Outline}"
-                            Height="32" Padding="12,0" Click="OnBatchIgnore" />
-                    <Button x:Name="BatchConfirmBtn" Content="确认选中" Style="{StaticResource Btn.Outline}"
-                            Height="32" Padding="12,0" Margin="8,0,0,0" Click="OnBatchConfirm" />
-                </StackPanel>
-                <TextBlock x:Name="StatusText" Style="{StaticResource T.Sub}" FontSize="11.5"
-                           VerticalAlignment="Center" Margin="16,0,0,0" />
-            </StackPanel>
-            <Button Content="关闭" Style="{StaticResource Btn.Primary}" Width="96" Height="32"
-                    HorizontalAlignment="Right" Click="OnClose" />
+                </Grid>
+            </Grid>
         </Grid>
     </Grid>
 </Window>
