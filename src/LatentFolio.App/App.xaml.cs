@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Threading;
@@ -34,7 +35,8 @@ public partial class App : Application
         bool diagnostic = cli0.Any(a => a is "--self-test" or "--parse-one" or "--test-vsr"
                                           or "--bench" or "--show-stats" or "--show-editor"
                                           or "--show-people" or "--show-tags" or "--show-candidates"
-                                          or "--show-filter" or "--show-settings");
+                                          or "--show-filter" or "--show-settings" or "--mem-report"
+                                          or "--bench-decode");
         if (!diagnostic)
         {
             _instanceMutex = new Mutex(true, @"Local\LatentFolio.SingleInstance", out bool isNew);
@@ -83,6 +85,14 @@ public partial class App : Application
         if (bi >= 0)
         {
             RunBench(bi + 1 < cli.Length && int.TryParse(cli[bi + 1], out var n) ? n : 50000);
+            Shutdown(0);
+            return;
+        }
+
+        int dbi = Array.IndexOf(cli, "--bench-decode");
+        if (dbi >= 0)
+        {
+            RunDecodeBench(dbi + 1 < cli.Length && int.TryParse(cli[dbi + 1], out var n2) ? n2 : 300);
             Shutdown(0);
             return;
         }
@@ -282,6 +292,111 @@ public partial class App : Application
 
         System.IO.File.WriteAllText(
             System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lf-bench.txt"), sb.ToString());
+    }
+
+    /// <summary>
+    /// 开发诊断：--bench-decode [n] 量「从磁盘缓存解码到某个长边」要多久。
+    /// 这个数字决定了解码缓存值不值得占几百 MB —— 照片应用是不缓存的。
+    /// </summary>
+    private static void RunDecodeBench(int count)
+    {
+        var sb = new StringBuilder();
+        try
+        {
+            var root = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "LatentFolio", "thumbs", "grid");
+            var files = System.IO.Directory.Exists(root)
+                ? System.IO.Directory.GetFiles(root, "*.webp", System.IO.SearchOption.AllDirectories)
+                : [];
+            sb.AppendLine($"cache files: {files.Length}   采样: {Math.Min(count, files.Length)}");
+            if (files.Length == 0) { Write(sb); return; }
+
+            var rnd = new Random(7);
+            var pick = files.OrderBy(_ => rnd.Next()).Take(Math.Min(count, files.Length)).ToArray();
+            var blobs = new byte[pick.Length][];
+            for (int i = 0; i < pick.Length; i++) blobs[i] = System.IO.File.ReadAllBytes(pick[i]);
+            long diskBytes = blobs.Sum(b => (long)b.Length);
+            sb.AppendLine($"读入 {diskBytes / 1024 / 1024} MB，平均 {diskBytes / blobs.Length / 1024} KB/张");
+
+            foreach (var side in new[] { 0, 416, 608, 704 })
+            {
+                // 预热
+                for (int i = 0; i < Math.Min(8, blobs.Length); i++)
+                    _ = LatentFolio.App.Services.ThumbService.DecodeScaled(blobs[i], side == 0 ? 100000 : side);
+
+                var ms = new double[blobs.Length];
+                long px = 0;
+                var sw = new System.Diagnostics.Stopwatch();
+                for (int i = 0; i < blobs.Length; i++)
+                {
+                    sw.Restart();
+                    var bmp = LatentFolio.App.Services.ThumbService.DecodeScaled(blobs[i], side == 0 ? 100000 : side);
+                    sw.Stop();
+                    ms[i] = sw.Elapsed.TotalMilliseconds;
+                    if (bmp is not null) px += (long)bmp.PixelWidth * bmp.PixelHeight;
+                }
+                Array.Sort(ms);
+                double Avg() => ms.Average();
+                double P(double q) => ms[Math.Min(ms.Length - 1, (int)(ms.Length * q))];
+                sb.AppendLine(side == 0
+                    ? $"全长解码       avg={Avg(),6:F2} ms  p50={P(0.5),6:F2}  p95={P(0.95),6:F2}  max={ms[^1],7:F2}   平均 {px / blobs.Length / 1000} kpx"
+                    : $"长边 {side,3} 解码  avg={Avg(),6:F2} ms  p50={P(0.5),6:F2}  p95={P(0.95),6:F2}  max={ms[^1],7:F2}   平均 {px / blobs.Length / 1000} kpx");
+            }
+
+            // ---- 只量「缩放」本身：同一批位图，不同采样器 ----
+            int sample = Math.Min(60, blobs.Length);
+            var srcs = new SkiaSharp.SKBitmap[sample];
+            for (int i = 0; i < sample; i++) srcs[i] = SkiaSharp.SKBitmap.Decode(blobs[i])!;
+            try
+            {
+                sb.AppendLine();
+                sb.AppendLine("缩放-only（不含量解码）  样本 " + sample);
+                var samplers = new (string Name, SkiaSharp.SKSamplingOptions Opt)[]
+                {
+                    ("CatmullRom", new(new SkiaSharp.SKCubicResampler(0f, 0.5f))),
+                    ("Mitchell  ", new(new SkiaSharp.SKCubicResampler(1f / 3f, 1f / 3f))),
+                    ("Linear    ", new(SkiaSharp.SKFilterMode.Linear)),
+                    ("Nearest   ", new(SkiaSharp.SKFilterMode.Nearest)),
+                };
+                foreach (var side in new[] { 608, 416 })
+                {
+                    foreach (var (name, opt) in samplers)
+                    {
+                        var ms = new double[sample];
+                        var sw2 = new System.Diagnostics.Stopwatch();
+                        for (int i = 0; i < sample; i++)
+                        {
+                            var s = srcs[i];
+                            int ls = Math.Max(s.Width, s.Height);
+                            double k = (double)side / ls;
+                            int dw = Math.Max(1, (int)Math.Round(s.Width * k));
+                            int dh = Math.Max(1, (int)Math.Round(s.Height * k));
+                            var info = new SkiaSharp.SKImageInfo(dw, dh, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Premul);
+                            sw2.Restart();
+                            var r = s.Resize(info, opt);
+                            sw2.Stop();
+                            ms[i] = sw2.Elapsed.TotalMilliseconds;
+                            r?.Dispose();
+                        }
+                        Array.Sort(ms);
+                        sb.AppendLine($"  长边 {side}  {name}  avg={ms.Average(),6:F2} ms  p50={ms[ms.Length / 2],6:F2}  max={ms[^1],7:F2}");
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var s in srcs) s?.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            sb.AppendLine("EXCEPTION " + ex);
+        }
+        Write(sb);
+
+        static void Write(StringBuilder sb) => System.IO.File.WriteAllText(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lf-decode.txt"), sb.ToString());
     }
 
     private void OnDispatcherException(object sender, DispatcherUnhandledExceptionEventArgs e)

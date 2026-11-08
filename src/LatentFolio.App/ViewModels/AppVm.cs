@@ -1772,6 +1772,39 @@ public sealed partial class AppVm : ObservableObject
 
     public List<(long Id, string Name, string Json)> LoadTemplates() => _store.LoadTemplates();
 
+    /// <summary>诊断：把内存构成打成一段文本。--mem-report 写进 %TEMP%\lf-mem.txt。</summary>
+    public string BuildMemReport()
+    {
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+
+        var p = System.Diagnostics.Process.GetCurrentProcess();
+        p.Refresh();
+        var gi = GC.GetGCMemoryInfo();
+        var (thumbCount, thumbBytes) = _thumbs.Stats;
+
+        long chars = 0;
+        foreach (var it in AllImages)
+            chars += it.Path.Length + it.Folder.Length + it.FileName.Length + it.Prompt.Length
+                   + it.Negative.Length + it.SearchText.Length + it.Note.Length;
+
+        var sb = new System.Text.StringBuilder();
+        void L(string s) => sb.AppendLine(s);
+
+        L($"LatentFolio memory report   {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        L("");
+        L($"[process]  WS={p.WorkingSet64 >> 20} MB   private={p.PrivateMemorySize64 >> 20} MB   peakWS={p.PeakWorkingSet64 >> 20} MB   handles={p.HandleCount}   threads={p.Threads.Count}   modules={p.Modules.Count}");
+        L($"[gc]       live={GC.GetTotalMemory(false) >> 20} MB   heapSize={gi.HeapSizeBytes >> 20} MB   committed={gi.TotalCommittedBytes >> 20} MB   fragmented={gi.FragmentedBytes >> 20} MB");
+        L($"[gc.cfg]   server={System.Runtime.GCSettings.IsServerGC}   latency={System.Runtime.GCSettings.LatencyMode}   collect0={GC.CollectionCount(0)} collect1={GC.CollectionCount(1)} collect2={GC.CollectionCount(2)}");
+        L($"[thumbs]   cached={thumbCount}   bytes={thumbBytes >> 20} MB   budget={Services.ThumbService.MemoryBudgetMb} MB");
+        L($"[vsr]      capable={_svc.Vsr.Capable}   started={_svc.Vsr.Started}   cachedFrames={_svc.Vsr.CachedCount}");
+        L($"[render]   tier={System.Windows.Media.RenderCapability.Tier >> 16}   swCaps={System.Windows.Media.RenderCapability.IsPixelShaderVersionSupported(2, 0)}");
+        L($"[model]    images={AllImages.Count}   view={Items.Count}   people={People.Count}   columns={Columns.Count}   filmstrip={Filmstrip.Count}   selection={Selection.Count}");
+        L($"[strings]  {chars:N0} chars  ≈ {chars * 2 >> 20} MB");
+        return sb.ToString();
+    }
+
     /// <summary>胶片条内容：以当前这张为中心取前后各 40 张（多了靠横向滚）。</summary>
     private void RebuildFilmstrip()
     {

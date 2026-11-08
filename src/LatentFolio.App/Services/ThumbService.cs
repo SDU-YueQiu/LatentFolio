@@ -21,8 +21,13 @@ public sealed class ThumbService : IDisposable
     private readonly object _lock = new();
     private long _bytes;
 
-    /// <summary>解码后的位图很占地方，按字节数封顶，而不是按条数。</summary>
-    private const long MemoryBudget = 288L * 1024 * 1024;
+    /// <summary>
+    /// 解码后的位图很占地方，按字节数封顶，而不是按条数。
+    /// 实测：一屏约 40 格 × ~1 MB，解码一次 4~6 ms（缩放省掉之后），
+    /// 所以没必要为了"回滚不重算"占几百 MB。128 MB ≈ 三屏的历史。
+    /// </summary>
+    public const long MemoryBudgetMb = 128;
+    private const long MemoryBudget = MemoryBudgetMb * 1024 * 1024;
 
     private sealed record CacheEntry((long Id, int Bucket) Key, BitmapSource Bitmap, long Bytes);
 
@@ -118,13 +123,17 @@ public sealed class ThumbService : IDisposable
     }
 
     /// <summary>解码到指定长边。缩在图库缓存里的时候本来就有损，再让 WPF 缩一次只会更糊。</summary>
-    private static BitmapSource? DecodeScaled(byte[] data, int maxSide)
+    public static BitmapSource? DecodeScaled(byte[] data, int maxSide)
     {
         try
         {
             using var sk = SKBitmap.Decode(data);
             if (sk is null) return null;
-            if (Math.Max(sk.Width, sk.Height) <= maxSide) return ToSource(sk);
+            if (maxSide <= 0) return ToSource(sk);
+            int ls = Math.Max(sk.Width, sk.Height);
+            // 只差几个像素就别重采样了：WPF 按格子大小画的时候本来就会缩，
+            // 而一次 CatmullRom 要 12 ms（实测），比解码本身还贵三倍。
+            if (ls <= maxSide * 1.08) return ToSource(sk);
             using var small = Thumbnailer.Fit(sk, maxSide);
             return ToSource(small);
         }

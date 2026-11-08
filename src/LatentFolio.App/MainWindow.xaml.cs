@@ -186,6 +186,17 @@ public partial class MainWindow : Window
             Close();
             return;
         }
+        if (args.Contains("--mem-report"))
+        {
+            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            var outPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lf-mem.txt");
+            System.IO.File.WriteAllText(outPath, Vm.BuildMemReport());
+            // 诊断挂起：设了 LF_HOLD_MS 就多留一会儿，好让外面的 VMMap 类工具挂上来
+            if (int.TryParse(Environment.GetEnvironmentVariable("LF_HOLD_MS"), out var hold) && hold > 0)
+                await Task.Delay(hold);
+            Close();
+            return;
+        }
         if (args.Contains("--show-tags"))
         {
             var win = new TagsWindow(Vm) { Owner = this };
