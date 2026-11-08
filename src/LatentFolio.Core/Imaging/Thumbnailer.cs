@@ -7,13 +7,13 @@ public static class Thumbnailer
 {
     /// <summary>
     /// 网格缩略图长边。格子最大 330 DIP，125% 缩放下要 412 物理像素才够，
-    /// 所以给到 448 —— 之前是 320，放到最大档会糊。
+    /// 再留一点余量取 480 —— 320 那版放到最大档会糊。
     /// </summary>
-    public const int GridSize = 448;
+    public const int GridSize = 480;
 
     public const int ArchiveSize = 256;
     public const int Quality = 70;
-    public const int GridQuality = 78;
+    public const int GridQuality = 86;
 
     public sealed record Result(byte[]? Webp, int Width, int Height, long DHash, bool Ok, string? Error);
 
@@ -96,7 +96,8 @@ public static class Thumbnailer
         if (dw == sw && dh == sh) return src.Copy();
 
         var info = new SKImageInfo(dw, dh, SKColorType.Bgra8888, SKAlphaType.Premul);
-        var sampling = new SKSamplingOptions(SKCubicResampler.Mitchell);
+        // CatmullRom 比 Mitchell 保边一点：缩略图是给眼睛看的小图，边缘软了就是「糊」
+        var sampling = new SKSamplingOptions(SKCubicResampler.CatmullRom);
         var resized = src.Resize(info, sampling);
         return resized ?? src.Copy();
     }

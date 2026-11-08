@@ -24,7 +24,6 @@ public partial class SettingsWindow : Window
     private void Refresh()
     {
         RootText.Text = _vm.LibraryRoot;
-        WatchBox.IsChecked = _vm.WatchEnabled;
 
         var (bytes, files) = App.Services.Thumbs.Stat();
         GridCacheText.Text = $"{bytes / 1024.0 / 1024.0:F0} MB · {files:N0} 张";
@@ -41,9 +40,11 @@ public partial class SettingsWindow : Window
         ArchiveBox.IsChecked = App.Services.Store.GetSetting("archive_thumbs") != "0";
         DedupeBox.IsChecked = App.Services.Store.GetSetting("dedupe") != "0";
 
-        GpuText.Text = _vm.VsrReady
+        GpuText.Text = _vm.VsrStarted
             ? "显卡可用 · RTX Video Super Resolution 已就绪"
-            : _vm.VsrStatus.Length == 0 ? "检测中…" : "不可用：" + _vm.VsrStatus;
+            : _vm.VsrReady
+                ? "显卡可用 · RTX VSR 待命（第一次点右键 VSR 时才加载，省 3 秒和几百 MB）"
+                : _vm.VsrStatus.Length == 0 ? "检测中…" : "不可用：" + _vm.VsrStatus;
 
         BuildChips();
     }
@@ -113,9 +114,6 @@ public partial class SettingsWindow : Window
         await _vm.ScanCommand.ExecuteAsync(null);
         Refresh();
     }
-
-    private void OnWatchChanged(object sender, RoutedEventArgs e)
-        => _vm.WatchEnabled = WatchBox.IsChecked == true;
 
     private void OnArchiveChanged(object sender, RoutedEventArgs e)
     {

@@ -45,6 +45,8 @@
     <SolidColorBrush x:Key="B.AccentSoft" Color="{StaticResource C.AccentSoft}" />
     <SolidColorBrush x:Key="B.Star" Color="{StaticResource C.Star}" />
     <SolidColorBrush x:Key="B.Danger" Color="{StaticResource C.Danger}" />
+    <!-- 窗口最外层那一圈描边 -->
+    <SolidColorBrush x:Key="B.Outline" Color="#FFC9CCD5" />
 
     <FontFamily x:Key="F.UI">Microsoft YaHei UI, Segoe UI, Microsoft Sans Serif</FontFamily>
     <FontFamily x:Key="F.Mono">Cascadia Mono, Consolas, Courier New</FontFamily>
@@ -268,8 +270,9 @@
         <Setter Property="Background" Value="White" />
         <Setter Property="BorderBrush" Value="{StaticResource B.BorderStrong}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Padding" Value="9,7" />
-        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Padding" Value="9,0" />
+        <!-- 不要再设 MinHeight：外面用 Height 限制的输入框会被顶大，然后上下各切掉一截 -->
+        <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="CaretBrush" Value="{StaticResource B.Text}" />
         <Setter Property="SelectionBrush" Value="{StaticResource B.Accent}" />
         <Setter Property="Template">
@@ -278,15 +281,22 @@
                     <Border x:Name="bd" Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="7">
-                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
-                                      Focusable="False"
+                            CornerRadius="7" SnapsToDevicePixels="True">
+                        <!-- Margin 用 Padding 顶替、内容宿主垂直居中：
+                             之前给宿主套 Padding 当 Margin，单行文字会被挤得只露上半截 -->
+                        <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                      Margin="{TemplateBinding Padding}"
+                                      VerticalAlignment="Center"
                                       HorizontalScrollBarVisibility="Hidden"
                                       VerticalScrollBarVisibility="Hidden" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource B.Accent}" />
+                            <Setter TargetName="bd" Property="Background" Value="White" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="bd" Property="Opacity" Value="0.6" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -404,6 +414,38 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- ================= 边栏折叠手柄（贴在栏的内边缘，垂直居中） ================= -->
+    <Style x:Key="Btn.Tab" TargetType="Button">
+        <Setter Property="Width" Value="16" />
+        <Setter Property="Height" Value="64" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource B.Text3}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bd" Background="#E8EAEE" CornerRadius="8" BorderThickness="1"
+                            BorderBrush="{StaticResource B.Border}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource B.AccentSoft}" />
+                            <Setter Property="Foreground" Value="{StaticResource B.Accent}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ================= 竖分隔线 ================= -->
+    <Style x:Key="VLine" TargetType="Border">
+        <Setter Property="Width" Value="1" />
+        <Setter Property="Background" Value="{StaticResource B.Border}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
     </Style>
 
     <!-- ================= 单行列表项（左栏） ================= -->

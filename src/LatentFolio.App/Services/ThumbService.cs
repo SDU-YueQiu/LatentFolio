@@ -19,9 +19,13 @@ public sealed class ThumbService : IDisposable
     private readonly Dictionary<long, LinkedListNode<CacheEntry>> _map = new();
     private readonly LinkedList<CacheEntry> _lru = new();
     private readonly object _lock = new();
-    private const int Capacity = 900;
+    private long _bytes;
 
-    private sealed record CacheEntry(long Id, BitmapSource Bitmap);
+    /// <summary>解码后的位图很占地方（448 缩略图约 1 MB 一张），按字节数封顶，
+    /// 而不是按条数——换过缩略图规格之后条数上限就完全不准了。</summary>
+    private const long MemoryBudget = 288L * 1024 * 1024;
+
+    private sealed record CacheEntry(long Id, BitmapSource Bitmap, long Bytes);
 
     public ThumbService(ThumbCache disk) => _disk = disk;
 
@@ -42,15 +46,23 @@ public sealed class ThumbService : IDisposable
     /// <summary>把渲染好的位图放回缓存（调用方自己解码时用）。</summary>
     public void Put(long id, BitmapSource bmp)
     {
+        long bytes = (long)bmp.PixelWidth * bmp.PixelHeight * 4;
         lock (_lock)
         {
-            if (_map.TryGetValue(id, out var old)) { _lru.Remove(old); _map.Remove(id); }
-            var node = _lru.AddFirst(new CacheEntry(id, bmp));
+            if (_map.TryGetValue(id, out var old))
+            {
+                _bytes -= old.Value.Bytes;
+                _lru.Remove(old);
+                _map.Remove(id);
+            }
+            var node = _lru.AddFirst(new CacheEntry(id, bmp, bytes));
             _map[id] = node;
-            while (_map.Count > Capacity && _lru.Last is { } last)
+            _bytes += bytes;
+            while (_bytes > MemoryBudget && _lru.Last is { } last)
             {
                 _lru.RemoveLast();
                 _map.Remove(last.Value.Id);
+                _bytes -= last.Value.Bytes;
             }
         }
     }
@@ -172,13 +184,18 @@ public sealed class ThumbService : IDisposable
     /// <summary>换图库时把内存里的解码结果全丢掉。</summary>
     public void ClearMemory()
     {
-        lock (_lock) { _map.Clear(); _lru.Clear(); }
+        lock (_lock) { _map.Clear(); _lru.Clear(); _bytes = 0; }
         _inflight.Clear();
+    }
+
+    public (int Count, long Bytes) Stats
+    {
+        get { lock (_lock) return (_map.Count, _bytes); }
     }
 
     public void Dispose()
     {
         _gate.Dispose();
-        lock (_lock) { _map.Clear(); _lru.Clear(); }
+        lock (_lock) { _map.Clear(); _lru.Clear(); _bytes = 0; }
     }
 }

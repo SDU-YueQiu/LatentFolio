@@ -70,7 +70,16 @@ public sealed partial class AppVm : ObservableObject
     public List<ImageItem> AllImages { get; private set; } = [];
     public Dictionary<long, ImageItem> ById { get; } = [];
     public Dictionary<long, ImageVm> VmById { get; } = [];
-    public ObservableCollection<ImageVm> Items { get; } = [];
+
+    /// <summary>网格数据源。用批量替换版：一次 Reset 代替几千次 Add 通知。</summary>
+    public RangeObservableCollection<ImageVm> Items { get; } = [];
+
+    // 性能观测：自检会把这几项打出来
+    public long LastRefreshMs;
+    public long LastReloadMs;
+    public long LastPeopleMs;
+    public long LastFoldersMs;
+    public long LastInitMs;
 
     public ObservableCollection<ColumnVm> Columns { get; } = [];
     public ObservableCollection<PersonVm> People { get; } = [];
@@ -132,11 +141,11 @@ public sealed partial class AppVm : ObservableObject
 
     private LibraryWatcher? _watcher;
 
+    /// <summary>目录监视永远开着 —— 它就是「自动导入新图」，没有关掉的理由。</summary>
     [ObservableProperty] private bool _watchEnabled = true;
 
     partial void OnWatchEnabledChanged(bool value)
     {
-        _svc.Store.SetSetting("watch", value ? "1" : "0");
         if (value) StartWatcher(); else _watcher?.Stop();
     }
 
@@ -164,7 +173,6 @@ public sealed partial class AppVm : ObservableObject
         {
             var selected = Selection.Select(x => x.Id).ToHashSet();
             ReloadFromDb();
-            foreach (var vm in VmById.Values) vm.RefreshTags(AvatarFor);
             _engine.Invalidate();
             _ = RunColumnCountsAsync();
             BuildPeople();
@@ -292,11 +300,14 @@ public sealed partial class AppVm : ObservableObject
 
     public async Task InitAsync()
     {
+        var swInit = Stopwatch.StartNew();
         LibraryRoot = _svc.LibraryRoot;
         AlwaysVsr = _store.GetSetting("always_vsr") == "1";
-        WatchEnabled = _store.GetSetting("watch") != "0";
+        WatchEnabled = true;
         PanelCollapsed = _store.GetSetting("panel_collapsed") == "1";
         LeftCollapsed = _store.GetSetting("left_collapsed") == "1";
+        if (double.TryParse(_store.GetSetting("left_width"), out var lw) && lw >= 180)
+            _leftExpanded = Math.Clamp(lw, 180, 460);
         StatsThreshold = int.TryParse(_store.GetSetting("stats_threshold"), out var st) ? st : 5;
         VsrScale = int.TryParse(_store.GetSetting("vsr_scale"), out var vs) && vs == 4 ? 4 : 2;
         _svc.Vsr.Scale = VsrScale;
@@ -310,11 +321,9 @@ public sealed partial class AppVm : ObservableObject
         LoadAliases();
         LoadPersonAvatars();
         LoadPersonMeta();
-        _ = _svc.Vsr.StartAsync().ContinueWith(_ =>
-        {
-            OnPropertyChanged(nameof(VsrReady));
-            OnPropertyChanged(nameof(VsrStatus));
-        }, TaskScheduler.FromCurrentSynchronizationContext());
+        // VSR 引擎按需加载：不点就不建 CUDA 上下文（省 3 秒和几百 MB）
+        OnPropertyChanged(nameof(VsrReady));
+        OnPropertyChanged(nameof(VsrStatus));
 
         ReloadFromDb();
         await EnsureSeed();
@@ -325,10 +334,12 @@ public sealed partial class AppVm : ObservableObject
         await ScanAsync(initial: true);
         RefreshGrid();
         StartWatcher();
+        LastInitMs = swInit.ElapsedMilliseconds;
     }
 
     public void ReloadFromDb()
     {
+        var sw = Stopwatch.StartNew();
         // 重建 VM 会把 Current / Selection 换成悬空引用（自动导入、重新识别都会走到这里），
         // 按 id 接回来，否则右栏和图边条会突然只剩一张。
         long curId = Current?.Id ?? 0;
@@ -354,6 +365,7 @@ public sealed partial class AppVm : ObservableObject
         if (curId != 0 && VmById.TryGetValue(curId, out var cv)) Current = cv;
 
         LoadColumns();
+        LastReloadMs = sw.ElapsedMilliseconds;
     }
 
     /// <summary>评分/批注的唯一落库点。界面走哪条路改的都到这里。</summary>
@@ -617,6 +629,7 @@ public sealed partial class AppVm : ObservableObject
 
     private void BuildPeople()
     {
+        var sw = Stopwatch.StartNew();
         var map = new Dictionary<string, (int Count, long BestId, int BestRating)>(StringComparer.Ordinal);
         CharCounts.Clear();
         ArtistCounts.Clear();
@@ -655,6 +668,8 @@ public sealed partial class AppVm : ObservableObject
         }
         PeoplePreview.Clear();
         foreach (var p in People.Take(10)) PeoplePreview.Add(p);
+        OnPropertyChanged(nameof(PeopleCountText));
+        LastPeopleMs = sw.ElapsedMilliseconds;
     }
 
     // ---------------- 人物头像自定义 ----------------
@@ -729,6 +744,7 @@ public sealed partial class AppVm : ObservableObject
 
     private void BuildFolders()
     {
+        var sw = Stopwatch.StartNew();
         // 先只统计「自己直接装着几张」，再往上滚加给父目录。
         // 根目录（""）不参与展示成总计，否则一行 4820 会误导。
         var exact = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -799,6 +815,7 @@ public sealed partial class AppVm : ObservableObject
         OnPropertyChanged(nameof(LibrarySummary));
         OnPropertyChanged(nameof(DeletedCount));
         OnPropertyChanged(nameof(FolderSortLabel));
+        LastFoldersMs = sw.ElapsedMilliseconds;
     }
 
     public string FolderSortLabel => FolderSort switch
@@ -868,6 +885,7 @@ public sealed partial class AppVm : ObservableObject
     {
         if (p is null) return;
         LeaveViewer();
+        ShowPeoplePane = false;
         View = ViewKind.Person;
         ViewPerson = p.Tag;
         Title = p.Display;
@@ -879,6 +897,7 @@ public sealed partial class AppVm : ObservableObject
         if (string.IsNullOrEmpty(tag)) return;
         var p = People.FirstOrDefault(x => x.Tag == tag);
         LeaveViewer();
+        ShowPeoplePane = false;
         View = ViewKind.Person;
         ViewPerson = tag;
         Title = p?.Display ?? Vocabulary.Instance.Display(tag);
@@ -972,6 +991,7 @@ public sealed partial class AppVm : ObservableObject
 
     public void RefreshGrid()
     {
+        var sw = Stopwatch.StartNew();
         var tree = CurrentTree();
         var ctx = MakeContext();
         var list = tree is null ? [.. AllImages] : ColumnEngine.Filter(AllImages, tree, ctx);
@@ -987,8 +1007,7 @@ public sealed partial class AppVm : ObservableObject
         foreach (var it in list)
             if (VmById.TryGetValue(it.Id, out var vm)) vms.Add(vm);
 
-        Items.Clear();
-        foreach (var v in vms) Items.Add(v);
+        Items.ReplaceAll(vms);
 
         HitCount = Items.Count;
         IsEmpty = Items.Count == 0;
@@ -998,6 +1017,7 @@ public sealed partial class AppVm : ObservableObject
         OnPropertyChanged(nameof(Chips));
         GridReloaded?.Invoke();
         RefreshStatus();
+        LastRefreshMs = sw.ElapsedMilliseconds;
     }
 
     [ObservableProperty] private bool _isEmpty;
@@ -1126,13 +1146,17 @@ public sealed partial class AppVm : ObservableObject
 
     partial void OnAlwaysVsrChanged(bool value) => _svc.Store.SetSetting("always_vsr", value ? "1" : "0");
 
-    public bool VsrReady => _svc.Vsr.Ready;
+    /// <summary>能不能用 VSR。引擎没加载也算能用（按需加载），只要依赖文件在。</summary>
+    public bool VsrReady => _svc.Vsr.Ready || _svc.Vsr.Capable;
+
+    /// <summary>引擎是否真的加载了（加载过一次才会显示「就绪」）。</summary>
+    public bool VsrStarted => _svc.Vsr.Started;
 
     /// <summary>当前图跑一遍 RTX VSR。结果只留内存。</summary>
     public async Task ApplyVsrAsync()
     {
         if (Current is null) return;
-        if (!_svc.Vsr.Ready)
+        if (!VsrReady)
         {
             VsrBadge = _svc.Vsr.Status;
             return;
@@ -1318,11 +1342,23 @@ public sealed partial class AppVm : ObservableObject
         if (int.TryParse(key, out var i)) TileStep = i;
     }
 
-    // ================= 左栏（查看器里收成 56px 图标轨） =================
+    // ================= 左栏（可拖动改宽 / 可收成 56px 图标轨） =================
 
     [ObservableProperty] private bool _leftCollapsed;
 
-    public double LeftWidth => LeftCollapsed ? 56 : 248;
+    /// <summary>展开时的宽度，拖分隔条改，记进设置。</summary>
+    private double _leftExpanded = 248;
+
+    public double LeftWidth => LeftCollapsed ? 56 : _leftExpanded;
+
+    public void SetLeftWidth(double w)
+    {
+        var v = Math.Clamp(w, 180, 460);
+        if (Math.Abs(v - _leftExpanded) < 0.5) return;
+        _leftExpanded = v;
+        OnPropertyChanged(nameof(LeftWidth));
+        _store.SetSetting("left_width", ((int)Math.Round(v)).ToString());
+    }
 
     partial void OnLeftCollapsedChanged(bool value)
     {
@@ -1337,18 +1373,86 @@ public sealed partial class AppVm : ObservableObject
 
     [ObservableProperty] private FilterNode? _tempFilter;
 
+    /// <summary>简易筛选选中的那一项，用来在菜单里打勾。</summary>
+    [ObservableProperty] private string _tempFilterName = "";
+
     public bool HasTempFilter => TempFilter is not null;
 
     partial void OnTempFilterChanged(FilterNode? value)
     {
+        if (value is null && TempFilterName.Length > 0) TempFilterName = "";
         OnPropertyChanged(nameof(HasTempFilter));
         RefreshGrid();
     }
 
-    public void SetTempFilter(FilterNode? tree) => TempFilter = tree;
+    public void SetTempFilter(FilterNode? tree, string name = "")
+    {
+        TempFilterName = name;
+        TempFilter = tree;
+    }
 
     [RelayCommand]
-    private void ClearFilter() => TempFilter = null;
+    private void ClearFilter()
+    {
+        TempFilterName = "";
+        TempFilter = null;
+    }
+
+    public bool IsColumnView => View == ViewKind.Column;
+
+    partial void OnViewChanged(ViewKind value)
+    {
+        OnPropertyChanged(nameof(IsColumnView));
+        if (value != ViewKind.Person) ShowPeoplePane = false;
+    }
+
+    // ================= 人物面板（中间显示，不弹窗） =================
+
+    [ObservableProperty] private bool _showPeoplePane;
+    [ObservableProperty] private string _peopleQuery = "";
+    [ObservableProperty] private int _peopleSort;
+    [ObservableProperty] private bool _peopleOnlyZh;
+
+    public ObservableCollection<PersonVm> PeopleView { get; } = [];
+
+    public string PeopleCountText => $"{PeopleView.Count:N0} / {People.Count:N0}";
+
+    partial void OnPeopleQueryChanged(string value) => ApplyPeopleFilter();
+    partial void OnPeopleSortChanged(int value) => ApplyPeopleFilter();
+    partial void OnPeopleOnlyZhChanged(bool value) => ApplyPeopleFilter();
+
+    [RelayCommand]
+    private void ShowPeopleGrid()
+    {
+        LeaveViewer();
+        View = ViewKind.Person;
+        ShowPeoplePane = true;
+        Title = "人物";
+        ApplyPeopleFilter();
+    }
+
+    [RelayCommand]
+    private void ClosePeopleGrid() => ShowPeoplePane = false;
+
+    public void ApplyPeopleFilter()
+    {
+        if (PeopleView is null) return;
+        IEnumerable<PersonVm> src = People;
+        if (PeopleOnlyZh) src = src.Where(p => p.Display != p.Tag);
+        var q = PeopleQuery.Trim();
+        if (q.Length > 0)
+            src = src.Where(p => p.Display.Contains(q, StringComparison.OrdinalIgnoreCase)
+                                 || p.Tag.Contains(q, StringComparison.OrdinalIgnoreCase));
+        src = PeopleSort switch
+        {
+            1 => src.OrderBy(p => p.Display, StringComparer.CurrentCulture),
+            2 => src.OrderBy(p => p.Tag, StringComparer.Ordinal),
+            _ => src.OrderByDescending(p => p.Count),
+        };
+        PeopleView.Clear();
+        foreach (var p in src) PeopleView.Add(p);
+        OnPropertyChanged(nameof(PeopleCountText));
+    }
 
     // ================= 标签体系 =================
 
@@ -1546,6 +1650,8 @@ public sealed partial class AppVm : ObservableObject
         else { UpdateColumn(existing.Id, name, tree, color); _ = RunColumnCountsAsync(); RefreshGrid(); }
     }
 }
+
+
 
 
 

@@ -433,6 +433,54 @@ public static class SelfTest
         // ---------- 20. 内容判重 ----------
         Check(App.Services.Scanner.DedupeByHash, "判重默认开着",
             App.Services.Store.GetSetting("dedupe") ?? "未设置");
+
+        // ---------- 21. 左栏可拖宽 ----------
+        double w0 = vm.LeftWidth;
+        vm.SetLeftWidth(320);
+        await Pulse(window);
+        Check(Math.Abs(vm.LeftWidth - 320) < 0.5, "左栏宽度可拖动", $"{w0:F0} -> {vm.LeftWidth:F0}");
+        vm.SetLeftWidth(120);
+        await Pulse(window);
+        Check(vm.LeftWidth >= 180, "左栏宽度有下限", $"{vm.LeftWidth:F0}");
+        vm.SetLeftWidth(w0);
+        await Pulse(window);
+
+        // ---------- 22. 简易筛选 + 人物面板 ----------
+        vm.SetTempFilter(new FilterGroup
+        {
+            Op = BoolOp.And,
+            Children = { new FilterCond { Field = FieldType.Rating, Op = CondOp.Gte, Value = "4" } },
+        }, "评分 ≥ 4");
+        await Pulse(window);
+        Check(vm.TempFilterName == "评分 ≥ 4" && vm.HasTempFilter, "简易筛选带名字记着", vm.TempFilterName);
+        vm.ClearFilterCommand.Execute(null);
+        await Pulse(window);
+        Check(!vm.HasTempFilter && vm.TempFilterName.Length == 0, "清除筛选连名字一起清掉");
+
+        vm.ShowPeopleGridCommand.Execute(null);
+        await Pulse(window);
+        Check(vm.ShowPeoplePane, "人物墙在中间显示");
+        Check(vm.PeopleView.Count > 0, "人物墙有内容", $"{vm.PeopleView.Count}");
+        if (vm.People.Count > 0)
+        {
+            vm.ShowPerson(vm.People[0]);
+            await Pulse(window);
+            Check(!vm.ShowPeoplePane, "点具体人物后人物墙让位");
+            vm.ShowOverviewCommand.Execute(null);
+            await Pulse(window);
+        }
+
+        Check(vm.WatchEnabled, "目录监视一直开着（没有手动开关了）");
+
+        // ---------- 性能 / 内存 ----------
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        proc.Refresh();
+        var st = App.Services.ThumbService.Stats;
+        Log.AppendLine();
+        Log.AppendLine($"性能  启动 {vm.LastInitMs} ms · 刷新网格 {vm.LastRefreshMs} ms"
+                       + $" · 读库 {vm.LastReloadMs} ms · 人物 {vm.LastPeopleMs} ms · 目录 {vm.LastFoldersMs} ms");
+        Log.AppendLine($"内存  进程 {proc.PrivateMemorySize64 / 1024 / 1024} MB"
+                       + $" · 缩略图解码缓存 {st.Count} 张 / {st.Bytes / 1024 / 1024} MB");
     }
 }
 

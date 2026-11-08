@@ -18,11 +18,36 @@ public sealed class VsrService : IDisposable
     private readonly Dictionary<long, BitmapSource> _cache = [];
     private readonly SemaphoreSlim _one = new(1, 1);
 
+    /// <summary>依赖文件齐不齐（便宜，不加载 DLL）。</summary>
+    public bool Capable { get; }
+
+    public bool Started => Engine.Available;
+
     public bool Ready => Engine.Available;
-    public string Status => Engine.Status;
+
+    public string Status => Engine.Available
+        ? Engine.Status
+        : Capable ? "待命 · 首次使用时加载" : Engine.Status;
+
     public int CachedCount { get { lock (_cache) return _cache.Count; } }
 
+    public VsrService()
+    {
+        // 只在构造时看一眼文件，真正的 NvVFX_Load 留到第一次要用的时候
+        Capable = VsrEngine.Probe(out var dir);
+        if (Capable) Engine.LibDir = dir;
+    }
+
+    /// <summary>加载引擎（约 3 秒、几百 MB）。第一次点 VSR 时才调。</summary>
     public Task<bool> StartAsync() => Task.Run(() => Engine.Start());
+
+    /// <summary>要用了：没加载就加载一次。</summary>
+    public async Task<bool> EnsureStartedAsync()
+    {
+        if (Engine.Available) return true;
+        if (!Capable) return false;
+        return await StartAsync().ConfigureAwait(false);
+    }
 
     public BitmapSource? Peek(long id)
     {
@@ -40,7 +65,7 @@ public sealed class VsrService : IDisposable
     /// <summary>处理一张图，返回超分后的位图；失败返回 null。</summary>
     public async Task<BitmapSource?> ProcessAsync(ImageItem item)
     {
-        if (!Ready) return null;
+        if (!await EnsureStartedAsync().ConfigureAwait(false)) return null;
         if (Peek(item.Id) is { } hit) return hit;
 
         await _one.WaitAsync().ConfigureAwait(false);

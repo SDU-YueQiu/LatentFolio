@@ -179,8 +179,9 @@ public sealed class ZoomBox : ContentControl
         if (_dragging && e.LeftButton == MouseButtonState.Pressed)
         {
             var p = e.GetPosition(this);
-            _tx += (p.X - _dragStart.X) * 0.9;
-            _ty += (p.Y - _dragStart.Y) * 0.9;
+            // 1:1 跟手：鼠标移动多少像素，图就移多少像素（之前乘了 0.9，拖起来发飘）
+            _tx += p.X - _dragStart.X;
+            _ty += p.Y - _dragStart.Y;
             _dragStart = p;
             Clamp();
             Apply();

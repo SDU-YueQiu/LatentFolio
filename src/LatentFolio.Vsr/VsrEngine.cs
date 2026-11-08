@@ -98,7 +98,7 @@ public sealed unsafe class VsrEngine : IDisposable
 
     public bool Available { get; private set; }
     public string Status { get; private set; } = "未初始化";
-    public string LibDir { get; private set; } = "";
+    public string LibDir { get; set; } = "";
     public double LastRunMs { get; private set; }
     public int ProcessedCount { get; private set; }
 
@@ -159,6 +159,23 @@ public sealed unsafe class VsrEngine : IDisposable
         foreach (var f in Dependencies)
             if (!File.Exists(Path.Combine(dir, f))) return false;
         return true;
+    }
+
+    /// <summary>
+    /// 只看依赖文件在不在，不加载 DLL、不建 CUDA 上下文。
+    /// 用来决定右键菜单里 VSR 那一项亮不亮 —— 真正 Load 一次要 3 秒、几百 MB 显存，
+    /// 没点它之前不该付这个代价。
+    /// </summary>
+    public static bool Probe(out string dir)
+    {
+        foreach (var d in CandidateLibDirs())
+        {
+            if (!AllPresent(d)) continue;
+            dir = d;
+            return true;
+        }
+        dir = "";
+        return false;
     }
 
     /// <summary>加载 DLL、建 effect、一次性 Load。调用要放到后台线程。</summary>

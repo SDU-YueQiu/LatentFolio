@@ -72,6 +72,38 @@ public partial class MainWindow : Window
         System.Windows.Interop.HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
     }
 
+    private void FitToMonitor()
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        uint dpi = GetDpiForWindow(hwnd);
+        if (dpi == 0) dpi = 96;
+        double s = dpi / 96.0;
+
+        var mi = new MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
+        var mon = MonitorFromWindow(hwnd, 2);
+        int waW = 0, waH = 0, waL = 0, waT = 0;
+        if (mon != IntPtr.Zero && GetMonitorInfo(mon, ref mi))
+        {
+            waL = mi.rcWork.Left; waT = mi.rcWork.Top;
+            waW = mi.rcWork.Right - mi.rcWork.Left;
+            waH = mi.rcWork.Bottom - mi.rcWork.Top;
+        }
+        if (waW <= 0)
+        {
+            waW = (int)(SystemParameters.PrimaryScreenWidth * s);
+            waH = (int)(SystemParameters.PrimaryScreenHeight * s);
+        }
+
+        double availW = waW / s - 32;
+        double availH = waH / s - 32;
+        Width = Math.Min(1680, Math.Max(960, availW));
+        Height = Math.Min(1060, Math.Max(640, availH));
+        Left = (waL + (waW - Width * s) / 2) / s;
+        Top = (waT + (waH - Height * s) / 2) / s;
+    }
+
     private const int WM_GETMINMAXINFO = 0x0024;
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -117,8 +149,6 @@ public partial class MainWindow : Window
             return result;
         }
 
-        // 直接钉到工作区。这里不能再按 resize border 做补偿 —— 实测把这些值
-        // 写进去就是最终窗口矩形，加了补偿反而会多出一圈、又跑到屏幕外。
         var mmi = System.Runtime.InteropServices.Marshal.PtrToStructure<MINMAXINFO>(lParam);
         mmi.ptMaxPosition.X = mi.rcWork.Left;
         mmi.ptMaxPosition.Y = mi.rcWork.Top;
@@ -127,38 +157,6 @@ public partial class MainWindow : Window
         System.Runtime.InteropServices.Marshal.StructureToPtr(mmi, lParam, true);
         handled = true;
         return result;
-    }
-
-    private void FitToMonitor()
-    {
-        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-        if (hwnd == IntPtr.Zero) return;
-
-        uint dpi = GetDpiForWindow(hwnd);
-        if (dpi == 0) dpi = 96;
-        double s = dpi / 96.0;
-
-        var mi = new MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
-        var mon = MonitorFromWindow(hwnd, 2);
-        int waW = 0, waH = 0, waL = 0, waT = 0;
-        if (mon != IntPtr.Zero && GetMonitorInfo(mon, ref mi))
-        {
-            waL = mi.rcWork.Left; waT = mi.rcWork.Top;
-            waW = mi.rcWork.Right - mi.rcWork.Left;
-            waH = mi.rcWork.Bottom - mi.rcWork.Top;
-        }
-        if (waW <= 0)
-        {
-            waW = (int)(SystemParameters.PrimaryScreenWidth * s);
-            waH = (int)(SystemParameters.PrimaryScreenHeight * s);
-        }
-
-        double availW = waW / s - 32;
-        double availH = waH / s - 32;
-        Width = Math.Min(1680, Math.Max(960, availW));
-        Height = Math.Min(1060, Math.Max(640, availH));
-        Left = (waL + (waW - Width * s) / 2) / s;
-        Top = (waT + (waH - Height * s) / 2) / s;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -202,14 +200,10 @@ public partial class MainWindow : Window
         if (args.Contains("--open-first") && Vm.Items.Count > 0)
             Vm.OpenViewerCommand.Execute(Vm.Items[0]);
         if (args.Contains("--show-stats")) ShowStats();
+        if (args.Contains("--show-people")) Vm.ShowPeopleGridCommand.Execute(null);
         if (args.Contains("--show-editor") && Vm.Columns.Count > 0)
         {
             var win = new ColumnEditorWindow(Vm.Columns[0]) { Owner = this };
-            win.ShowDialog();
-        }
-        if (args.Contains("--show-people"))
-        {
-            var win = new PeopleWindow(Vm) { Owner = this };
             win.ShowDialog();
         }
         if (args.Contains("--show-settings"))
@@ -244,6 +238,7 @@ public partial class MainWindow : Window
     {
         ColList.SelectedItem = null;
         FolderList.SelectedItem = null;
+        StatsPane.Visibility = Visibility.Collapsed;
         Vm.ShowOverviewCommand.Execute(null);
     }
 
@@ -251,6 +246,7 @@ public partial class MainWindow : Window
     {
         ColList.SelectedItem = null;
         FolderList.SelectedItem = null;
+        StatsPane.Visibility = Visibility.Collapsed;
         Vm.ShowDeletedCommand.Execute(null);
     }
 
@@ -273,11 +269,47 @@ public partial class MainWindow : Window
         if (sender is FrameworkElement { DataContext: PersonVm p }) Vm.ShowPerson(p);
     }
 
+    private void OnPersonAvatar(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: PersonVm p } el) return;
+        e.Handled = true;
+        var menu = new ContextMenu();
+
+        var current = Vm.Current;
+        var set = new MenuItem
+        {
+            Header = current is null ? "用当前查看的图作头像" : $"用「{current.FileName}」作头像",
+            IsEnabled = current is not null,
+        };
+        set.Click += (_, _) => Vm.SetPersonAvatar(p.Tag, current!.Id);
+        menu.Items.Add(set);
+
+        var reset = new MenuItem { Header = "恢复默认头像（最高分那张）" };
+        reset.Click += (_, _) => Vm.SetPersonAvatar(p.Tag, 0);
+        menu.Items.Add(reset);
+
+        menu.PlacementTarget = el;
+        menu.IsOpen = true;
+    }
+
     private void OnPeopleClick(object sender, RoutedEventArgs e)
     {
-        if (Vm.People.Count == 0) return;
-        var win = new PeopleWindow(Vm) { Owner = this };
+        StatsPane.Visibility = Visibility.Collapsed;
+        Vm.ShowPeopleGridCommand.Execute(null);
+    }
+
+    private void OnClosePeople(object sender, RoutedEventArgs e) => Vm.ClosePeopleGridCommand.Execute(null);
+
+    private void OnPeopleSort(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox cb) Vm.PeopleSort = cb.SelectedIndex;
+    }
+
+    private void OnCandidates(object sender, RoutedEventArgs e)
+    {
+        var win = new TagsWindow(Vm, "候选") { Owner = this };
         win.ShowDialog();
+        Vm.ApplyPeopleFilter();
     }
 
     // ================= 我的栏拖拽排序 =================
@@ -356,7 +388,103 @@ public partial class MainWindow : Window
         return 0;
     }
 
-    // ================= 栏目编辑 =================
+    // ================= 我的栏右键菜单 =================
+
+    private ColumnVm? ColumnAt(Point p)
+    {
+        for (int i = 0; i < Vm.Columns.Count; i++)
+        {
+            if (ColList.ItemContainerGenerator.ContainerFromIndex(i) is not ListBoxItem c) continue;
+            var origin = c.TranslatePoint(new Point(0, 0), ColList);
+            if (p.Y >= origin.Y && p.Y <= origin.Y + c.ActualHeight) return c.DataContext as ColumnVm;
+        }
+        return null;
+    }
+
+    private void OnColRightUp(object sender, MouseButtonEventArgs e)
+    {
+        var col = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext as ColumnVm
+                  ?? ColumnAt(e.GetPosition(ColList));
+        if (col is null) return;
+        ColList.SelectedItem = col;
+        e.Handled = true;
+
+        var menu = new ContextMenu();
+        void Item(string header, Action action, bool enabled = true)
+        {
+            var mi = new MenuItem { Header = header, IsEnabled = enabled };
+            mi.Click += (_, _) => action();
+            menu.Items.Add(mi);
+        }
+
+        Item("编辑条件…", () => EditColumn(col));
+        Item("重命名…", () =>
+        {
+            var dlg = new PromptWindow("重命名", col.Name) { Owner = this };
+            if (dlg.ShowDialog() == true) Vm.RenameColumn(col.Id, dlg.Value);
+        });
+        Item("复制", () => Vm.DuplicateColumn(col.Id));
+        Item("另存为模板…", () =>
+        {
+            var dlg = new PromptWindow("模板名称", col.Name) { Owner = this };
+            if (dlg.ShowDialog() == true) Vm.SaveAsTemplate(dlg.Value, col.Tree);
+        });
+
+        menu.Items.Add(new Separator());
+        Item("上移", () => Vm.MoveColumnBy(col.Id, -1), Vm.Columns.IndexOf(col) > 0);
+        Item("下移", () => Vm.MoveColumnBy(col.Id, 1), Vm.Columns.IndexOf(col) < Vm.Columns.Count - 1);
+
+        menu.Items.Add(new Separator());
+        var colorMenu = new MenuItem { Header = "标记色" };
+        foreach (var (name, hex) in ColumnColors)
+        {
+            var mi = new MenuItem
+            {
+                Header = name,
+                IsChecked = string.Equals(col.Color, hex, StringComparison.OrdinalIgnoreCase),
+            };
+            mi.Click += (_, _) => Vm.SetColumnColor(col.Id, hex);
+            colorMenu.Items.Add(mi);
+        }
+        menu.Items.Add(colorMenu);
+
+        menu.Items.Add(new Separator());
+        Item("删除这一栏", () =>
+        {
+            if (MessageBox.Show($"删除「{col.Name}」这一栏？图片不会动。", "LatentFolio",
+                    MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+            Vm.DeleteColumn(col.Id);
+            Vm.ShowOverviewCommand.Execute(null);
+        });
+
+        menu.PlacementTarget = ColList;
+        menu.IsOpen = true;
+    }
+
+    private static readonly (string Name, string Hex)[] ColumnColors =
+    [
+        ("无", ""),
+        ("红", "#E5484D"),
+        ("橙", "#F5A524"),
+        ("绿", "#30A46C"),
+        ("蓝", "#3E63DD"),
+        ("紫", "#8E4EC6"),
+    ];
+
+    private void EditColumn(ColumnVm col)
+    {
+        var win = new ColumnEditorWindow(col) { Owner = this };
+        if (win.ShowDialog() != true) return;
+        if (win.DeleteRequested)
+        {
+            Vm.DeleteColumn(col.Id);
+            Vm.ShowOverviewCommand.Execute(null);
+            return;
+        }
+        Vm.UpdateColumn(col.Id, win.ColumnName, win.Tree, win.ColumnColor);
+        _ = Vm.RunColumnCountsAsync();
+        Vm.RefreshGrid();
+    }
 
     private void OnNewColumnClick(object sender, RoutedEventArgs e)
     {
@@ -420,7 +548,7 @@ public partial class MainWindow : Window
         menu.IsOpen = true;
     }
 
-    // ================= 排序 / 尺寸 =================
+    // ================= 排序 / 尺寸 / 筛选 =================
 
     private void OnSortChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -458,23 +586,72 @@ public partial class MainWindow : Window
         }
     }
 
-    // ================= 筛选 / 标签体系 =================
-
-    private void OnFilterClick(object sender, RoutedEventArgs e)
+    private static FilterGroup One(FieldType f, CondOp op, string v) => new()
     {
-        var win = new ColumnEditorWindow(null, filterMode: true) { Owner = this };
-        if (win.ShowDialog() != true) return;
-        Vm.SetTempFilter(win.Tree);
+        Op = BoolOp.And,
+        Children = { new FilterCond { Field = f, Op = op, Value = v } },
+    };
+
+    /// <summary>简易筛选：一个条件，点一下就是一张图钉。条件树收在「高级筛选…」里。</summary>
+    private void OnFilterMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+
+        void Item(string name, Func<FilterNode> make)
+        {
+            var mi = new MenuItem { Header = name, IsChecked = Vm.TempFilterName == name };
+            mi.Click += (_, _) =>
+            {
+                Vm.SetTempFilter(make(), name);
+            };
+            menu.Items.Add(mi);
+        }
+
+        Item("未评分", () => One(FieldType.Rating, CondOp.Eq, "0"));
+        Item("评分 ≥ 3", () => One(FieldType.Rating, CondOp.Gte, "3"));
+        Item("评分 ≥ 4", () => One(FieldType.Rating, CondOp.Gte, "4"));
+        Item("满分 5 星", () => One(FieldType.Rating, CondOp.Eq, "5"));
+        menu.Items.Add(new Separator());
+        Item("有角色", () => One(FieldType.Character, CondOp.Contains, ""));
+        Item("有画师", () => One(FieldType.Artist, CondOp.Contains, ""));
+        Item("有 LoRA", () => One(FieldType.Lora, CondOp.Contains, ""));
+        Item("竖图", () => One(FieldType.Aspect, CondOp.Contains, "竖"));
+        Item("横图", () => One(FieldType.Aspect, CondOp.Contains, "横"));
+        menu.Items.Add(new Separator());
+        Item("相似堆叠 ≥ 2", () => One(FieldType.SimilarGroup, CondOp.Gte, "2"));
+        Item("相似堆叠 ≥ 3", () => One(FieldType.SimilarGroup, CondOp.Gte, "3"));
+        Item("近 7 天", () => One(FieldType.Date, CondOp.Gte, DateTime.Now.AddDays(-7).ToString("yyyy-MM-dd")));
+        Item("近 30 天", () => One(FieldType.Date, CondOp.Gte, DateTime.Now.AddDays(-30).ToString("yyyy-MM-dd")));
+        menu.Items.Add(new Separator());
+
+        var adv = new MenuItem { Header = "高级筛选…" };
+        adv.Click += (_, _) =>
+        {
+            var win = new ColumnEditorWindow(null, filterMode: true) { Owner = this };
+            if (win.ShowDialog() == true) Vm.SetTempFilter(win.Tree, "高级筛选");
+        };
+        menu.Items.Add(adv);
+
+        var clear = new MenuItem { Header = "清除筛选", IsEnabled = Vm.HasTempFilter };
+        clear.Click += (_, _) => Vm.ClearFilterCommand.Execute(null);
+        menu.Items.Add(clear);
+
+        menu.PlacementTarget = (UIElement)sender;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
     }
 
-    private void OnTagsClick(object sender, RoutedEventArgs e)
-    {
-        var win = new TagsWindow(Vm) { Owner = this };
-        win.ShowDialog();
-        Vm.RefreshGrid();
-    }
+    private void OnFilterClear(object sender, RoutedEventArgs e) => Vm.ClearFilterCommand.Execute(null);
 
-    // ================= 资源库排序 / 折叠 =================
+    private void OnTogglePanel(object sender, RoutedEventArgs e) => Vm.PanelCollapsed = !Vm.PanelCollapsed;
+
+    private void OnToggleLeftRail(object sender, RoutedEventArgs e) => Vm.ToggleLeftRailCommand.Execute(null);
+
+    private void OnLeftSplitterDrag(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        Vm.SetLeftWidth(Vm.LeftWidth + e.HorizontalChange);
+        e.Handled = true;
+    }
 
     private void OnFolderSortMenu(object sender, RoutedEventArgs e)
     {
@@ -502,109 +679,20 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnToggleLeftRail(object sender, RoutedEventArgs e) => Vm.ToggleLeftRailCommand.Execute(null);
-
     private void OnFilmClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: ImageVm vm } && vm.Id != Vm.Current?.Id)
             Vm.OpenViewerCommand.Execute(vm);
     }
 
-    // ================= 我的栏右键菜单 =================
+    // ================= 筛选 / 标签体系 =================
 
-    private ColumnVm? ColumnAt(Point p)
+    private void OnTagsClick(object sender, RoutedEventArgs e)
     {
-        for (int i = 0; i < Vm.Columns.Count; i++)
-        {
-            if (ColList.ItemContainerGenerator.ContainerFromIndex(i) is not ListBoxItem c) continue;
-            var origin = c.TranslatePoint(new Point(0, 0), ColList);
-            if (p.Y >= origin.Y && p.Y <= origin.Y + c.ActualHeight) return c.DataContext as ColumnVm;
-        }
-        return null;
-    }
-
-    private void OnColRightUp(object sender, MouseButtonEventArgs e)
-    {
-        var col = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext as ColumnVm
-                  ?? ColumnAt(e.GetPosition(ColList));
-        if (col is null) return;
-        ColList.SelectedItem = col;
-        e.Handled = true;
-
-        var menu = new ContextMenu();
-        void Item(string header, Action action, bool enabled = true)
-        {
-            var mi = new MenuItem { Header = header, IsEnabled = enabled };
-            mi.Click += (_, _) => action();
-            menu.Items.Add(mi);
-        }
-
-        Item("编辑条件…", () => EditColumn(col));
-        Item("重命名…", () =>
-        {
-            var dlg = new PromptWindow("重命名", col.Name) { Owner = this };
-            if (dlg.ShowDialog() == true) Vm.RenameColumn(col.Id, dlg.Value);
-        });
-        Item("复制", () => Vm.DuplicateColumn(col.Id));
-        Item("另存为模板…", () =>
-        {
-            var dlg = new PromptWindow("模板名称", col.Name) { Owner = this };
-            if (dlg.ShowDialog() == true) Vm.SaveAsTemplate(dlg.Value, col.Tree);
-        });
-
-        menu.Items.Add(new Separator());
-        Item("上移", () => Vm.MoveColumnBy(col.Id, -1), Vm.Columns.IndexOf(col) > 0);
-        Item("下移", () => Vm.MoveColumnBy(col.Id, 1), Vm.Columns.IndexOf(col) < Vm.Columns.Count - 1);
-
-        menu.Items.Add(new Separator());
-        var colorMenu = new MenuItem { Header = "标记色" };
-        foreach (var (name, hex) in ColumnColors)
-        {
-            var mi = new MenuItem { Header = name, IsChecked = string.Equals(col.Color, hex, StringComparison.OrdinalIgnoreCase) };
-            mi.Click += (_, _) => Vm.SetColumnColor(col.Id, hex);
-            colorMenu.Items.Add(mi);
-        }
-        menu.Items.Add(colorMenu);
-
-        menu.Items.Add(new Separator());
-        Item("删除这一栏", () =>
-        {
-            if (MessageBox.Show($"删除「{col.Name}」这一栏？图片不会动。", "LatentFolio",
-                    MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
-            Vm.DeleteColumn(col.Id);
-            Vm.ShowOverviewCommand.Execute(null);
-        });
-
-        menu.PlacementTarget = ColList;
-        menu.IsOpen = true;
-    }
-
-    private static readonly (string Name, string Hex)[] ColumnColors =
-    [
-        ("无", ""),
-        ("红", "#E5484D"),
-        ("橙", "#F5A524"),
-        ("绿", "#30A46C"),
-        ("蓝", "#3E63DD"),
-        ("紫", "#8E4EC6"),
-    ];
-
-    private void EditColumn(ColumnVm col)
-    {
-        var win = new ColumnEditorWindow(col) { Owner = this };
-        if (win.ShowDialog() != true) return;
-        if (win.DeleteRequested)
-        {
-            Vm.DeleteColumn(col.Id);
-            Vm.ShowOverviewCommand.Execute(null);
-            return;
-        }
-        Vm.UpdateColumn(col.Id, win.ColumnName, win.Tree, win.ColumnColor);
-        _ = Vm.RunColumnCountsAsync();
+        var win = new TagsWindow(Vm) { Owner = this };
+        win.ShowDialog();
         Vm.RefreshGrid();
     }
-
-    private void OnTogglePanel(object sender, RoutedEventArgs e) => Vm.PanelCollapsed = !Vm.PanelCollapsed;
 
     // ================= 网格 =================
 
@@ -813,6 +901,7 @@ public partial class MainWindow : Window
 
     private void ShowStats()
     {
+        Vm.ClosePeopleGridCommand.Execute(null);
         StatsPane.Visibility = Visibility.Visible;
         StatsBuilder.Build(StatsHost, Vm);
     }
@@ -821,4 +910,3 @@ public partial class MainWindow : Window
 
     private void OnCloseStats(object sender, RoutedEventArgs e) => StatsPane.Visibility = Visibility.Collapsed;
 }
-
