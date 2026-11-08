@@ -36,9 +36,10 @@ public sealed class RatingBar : FrameworkElement
 
     private int _hover = -1;
 
-    private static readonly Brush On = Freeze(Color.FromRgb(0xF5, 0x9E, 0x0B));
-    private static readonly Brush Off = Freeze(Color.FromRgb(0xD3, 0xD7, 0xDE));
-    private static readonly Brush OffHover = Freeze(Color.FromRgb(0xF8, 0xD0, 0x8A));
+    // 未点亮的星要极浅：几千个格子里每格五颗深灰星，整个画面会被噪点吃掉
+    private static readonly Brush On = Freeze(Color.FromRgb(0xF5, 0xA5, 0x24));
+    private static readonly Brush Off = Freeze(Color.FromRgb(0xE6, 0xE9, 0xF0));
+    private static readonly Brush OffHover = Freeze(Color.FromRgb(0xF6, 0xD3, 0x9A));
 
     private static readonly Geometry Star = BuildStar();
 
