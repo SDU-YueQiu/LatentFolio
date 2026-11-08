@@ -18,3 +18,4 @@ logs/
 post/
 cache/
 third_party/ngc-probe/
+.ngc_key
