@@ -94,11 +94,7 @@
             <Border Style="{StaticResource HLine}" Margin="0,6,0,10" />
 
             <!-- 评分与备注 -->
-            <Grid Margin="0,0,0,8">
-                <TextBlock Text="评分与备注" Style="{StaticResource T.Section}" />
-                <TextBlock Text="右键清空" FontSize="11" Foreground="{StaticResource B.Text3}"
-                           HorizontalAlignment="Right" VerticalAlignment="Center" />
-            </Grid>
+            <TextBlock Text="评分与备注" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
             <c:RatingBar Value="{Binding Current.Rating, Mode=TwoWay}" StarSize="20" Gap="6" Height="24"
                          HorizontalAlignment="Left" Margin="0,0,0,10" />
             <TextBox Height="62" AcceptsReturn="True" TextWrapping="Wrap"
@@ -174,3 +170,4 @@
         </StackPanel>
     </ScrollViewer>
 </UserControl>
+

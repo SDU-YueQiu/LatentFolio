@@ -37,7 +37,7 @@ public sealed class RatingBar : FrameworkElement
     private int _hover = -1;
 
     private static readonly Brush On = Freeze(Color.FromRgb(0xF5, 0x9E, 0x0B));
-    private static readonly Brush Off = Freeze(Color.FromRgb(0xDD, 0xE0, 0xE6));
+    private static readonly Brush Off = Freeze(Color.FromRgb(0xD3, 0xD7, 0xDE));
     private static readonly Brush OffHover = Freeze(Color.FromRgb(0xF8, 0xD0, 0x8A));
 
     private static readonly Geometry Star = BuildStar();
@@ -160,3 +160,4 @@ public sealed class RatingBar : FrameworkElement
         return i is >= 0 and < 5 ? i : -1;
     }
 }
+

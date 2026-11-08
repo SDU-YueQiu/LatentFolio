@@ -36,7 +36,7 @@
                            Foreground="{StaticResource B.Text2}" TextTrimming="CharacterEllipsis"
                            Margin="1,5,1,0" />
 
-                <c:RatingBar Grid.Row="2" Value="{Binding Rating, Mode=TwoWay}" StarSize="8" Gap="3"
+                <c:RatingBar Grid.Row="2" Value="{Binding Rating, Mode=TwoWay}" StarSize="9" Gap="3"
                              VerticalAlignment="Center" Margin="1,3,0,0" />
             </Grid>
         </DataTemplate>
@@ -564,5 +564,6 @@
         </Border>
     </Grid>
 </Window>
+
 
 

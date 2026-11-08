@@ -12,14 +12,43 @@ public partial class App : Application
     public static AppServices Services { get; private set; } = null!;
     public static AppVm Root { get; private set; } = null!;
 
+    private Mutex? _instanceMutex;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern IntPtr FindWindow(string? cls, string title);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hwnd, int cmd);
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
+        var cli0 = Environment.GetCommandLineArgs();
+
+        // 单实例：两个进程同时开同一个 SQLite 库、两个目录监视器都会打架。
+        // 开发用的诊断开关允许并存。
+        bool diagnostic = cli0.Any(a => a is "--self-test" or "--parse-one" or "--test-vsr"
+                                          or "--bench" or "--show-stats" or "--show-editor" or "--show-people");
+        if (!diagnostic)
+        {
+            _instanceMutex = new Mutex(true, @"Local\LatentFolio.SingleInstance", out bool isNew);
+            if (!isNew)
+            {
+                var hwnd = FindWindow(null, "LatentFolio");
+                if (hwnd != IntPtr.Zero) { ShowWindow(hwnd, 9); SetForegroundWindow(hwnd); }
+                Shutdown(0);
+                return;
+            }
+        }
+
         DispatcherUnhandledException += OnDispatcherException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) => Log(args.ExceptionObject?.ToString() ?? "?");
 
-        var cli = Environment.GetCommandLineArgs();
+        var cli = cli0;
         int pi = Array.IndexOf(cli, "--parse-one");
         if (pi >= 0 && pi + 1 < cli.Length)
         {
