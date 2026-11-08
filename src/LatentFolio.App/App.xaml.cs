@@ -48,6 +48,14 @@ public partial class App : Application
             return;
         }
 
+        int bi = Array.IndexOf(cli, "--bench");
+        if (bi >= 0)
+        {
+            RunBench(bi + 1 < cli.Length && int.TryParse(cli[bi + 1], out var n) ? n : 50000);
+            Shutdown(0);
+            return;
+        }
+
         var win = new MainWindow();
         MainWindow = win;
         win.Show();
@@ -109,6 +117,140 @@ public partial class App : Application
 
         System.IO.File.WriteAllText(
             System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lf-vsr.txt"), sb.ToString());
+    }
+
+    /// <summary>
+    /// 开发诊断：--bench [N] 用临时库造 N 张图，量 Core 侧的读取 / 筛选 / 排序 / 相似分组。
+    /// 不碰用户的真库。
+    /// </summary>
+    private static void RunBench(int count)
+    {
+        var sb = new StringBuilder();
+        var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lf-bench");
+        try
+        {
+            if (System.IO.Directory.Exists(dir)) System.IO.Directory.Delete(dir, true);
+            System.IO.Directory.CreateDirectory(dir);
+
+            var db = new LatentFolio.Core.Db.Db(System.IO.Path.Combine(dir, "bench.db"));
+            var store = new LatentFolio.Core.Db.ImageStore(db);
+
+            var models = new[] { "z_image_turbo", "krea2-turbo", "noobai_v15", "illustrious_xl", "animagine_xl" };
+            var samplers = new[] { "er_sde", "euler_ancestral", "euler", "dpmpp_2m_sde" };
+            var words = new[] { "1girl", "solo", "looking_at_viewer", "long_hair", "smile", "blue_eyes",
+                                "school_uniform", "outdoors", "night", "starry_sky", "silver_hair", "dress" };
+            var rnd = new Random(1234);
+
+            var swInsert = System.Diagnostics.Stopwatch.StartNew();
+            using (var tx = db.Connection.BeginTransaction())
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    var sbPrompt = new StringBuilder();
+                    int nw = 20 + rnd.Next(60);
+                    for (int k = 0; k < nw; k++) sbPrompt.Append(' ').Append(words[rnd.Next(words.Length)]);
+                    var prompt = sbPrompt.ToString();
+
+                    var item = new LatentFolio.Core.Models.ImageItem
+                    {
+                        Path = $@"{dir}\img\{i % 400}\{i}.png",
+                        Folder = $"2025-{1 + i % 12:00}-{1 + i % 28:00}" + (i % 7 == 0 ? "/sub" : ""),
+                        FileName = $"img_{i:000000}.png",
+                        Ext = "png",
+                        Size = 1_000_000 + i * 37L,
+                        MTime = DateTime.UtcNow.Ticks,
+                        AddedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - i * 1000L,
+                        Width = 1024, Height = rnd.Next(2) == 0 ? 1024 : 1536,
+                        Model = models[rnd.Next(models.Length)],
+                        Sampler = samplers[rnd.Next(samplers.Length)],
+                        Scheduler = "simple",
+                        Steps = 8 + rnd.Next(30),
+                        Cfg = 1 + rnd.Next(6),
+                        Seed = rnd.NextInt64(),
+                        Prompt = prompt,
+                        Negative = "worst quality, bad anatomy",
+                        PromptSource = "conditioning-trace",
+                        Rating = rnd.Next(6),
+                        SearchText = prompt.ToLowerInvariant() + " worst quality bad anatomy",
+                        DHash = rnd.NextInt64(),
+                    };
+                    item.Aspect = LatentFolio.Core.Models.ImageItem.BucketOf(item.AspectRatio);
+                    store.Insert(item);
+                }
+                tx.Commit();
+            }
+            swInsert.Stop();
+
+            var swLoad = System.Diagnostics.Stopwatch.StartNew();
+            var all = store.LoadAll();
+            swLoad.Stop();
+
+            var cond = new LatentFolio.Core.Models.FilterGroup
+            {
+                Op = LatentFolio.Core.Models.BoolOp.And,
+                Children =
+                {
+                    new LatentFolio.Core.Models.FilterCond
+                    {
+                        Field = LatentFolio.Core.Models.FieldType.Rating,
+                        Op = LatentFolio.Core.Models.CondOp.Gte, Value = "4",
+                    },
+                    new LatentFolio.Core.Models.FilterCond
+                    {
+                        Field = LatentFolio.Core.Models.FieldType.Prompt,
+                        Op = LatentFolio.Core.Models.CondOp.Contains, Value = "starry_sky",
+                    },
+                    new LatentFolio.Core.Models.FilterGroup
+                    {
+                        Op = LatentFolio.Core.Models.BoolOp.Or,
+                        Children =
+                        {
+                            new LatentFolio.Core.Models.FilterCond
+                            {
+                                Field = LatentFolio.Core.Models.FieldType.Model,
+                                Op = LatentFolio.Core.Models.CondOp.Contains, Value = "turbo",
+                            },
+                            new LatentFolio.Core.Models.FilterCond
+                            {
+                                Field = LatentFolio.Core.Models.FieldType.Steps,
+                                Op = LatentFolio.Core.Models.CondOp.Gte, Value = "20",
+                            },
+                        },
+                    },
+                },
+            };
+
+            var swFilter = System.Diagnostics.Stopwatch.StartNew();
+            var hits = LatentFolio.Core.Filtering.ColumnEngine.Filter(all,
+                cond, new LatentFolio.Core.Models.FilterContext());
+            swFilter.Stop();
+
+            var swSort = System.Diagnostics.Stopwatch.StartNew();
+            LatentFolio.Core.Filtering.ColumnEngine.Sort(hits,
+                new LatentFolio.Core.Filtering.SortSpec(LatentFolio.Core.Filtering.SortKey.Rating, true));
+            swSort.Stop();
+
+            var swSim = System.Diagnostics.Stopwatch.StartNew();
+            var sim = LatentFolio.Core.Filtering.SimilarityIndex.Build(all);
+            swSim.Stop();
+
+            sb.AppendLine($"合成 {count:N0} 张");
+            sb.AppendLine($"落库        {swInsert.ElapsedMilliseconds,6} ms");
+            sb.AppendLine($"全量读入    {swLoad.ElapsedMilliseconds,6} ms");
+            sb.AppendLine($"三条件筛选  {swFilter.ElapsedMilliseconds,6} ms  -> {hits.Count:N0} 张");
+            sb.AppendLine($"排序        {swSort.ElapsedMilliseconds,6} ms");
+            sb.AppendLine($"相似分组    {swSim.ElapsedMilliseconds,6} ms  -> {sim.GroupCount:N0} 组 / {sim.InGroup.Count:N0} 张");
+
+            db.Dispose();
+            System.IO.Directory.Delete(dir, true);
+        }
+        catch (Exception ex)
+        {
+            sb.AppendLine("EXCEPTION " + ex);
+        }
+
+        System.IO.File.WriteAllText(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lf-bench.txt"), sb.ToString());
     }
 
     private void OnDispatcherException(object sender, DispatcherUnhandledExceptionEventArgs e)

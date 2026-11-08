@@ -184,10 +184,32 @@ public sealed partial class AppVm : ObservableObject
 
     public event Action? CurrentChangedForViewer;
 
+    private ImageVm? _hooked;
+
     partial void OnCurrentChanged(ImageVm? value)
     {
+        // 查看器里改的批注/评分也要落库，否则关掉程序就没了
+        if (_hooked is not null) _hooked.PropertyChanged -= OnCurrentItemChanged;
+        _hooked = value;
+        if (_hooked is not null) _hooked.PropertyChanged += OnCurrentItemChanged;
+
         PromptEditorText = value?.Prompt ?? "";
         CurrentChangedForViewer?.Invoke();
+    }
+
+    private void OnCurrentItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (sender is not ImageVm vm) return;
+        switch (e.PropertyName)
+        {
+            case nameof(ImageVm.Note):
+                _store.UpdateUser(vm.Item);
+                break;
+            case nameof(ImageVm.Rating):
+                _store.UpdateUser(vm.Item);
+                _ = RunColumnCountsAsync();
+                break;
+        }
     }
 
     [ObservableProperty] private string _promptEditorText = "";
@@ -593,7 +615,22 @@ public sealed partial class AppVm : ObservableObject
                     break;
                 }
             case ViewKind.Folder:
-                root.Children.Add(new FilterCond { Field = FieldType.Folder, Op = CondOp.Eq, Value = ViewFolder });
+                // 点日期目录要把子目录里的图一起算进来，否则上面写着 62 张、
+                // 点进去只有 3 张，很容易让人以为图丢了。
+                root.Children.Add(new FilterGroup
+                {
+                    Op = BoolOp.Or,
+                    Children =
+                    {
+                        new FilterCond { Field = FieldType.Folder, Op = CondOp.Eq, Value = ViewFolder },
+                        new FilterCond
+                        {
+                            Field = FieldType.Folder,
+                            Op = CondOp.StartsWith,
+                            Value = ViewFolder.Length == 0 ? "" : ViewFolder + "/",
+                        },
+                    },
+                });
                 break;
             case ViewKind.Person:
                 root.Children.Add(new FilterCond { Field = FieldType.Character, Op = CondOp.Eq, Value = ViewPerson });
