@@ -407,13 +407,13 @@ public sealed class ImageStore(Db db)
         c.ExecuteNonQuery();
     }
 
-    public HashSet<string> LoadSkipped()
+    public Dictionary<string, long> LoadSkipped()
     {
-        var s = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        using var c = db.Cmd("SELECT path FROM skip");
+        var d = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        using var c = db.Cmd("SELECT path,hash FROM skip");
         using var r = c.ExecuteReader();
-        while (r.Read()) s.Add(r.GetString(0));
-        return s;
+        while (r.Read()) d[r.GetString(0)] = r.GetInt64(1);
+        return d;
     }
 
     public void AddSkipped(string path, long hash)

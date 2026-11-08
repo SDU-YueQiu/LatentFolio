@@ -130,14 +130,16 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
             existing[it.Path] = it;
             if (it.Hash != 0 && it.State != FileState.Deleted) byHash.Add(it.Hash);
         }
-        var skipped = DedupeByHash ? store.LoadSkipped() : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var skipped = DedupeByHash ? store.LoadSkipped() : new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
         int n = 0;
         using var tx = db.Connection.BeginTransaction();
         foreach (var path in paths)
         {
             if (!File.Exists(path)) continue;
-            if (skipped.Contains(path)) continue;
+            // 撞过的路径只在内容没变时才跳过；被换成别的图要照常收
+            if (skipped.TryGetValue(path, out var skipHash)
+                && QuickHash(path, new FileInfo(path).Length) == skipHash) continue;
             var parsed = ParseOne(root, path);
             if (parsed is null) continue;
             var (item, wf) = parsed.Value;
@@ -286,7 +288,7 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         foreach (var it in store.LoadAll()) existing[it.Path] = it;
 
         // 上次按内容判重跳过的文件，这次不用再解析一遍
-        var skipped = DedupeByHash ? store.LoadSkipped() : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var skipped = DedupeByHash ? store.LoadSkipped() : new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
         var seen = new HashSet<string>(files.Count, StringComparer.OrdinalIgnoreCase);
         var toInsert = new List<(ImageItem Item, string? Workflow)>();
@@ -304,13 +306,15 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         {
             try
             {
-                if (skipped.Contains(path))
+                var fi = new FileInfo(path);
+
+                // 撞过的路径只在内容没变时才跳过；被换成别的图要照常收
+                if (skipped.TryGetValue(path, out var skipHash) && QuickHash(path, fi.Length) == skipHash)
                 {
                     lock (lockObj) { seen.Add(path); result.Skipped++; Interlocked.Increment(ref done); }
                     return ValueTask.CompletedTask;
                 }
 
-                var fi = new FileInfo(path);
                 long mtime = fi.LastWriteTimeUtc.Ticks;
                 var key = ThumbCache.Key(path, mtime, fi.Length);
 

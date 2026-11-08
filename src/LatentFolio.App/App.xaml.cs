@@ -32,7 +32,9 @@ public partial class App : Application
         // 单实例：两个进程同时开同一个 SQLite 库、两个目录监视器都会打架。
         // 开发用的诊断开关允许并存。
         bool diagnostic = cli0.Any(a => a is "--self-test" or "--parse-one" or "--test-vsr"
-                                          or "--bench" or "--show-stats" or "--show-editor" or "--show-people");
+                                          or "--bench" or "--show-stats" or "--show-editor"
+                                          or "--show-people" or "--show-tags" or "--show-candidates"
+                                          or "--show-filter" or "--show-settings");
         if (!diagnostic)
         {
             _instanceMutex = new Mutex(true, @"Local\LatentFolio.SingleInstance", out bool isNew);
