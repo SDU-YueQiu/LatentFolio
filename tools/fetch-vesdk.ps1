@@ -2,14 +2,10 @@
 .SYNOPSIS
   直接从 NGC REST API 下载 VFX SDK Core，不装 ngccli。
 
-.DESCRIPTION
-  NGC 的下载走的是 api.ngc.nvidia.com，ngccli 只是个壳。
-  这里用 API Key + curl 直接下，支持断点续传；装过 aria2 的话自动多线程。
-
-.EXAMPLE
-  .\fetch-vesdk.ps1 -ApiKey '<你的 NGC API Key>' -List
-  .\fetch-vesdk.ps1 -ApiKey '<key>' -Version 1.3.0.0_windows
-  .\fetch-vesdk.ps1 -ApiKey '<key>' -UseAria            # 装了 aria2 时
+.NOTES
+  2026-11-08 v2：真机跑 v1 时版本列表为空、文件列表出现一行空白 → 说明响应字段名
+  和我猜的不一样。这一版改成"先抓原始 JSON、再自动适配字段名"，抓不到就直接把
+  原始响应打到屏幕上，方便定位。
 #>
 [CmdletBinding()]
 param(
@@ -20,18 +16,18 @@ param(
   [string]$Org = 'nvidia',
   [string]$OutDir = '',
   [switch]$List,
-  [switch]$UseAria
+  [switch]$UseAria,
+  [switch]$Dump
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$apiRoot = "https://api.ngc.nvidia.com/v2/org/$Org/team/$Team/resources/$Resource"
 $headers = @{
-  'Authorization' = "Bearer $ApiKey"
-  'Accept'        = 'application/json'
-  'User-Agent'    = 'LatentFolio-fetch/1.0'
+  'Authorization'  = "Bearer $ApiKey"
+  'Accept'         = 'application/json'
+  'User-Agent'     = 'LatentFolio-fetch/2.0'
 }
 
 if (-not $OutDir) {
@@ -39,59 +35,125 @@ if (-not $OutDir) {
 }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
-function Get-Json($url) {
-  try {
-    return Invoke-RestMethod -Uri $url -Headers $headers -TimeoutSec 60
-  } catch {
-    $code = $_.Exception.Response.StatusCode.value__
-    if ($code -eq 401) { throw "401：API Key 不对或没权限。去 https://org.ngc.nvidia.com/setup/api-key 重新生成。" }
-    if ($code -eq 404) { throw "404：路径不存在 -> $url（可能版本号或 resource 名不对）" }
-    throw "请求失败 $code : $url`n$($_.Exception.Message)"
+# ---------------------------------------------------------------- HTTP
+function Get-Raw([string]$url) {
+  $r = Invoke-WebRequest -Uri $url -Headers $headers -TimeoutSec 60 -UseBasicParsing
+  return $r.Content
+}
+
+function Show-Raw([string]$label, [string]$text) {
+  Write-Host "`n---- 原始响应 [$label] ----" -ForegroundColor DarkYellow
+  Write-Host ($text.Substring(0, [Math]::Min(1200, $text.Length)))
+  Write-Host "------------------------------`n" -ForegroundColor DarkYellow
+  if ($Dump) {
+    $p = Join-Path $OutDir ("raw-$label.json")
+    Set-Content -Path $p -Value $text -Encoding utf8
+    Write-Host "已存 $p" -ForegroundColor DarkYellow
   }
 }
 
-Write-Host "== 版本列表 ==" -ForegroundColor Cyan
-try {
-  $vers = Get-Json "$apiRoot/versions"
-  $names = @($vers | ForEach-Object { $_.versionId })
-  Write-Host ("  " + ($names -join ', '))
-} catch {
-  Write-Host "  (列版本失败，继续尝试指定版本) $($_.Exception.Message)" -ForegroundColor DarkYellow
+function Try-Json($text) {
+  try { return , ($text | ConvertFrom-Json) } catch { return $null }
 }
 
-Write-Host "`n== $Version 的文件 ==" -ForegroundColor Cyan
-$resp = Get-Json "$apiRoot/versions/$Version/files"
+# ---------------------------------------------------------------- 版本列表（仅探测用）
+$base = "https://api.ngc.nvidia.com/v2/org/$Org/team/$Team/resources/$Resource"
+Write-Host "== 探测版本列表 ==" -ForegroundColor Cyan
+$versRaw = $null
+foreach ($u in @("$base/versions", "https://api.ngc.nvidia.com/v2/orgs/$Org/teams/$Team/resources/$Resource/versions")) {
+  try {
+    $versRaw = Get-Raw $u
+    Write-Host "  200 OK  $u" -ForegroundColor Green
+    break
+  } catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    Write-Host "  $code  $u" -ForegroundColor DarkYellow
+    $versRaw = $null
+    if ($code -eq 401) {
+      throw "401：API Key 无效或没被授权访问 nvidia/maxine。去 https://org.ngc.nvidia.com/setup/api-key 重新生成，并确认账号能打开 https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/collections/maxine_vfx_sdk"
+    }
+  }
+}
+if ($versRaw) {
+  $vj = Try-Json $versRaw
+  $ids = @()
+  if ($vj) {
+    $ids = @($vj | ForEach-Object {
+        if ($_.versionId) { $_.versionId }
+        elseif ($_.version) { $_.version }
+        elseif ($_.name) { $_.name }
+        else { $_ }
+      } | Where-Object { $_ -is [string] -and $_ })
+  }
+  if ($ids.Count) { Write-Host ("  版本：" + ($ids -join ', ')) }
+  else { Show-Raw 'versions' $versRaw }
+}
+
+# ---------------------------------------------------------------- 文件列表
+Write-Host "`n== 文件列表 $Version ==" -ForegroundColor Cyan
+$filesRaw = $null
+try {
+  $filesRaw = Get-Raw "$base/versions/$Version/files"
+} catch {
+  $code = $_.Exception.Response.StatusCode.value__
+  if ($code -eq 404) { throw "404：找不到 $Version。用上面列出的版本号试试 -Version <版本>" }
+  throw
+}
+
+$fj = Try-Json $filesRaw
 $items = @()
-if ($resp.PSObject.Properties.Name -contains 'content') { $items = @($resp.content) }
-elseif ($resp -is [array]) { $items = @($resp) }
-else { $items = @($resp) }
+if ($fj) {
+  if ($fj.PSObject.Properties.Name -contains 'content') { $items = @($fj.content) }
+  elseif ($fj -is [array]) { $items = @($fj) }
+  else { $items = @($fj) }
+}
 
-if ($items.Count -eq 0) { throw "没拿到文件列表，检查版本号：$Version" }
+function Get-Prop($obj, [string[]]$names) {
+  foreach ($n in $names) {
+    $v = $obj.PSObject.Properties[$n]
+    if ($v -and $v.Value) { return $v.Value }
+  }
+  return $null
+}
 
+$rows = @()
 foreach ($it in $items) {
-  $sz = if ($it.size) { "{0:N1} MB" -f ($it.size / 1MB) } else { '?' }
-  Write-Host ("  {0,-50} {1}" -f $it.path, $sz)
+  $p = Get-Prop $it @('path', 'name', 'filename', 'fileName')
+  $s = Get-Prop $it @('size', 'contentLength', 'bytes')
+  $u = Get-Prop $it @('url', 'downloadUrl', 'link')
+  if (-not $p -and -not $u) { continue }
+  $rows += [pscustomobject]@{ Path = $p; Size = $s; Url = $u }
+}
+
+if ($rows.Count -eq 0) {
+  Show-Raw 'files' $filesRaw
+  throw "没解析出文件条目。把上面这段原始响应发我，我按真实字段名改。"
+}
+
+foreach ($r in $rows) {
+  $sz = if ($r.Size) { "{0:N1} MB" -f ([double]$r.Size / 1MB) } else { '?' }
+  Write-Host ("  {0,-55} {1}" -f $r.Path, $sz)
 }
 if ($List) { Write-Host "`n(只列不下载)" -ForegroundColor Green; return }
 
+# ---------------------------------------------------------------- 下载
 $aria = $null
 if ($UseAria) {
   $aria = (Get-Command aria2c -ErrorAction SilentlyContinue).Source
   if (-not $aria) { Write-Host "没找到 aria2c，回退 curl。装法：scoop install aria2" -ForegroundColor DarkYellow }
 }
 
-foreach ($it in $items) {
-  if ([string]::IsNullOrWhiteSpace($it.path)) { continue }
-  $fileName = Split-Path $it.path -Leaf
+foreach ($r in $rows) {
+  $fileName = if ($r.Path) { Split-Path $r.Path -Leaf } else { "download.bin" }
   $dest = Join-Path $OutDir $fileName
-  $url = "$apiRoot/versions/$Version/files/" + [uri]::EscapeDataString($it.path)
+  $url = if ($r.Url) { $r.Url } else { "$base/versions/$Version/files/" + [uri]::EscapeDataString($r.Path) }
+
   Write-Host "`n>> $fileName" -ForegroundColor Cyan
   $sw = [Diagnostics.Stopwatch]::StartNew()
   if ($aria) {
     & $aria -x 16 -s 16 -k 1M --console-log-level=warn --summary-interval=5 `
       --header="Authorization: Bearer $ApiKey" -d $OutDir -o $fileName $url
   } else {
-    # curl 自带断点续传 -C -，并且打印进度
     & curl.exe -L --fail --retry 5 --retry-delay 3 -C - --progress-bar `
       -H "Authorization: Bearer $ApiKey" -o $dest $url
   }
@@ -103,16 +165,19 @@ foreach ($it in $items) {
   }
 }
 
+# ---------------------------------------------------------------- 解压
 Write-Host "`n== 解压 ==" -ForegroundColor Cyan
 Get-ChildItem $OutDir -Filter '*.zip' | ForEach-Object {
   $target = Join-Path $OutDir ($_.BaseName)
   if (-not (Test-Path $target)) {
-    Write-Host "  expanding $($_.Name) -> $target"
+    Write-Host "  $($_.Name) -> $target"
     Expand-Archive -Path $_.FullName -DestinationPath $target -Force
+  } else {
+    Write-Host "  已存在 $target"
   }
 }
-Write-Host "`n完成，输出目录：$OutDir" -ForegroundColor Green
-Get-ChildItem $OutDir -Directory | ForEach-Object {
+Write-Host "`n输出目录：$OutDir" -ForegroundColor Green
+Get-ChildItem $OutDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
   Write-Host "--- $($_.Name) ---"
-  Get-ChildItem $_.FullName | Select-Object -First 12 -ExpandProperty Name
+  Get-ChildItem $_.FullName | Select-Object -First 15 -ExpandProperty Name
 }
