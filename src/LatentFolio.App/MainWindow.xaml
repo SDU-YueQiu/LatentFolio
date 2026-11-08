@@ -183,6 +183,29 @@
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
+        <!-- 左栏「统计 / 标签」分段项 -->
+        <Style x:Key="P.Shell.NavSegBtn" TargetType="Button" BasedOn="{StaticResource Btn.Seg}">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+
+        <!-- 顶栏 / 人物页共用的胶囊搜索底：常驻 1px 细描边，聚焦转白底 + 主色描边 -->
+        <Style x:Key="P.Shell.SearchBox" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource B.Inset}" />
+            <Setter Property="BorderBrush" Value="{StaticResource B.Hairline}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Style.Triggers>
+                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                    <Setter Property="Background" Value="{StaticResource B.Window}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource B.Accent}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- ── 关闭键：悬停红底白字（只覆盖这一个按钮） ── -->
         <Style x:Key="P.Shell.CloseWin" TargetType="Button" BasedOn="{StaticResource Btn.Win}">
             <Setter Property="Template">
@@ -257,22 +280,10 @@
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="240" />
                 </StackPanel>
 
-                <Border Grid.Column="1" MaxWidth="520" Height="32" CornerRadius="999"
+                <Border Grid.Column="1" Style="{StaticResource P.Shell.SearchBox}"
+                        MaxWidth="520" Height="32"
                         HorizontalAlignment="Stretch" VerticalAlignment="Center"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Border.Style>
-                        <Style TargetType="Border">
-                            <Setter Property="Background" Value="{StaticResource B.Inset}" />
-                            <Setter Property="BorderBrush" Value="Transparent" />
-                            <Setter Property="BorderThickness" Value="1" />
-                            <Style.Triggers>
-                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                    <Setter Property="Background" Value="{StaticResource B.Window}" />
-                                    <Setter Property="BorderBrush" Value="{StaticResource B.Accent}" />
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -285,6 +296,20 @@
                                  FontSize="12.5" VerticalContentAlignment="Center"
                                  AutomationProperties.Name="搜索"
                                  Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=250}" />
+                        <TextBlock Grid.Column="1" Text="搜索" FontSize="11.5" IsHitTestVisible="False"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource B.Text3}" />
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SearchText}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </Grid>
                 </Border>
 
@@ -384,19 +409,31 @@
                                                Margin="8,0,0,0" />
                                 </Grid>
                             </Button>
-                            <Grid Margin="0,6,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="6" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Button Content="统计" FontSize="11.5" Height="28"
-                                        Style="{StaticResource Btn.Outline}" Click="OnStatsClick"
-                                        AutomationProperties.Name="统计" />
-                                <Button Grid.Column="2" Content="标签" FontSize="11.5" Height="28"
-                                        Style="{StaticResource Btn.Outline}" Click="OnTagsClick"
-                                        AutomationProperties.Name="标签体系" />
-                            </Grid>
+                            <Border Style="{StaticResource Seg.Track}" Padding="2" Margin="0,6,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Content="统计" Click="OnStatsClick"
+                                            AutomationProperties.Name="统计">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource P.Shell.NavSegBtn}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Visibility, ElementName=StatsPane}"
+                                                                 Value="Visible">
+                                                        <Setter Property="Background" Value="White" />
+                                                        <Setter Property="Foreground" Value="{StaticResource B.Accent}" />
+                                                        <Setter Property="Effect" Value="{StaticResource Fx.Card}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                    <Button Grid.Column="1" Content="标签" Style="{StaticResource P.Shell.NavSegBtn}"
+                                            Click="OnTagsClick" AutomationProperties.Name="标签体系" />
+                                </Grid>
+                            </Border>
                         </StackPanel>
                         <Border Grid.Row="1" Style="{StaticResource HLine}" Margin="0,10,0,0" />
                     </Grid>
@@ -478,7 +515,7 @@
                         </Grid>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
-                            <ItemsControl ItemsSource="{Binding PeoplePreview}" Margin="12,0,8,4"
+                            <ItemsControl ItemsSource="{Binding PeoplePreview}" Margin="12,0,12,4"
                                           Height="{Binding PeopleBlockHeight}" VerticalAlignment="Top">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -496,11 +533,14 @@
                                                          RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
                                             </Border.Height>
                                             <Grid>
-                                                <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
-                                                <Border Background="{StaticResource B.GlassDark}" CornerRadius="999"
-                                                        Padding="4,1" Margin="4" HorizontalAlignment="Right"
-                                                        VerticalAlignment="Bottom">
-                                                    <TextBlock Text="{Binding Count}" FontSize="10"
+                                                <Border Background="{StaticResource B.Inset}" CornerRadius="8"
+                                                        ClipToBounds="True">
+                                                    <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
+                                                </Border>
+                                                <Border Background="#8C0B0F14" CornerRadius="3"
+                                                        Padding="2,1" Margin="0,0,3,3"
+                                                        HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                                                    <TextBlock Text="{Binding Count}" FontSize="8"
                                                                Foreground="White" />
                                                 </Border>
                                             </Grid>
@@ -863,11 +903,37 @@
                                        Margin="14,0,0,0" VerticalAlignment="Center" />
                             <TextBlock Grid.Column="2" Text="{Binding PeopleCountText}" Style="{StaticResource T.Sub}"
                                        VerticalAlignment="Center" Margin="10,0,0,0" />
-                            <TextBox Grid.Column="3" x:Name="PeopleFilterBox" Width="220" Height="30" Margin="16,0,0,0"
-                                     VerticalContentAlignment="Center" FontSize="12.5" Padding="10,0"
-                                     Background="{StaticResource B.Inset}" BorderBrush="Transparent" BorderThickness="1"
-                                     AutomationProperties.Name="搜索人物"
-                                     Text="{Binding PeopleQuery, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
+                            <Border Grid.Column="3" Style="{StaticResource P.Shell.SearchBox}"
+                                    Width="220" Height="30" Margin="16,0,0,0" VerticalAlignment="Center">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE721;" FontFamily="{StaticResource F.Icon}"
+                                               FontSize="13" Foreground="{StaticResource B.Text3}"
+                                               Margin="10,0,6,0" VerticalAlignment="Center" />
+                                    <TextBox Grid.Column="1" x:Name="PeopleFilterBox" BorderThickness="0"
+                                             Background="Transparent" Padding="0,0,10,0"
+                                             VerticalContentAlignment="Center" FontSize="12.5"
+                                             AutomationProperties.Name="搜索人物"
+                                             Text="{Binding PeopleQuery, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
+                                    <TextBlock Grid.Column="1" Text="搜索" FontSize="11.5" IsHitTestVisible="False"
+                                               VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource B.Text3}" />
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding PeopleQuery}" Value="">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+                            </Border>
                             <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center">
                                 <CheckBox Content="只看有中文名" FontSize="12" VerticalAlignment="Center"
                                           IsChecked="{Binding PeopleOnlyZh}" />
@@ -884,7 +950,7 @@
 
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding PeopleView}" ItemTemplate="{StaticResource PersonTpl}"
-                                          Margin="14,4,14,24">
+                                          Margin="14,4,20,24">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel />
