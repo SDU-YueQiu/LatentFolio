@@ -140,6 +140,23 @@ public static class SelfTest
                 }
                 else Ok("等高布局", "这一屏只有一张图，跳过");
 
+                // 换档位必须真的改变格子大小（之前面板只在宽度变化时重排，档位白按）
+                double FirstH()
+                {
+                    for (int i = 0; i < VisualTreeHelper.GetChildrenCount(panel); i++)
+                        if (VisualTreeHelper.GetChild(panel, i) is FrameworkElement f) return f.ActualHeight;
+                    return 0;
+                }
+                int step0 = vm.TileStep;
+                double hBefore = FirstH();
+                vm.TileStep = step0 == 3 ? 0 : step0 + 1;
+                for (int i = 0; i < 5; i++) await Pulse(window);
+                double hAfter = FirstH();
+                Check(Math.Abs(hAfter - hBefore) > 15, "换档位后格子真的变了大小",
+                    $"{hBefore:F0} -> {hAfter:F0}  (档位 {step0} -> {vm.TileStep})");
+                vm.TileStep = step0;
+                for (int i = 0; i < 4; i++) await Pulse(window);
+
                 panel.SetVerticalOffset(0);
                 for (int i = 0; i < 4; i++) await Pulse(window);
             }
@@ -458,11 +475,15 @@ public static class SelfTest
                 int cols0 = panel.Columns;
                 int idx0 = panel.FirstRealizedIndex;
                 double top0 = panel.FirstChildTop;
+                double ext0 = panel.ExtentHeight;
 
                 vm.PanelCollapsed = false;
                 for (int i = 0; i < 10; i++) await Pulse(window);
 
-                Check(panel.Columns < cols0, "详情栏展开后列数变少", $"{cols0} -> {panel.Columns}");
+                // 等高布局里「列数」不是硬指标：变窄可能是行高变小而不是少放一张。
+                // 真正要保证的是「重排了」+「原来那张还锚在视口顶部第一行」。
+                Check(Math.Abs(panel.ExtentHeight - ext0) > 1, "详情栏展开后网格重排了",
+                    $"总高 {ext0:F0} -> {panel.ExtentHeight:F0}，列 {cols0} -> {panel.Columns}");
                 Check(Math.Abs(panel.FirstChildTop - top0) < panel.ItemHeight * 0.7,
                     "列数变了之后视口锚在原处", $"Y {top0:F0} -> {panel.FirstChildTop:F0}");
                 int idx1 = panel.FirstRealizedIndex;
@@ -516,6 +537,22 @@ public static class SelfTest
         vm.SetLeftWidth(w0);
         await Pulse(window);
 
+        // ---------- 21a. 两个折叠把手：一样大、各自压在自己那条边界上 ----------
+        if (window is MainWindow mwT)
+        {
+            var lt = mwT.LeftTabForTest;
+            var dt = mwT.DetailTabForTest;
+            Check(Math.Abs(lt.ActualWidth - dt.ActualWidth) < 0.6 && Math.Abs(lt.ActualHeight - dt.ActualHeight) < 0.6
+                  && lt.ActualWidth > 20,
+                "两个折叠把手一样大（没有被分栏裁掉）",
+                $"左 {lt.ActualWidth:F0}×{lt.ActualHeight:F0} / 右 {dt.ActualWidth:F0}×{dt.ActualHeight:F0}");
+            var c1 = lt.TranslatePoint(new Point(lt.ActualWidth / 2, 0), mwT);
+            Check(Math.Abs(c1.X - vm.LeftWidth) < 2.5, "左把手压在左栏边界上", $"{c1.X:F0} vs {vm.LeftWidth:F0}");
+            var c2 = dt.TranslatePoint(new Point(dt.ActualWidth / 2, 0), mwT);
+            double edge = mwT.ActualWidth - vm.DetailWidth;
+            Check(Math.Abs(c2.X - edge) < 2.5, "详情把手压在详情栏边界上", $"{c2.X:F0} vs {edge:F0}");
+        }
+
         // ---------- 21b. 可拖的分区高度、排序都记进设置 ----------
         double ch0 = vm.LeftColumnsHeight, ph0 = vm.LeftPeopleHeight;
         vm.SetLeftColumnsHeight(300);
@@ -533,13 +570,20 @@ public static class SelfTest
         vm.SetLeftWidth(w0);
         await Pulse(window);
 
-        int sort0 = vm.GridSortIndex;
-        vm.GridSortIndex = 4;
+        int key0 = vm.SortKeyIndex;
+        bool desc0 = vm.SortDesc;
+        vm.SortKeyIndex = 2;
         await Pulse(window);
-        Check(App.Services.Store.GetSetting("grid_sort") == "4", "总览排序记进设置",
-            App.Services.Store.GetSetting("grid_sort") ?? "");
-        Check(vm.Sort.Key == LatentFolio.Core.Filtering.SortKey.Name, "排序真的换了", vm.SortLabel);
-        vm.GridSortIndex = sort0;
+        Check(App.Services.Store.GetSetting("grid_sort_key") == "2", "总览排序键记进设置",
+            App.Services.Store.GetSetting("grid_sort_key") ?? "");
+        Check(vm.Sort.Key == LatentFolio.Core.Filtering.SortKey.Name, "排序真的换了", vm.SortSummary);
+        vm.SortDesc = !desc0;
+        await Pulse(window);
+        Check(App.Services.Store.GetSetting("grid_sort_desc") == (desc0 ? "0" : "1"), "排序方向记进设置",
+            App.Services.Store.GetSetting("grid_sort_desc") ?? "");
+        Check(vm.Sort.Desc == !desc0 && vm.SortDirGlyph == (desc0 ? "▴" : "▾"), "方向真的反了", vm.SortSummary);
+        vm.SortKeyIndex = key0;
+        vm.SortDesc = desc0;
         await Pulse(window);
 
         // ---------- 22. 简易筛选 + 人物面板 ----------

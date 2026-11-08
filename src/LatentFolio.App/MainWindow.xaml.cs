@@ -16,6 +16,8 @@ public partial class MainWindow : Window
     /// <summary>自检要用它检查缩放状态。</summary>
     internal Controls.ZoomBox BigZoomControl => BigZoom;
     internal ListBox GridListForTest => GridList;
+    internal Button LeftTabForTest => LeftTab;
+    internal Button DetailTabForTest => DetailTab;
 
     public MainWindow()
     {
@@ -179,7 +181,7 @@ public partial class MainWindow : Window
         await Vm.InitAsync();
         SyncSizeButtons();
         // 排序、尺寸这些"上次留下的状态"在 InitAsync 里已经读回来了，这里把控件摆成一致的样子
-        if (SortBox.SelectedIndex != Vm.GridSortIndex) SortBox.SelectedIndex = Vm.GridSortIndex;
+        if (SortBox.SelectedIndex != Vm.SortKeyIndex) SortBox.SelectedIndex = Vm.SortKeyIndex;
 
         var args = Environment.GetCommandLineArgs();
         if (args.Contains("--self-test"))
@@ -573,11 +575,13 @@ public partial class MainWindow : Window
 
     // ================= 排序 / 尺寸 / 筛选 =================
 
-    private void OnSortChanged(object sender, SelectionChangedEventArgs e)
+    private void OnSortKeyChanged(object sender, SelectionChangedEventArgs e)
     {
         if (App.Root is null) return;
-        Vm.GridSortIndex = SortBox.SelectedIndex;
+        Vm.SortKeyIndex = SortBox.SelectedIndex;
     }
+
+    private void OnToggleSortDir(object sender, RoutedEventArgs e) => Vm.SortDesc = !Vm.SortDesc;
 
     private void OnSizeStep(object sender, RoutedEventArgs e)
     {
@@ -798,7 +802,15 @@ public partial class MainWindow : Window
         }
         Item("名称", AppVm.FolderSortKind.Name);
         Item("张数", AppVm.FolderSortKind.Count);
-        Item("日期", AppVm.FolderSortKind.Date);
+        Item("最近更新", AppVm.FolderSortKind.Date);
+
+        menu.Items.Add(new Separator());
+        var asc = new MenuItem { Header = "正序", IsChecked = !Vm.FolderDesc };
+        asc.Click += (_, _) => Vm.FolderDesc = false;
+        var desc = new MenuItem { Header = "倒序", IsChecked = Vm.FolderDesc };
+        desc.Click += (_, _) => Vm.FolderDesc = true;
+        menu.Items.Add(asc);
+        menu.Items.Add(desc);
 
         menu.PlacementTarget = (UIElement)sender;
         menu.IsOpen = true;

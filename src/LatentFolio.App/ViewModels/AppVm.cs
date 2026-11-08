@@ -62,6 +62,7 @@ public sealed partial class FolderVm : ObservableObject
     [ObservableProperty] private bool _expanded = true;
     [ObservableProperty] private bool _visible = true;
     [ObservableProperty] private bool _hasChildren;
+    public long NewestMTime;
     public string CountText => Count.ToString();
     public Thickness DepthText => new(Depth * 14, 0, 0, 0);
 }
@@ -254,7 +255,7 @@ public sealed partial class AppVm : ObservableObject
             CurrentParams.Add(new("种子", value.SeedText));
         }
         IsPanelVisible = value is not null && !PanelCollapsed;
-        OnPropertyChanged(nameof(DetailWidth));
+        RaiseDetailWidth();
         RebuildFilmstrip();
         CurrentChangedForViewer?.Invoke();
     }
@@ -286,10 +287,22 @@ public sealed partial class AppVm : ObservableObject
     /// <summary>右栏占的宽度。查看器里用它做可折叠的列宽，折叠时是 0。</summary>
     public double DetailWidth => IsPanelVisible ? 380 : 0;
 
+    /// <summary>左栏折叠把手的位置：贴着左栏和网格之间那道缝的中点。</summary>
+    public Thickness LeftHandleMargin => new(LeftWidth - 11, 0, 0, 0);
+
+    /// <summary>详情栏折叠把手：贴着面板左缘；面板收起时贴窗口右边。</summary>
+    public Thickness DetailHandleMargin => new(0, 0, DetailWidth > 0 ? DetailWidth - 11 : 0, 0);
+
+    private void RaiseDetailWidth()
+    {
+        OnPropertyChanged(nameof(DetailWidth));
+        OnPropertyChanged(nameof(DetailHandleMargin));
+    }
+
     partial void OnPanelCollapsedChanged(bool value)
     {
         IsPanelVisible = Current is not null && !value;
-        OnPropertyChanged(nameof(DetailWidth));
+        RaiseDetailWidth();
         _store.SetSetting("panel_collapsed", value ? "1" : "0");
     }
 
@@ -342,8 +355,9 @@ public sealed partial class AppVm : ObservableObject
             LeftColumnsHeight = Math.Clamp(lch, 88, 900);
         if (int.TryParse(_store.GetSetting("left_people_h"), out var lph) && lph >= 64)
             LeftPeopleHeight = Math.Clamp(lph, 64, 900);
-        _gridSortIndex = int.TryParse(_store.GetSetting("grid_sort"), out var gsi) ? Math.Clamp(gsi, 0, 6) : 0;
-        ApplySortSpec(_gridSortIndex);
+        _sortKeyIndex = int.TryParse(_store.GetSetting("grid_sort_key"), out var gsk) ? Math.Clamp(gsk, 0, 4) : 0;
+        _sortDesc = _store.GetSetting("grid_sort_desc") != "0";
+        ApplySort();
         LoadAliases();
         LoadPersonAvatars();
         LoadPersonMeta();
@@ -812,6 +826,17 @@ public sealed partial class AppVm : ObservableObject
         }
 
         var nodes = new List<FolderVm>();
+        var newest = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var it in AllImages)
+        {
+            if (it.State == FileState.Deleted) continue;
+            for (var f = it.Folder; ; f = f.Length == 0 ? "" : f[..Math.Max(0, f.LastIndexOf('/'))])
+            {
+                long cur = newest.GetValueOrDefault(f);
+                if (it.MTime > cur) newest[f] = it.MTime;
+                if (f.Length == 0) break;
+            }
+        }
         foreach (var kv in total)
         {
             if (kv.Key.Length == 0) continue;
@@ -822,42 +847,70 @@ public sealed partial class AppVm : ObservableObject
                 Display = name,
                 Depth = kv.Key.Count(ch => ch == '/'),
                 Count = kv.Value,
+                NewestMTime = newest.GetValueOrDefault(kv.Key),
             });
         }
 
         // 根目录单独一行，只放真正躺在根上的图
+        FolderVm? rootRow = null;
         if (exact.TryGetValue("", out var rootCount) && rootCount > 0)
         {
-            nodes.Add(new FolderVm { Path = "", Display = "（根目录）", Depth = 0, Count = rootCount });
+            rootRow = new FolderVm
+            {
+                Path = "", Display = "（根目录）", Depth = 0, Count = rootCount,
+                NewestMTime = newest.GetValueOrDefault(""),
+            };
         }
 
-        nodes.Sort((a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase));
-
-        // 谁有子目录 → 才显示折叠三角
-        var parents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 父子关系：谁有子目录才显示折叠三角
+        var children = new Dictionary<string, List<FolderVm>>(StringComparer.OrdinalIgnoreCase);
         foreach (var n in nodes)
         {
             int i = n.Path.LastIndexOf('/');
-            parents.Add(i < 0 ? "" : n.Path[..i]);
+            var parent = i < 0 ? "" : n.Path[..i];
+            if (!children.TryGetValue(parent, out var list)) children[parent] = list = [];
+            list.Add(n);
         }
+        var parents = new HashSet<string>(children.Keys, StringComparer.OrdinalIgnoreCase);
         foreach (var n in nodes) n.HasChildren = parents.Contains(n.Path);
 
-        // 名称/张数/日期 × 正倒序；同值再按路径排，保证稳定
+        // 同级之间按「键 + 正/倒序」排，父目录永远在它自己的子树前面
         Comparison<FolderVm> cmp = FolderSort switch
         {
             FolderSortKind.Count => (a, b) => a.Count.CompareTo(b.Count),
-            FolderSortKind.Date => (a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase),
-            _ => (a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase),
+            FolderSortKind.Date => (a, b) => a.NewestMTime.CompareTo(b.NewestMTime),
+            _ => (a, b) => string.Compare(a.Display, b.Display, StringComparison.OrdinalIgnoreCase),
         };
-        nodes.Sort((a, b) =>
+        Comparison<FolderVm> order = (a, b) =>
         {
             int r = cmp(a, b);
             if (FolderDesc) r = -r;
             return r != 0 ? r : string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase);
-        });
+        };
+
+        var ordered = new List<FolderVm>(nodes.Count + 1);
+        if (rootRow is not null) ordered.Add(rootRow);   // 根那一行在树顶
+        void Walk(string p)
+        {
+            if (!children.TryGetValue(p, out var kids)) return;
+            kids.Sort(order);
+            foreach (var k in kids)
+            {
+                ordered.Add(k);
+                Walk(k.Path);
+            }
+        }
+        Walk("");
+        // 兜底：万一有子树没被走到（数据结构异常），也别把它们丢了
+        if (ordered.Count < nodes.Count)
+        {
+            var seen = new HashSet<string>(ordered.Select(x => x.Path), StringComparer.OrdinalIgnoreCase);
+            foreach (var n in nodes.Where(n => !seen.Contains(n.Path)).OrderBy(n => n.Path, StringComparer.OrdinalIgnoreCase))
+                ordered.Add(n);
+        }
 
         Folders.Clear();
-        foreach (var n in nodes) Folders.Add(n);
+        foreach (var n in ordered) Folders.Add(n);
         ApplyFolderVisibility();
         OnPropertyChanged(nameof(LibrarySummary));
         OnPropertyChanged(nameof(DeletedCount));
@@ -868,7 +921,7 @@ public sealed partial class AppVm : ObservableObject
     public string FolderSortLabel => (FolderSort switch
     {
         FolderSortKind.Count => "张数",
-        FolderSortKind.Date => "日期",
+        FolderSortKind.Date => "最近更新",
         _ => "名称",
     }) + (FolderDesc ? " ▾" : " ▴");
 
@@ -1092,40 +1145,62 @@ public sealed partial class AppVm : ObservableObject
     public void RefreshSelectionStatus()
         => StatusLeft = Selection.Count == 0 ? "" : $"已选 {Selection.Count} 张";
 
-    /// <summary>总览页排序下拉框的当前项（存设置，下次开还是这个）。</summary>
-    private int _gridSortIndex;
+    /// <summary>总览排序：一个键 + 正/倒序，而不是把两种方向拆成两条菜单项。</summary>
+    public static readonly string[] SortKeyNames = ["添加时间", "评分", "文件名", "分辨率", "文件大小"];
 
-    public int GridSortIndex
+    private static readonly SortKey[] SortKeyValues =
+        [SortKey.Date, SortKey.Rating, SortKey.Name, SortKey.Resolution, SortKey.Size];
+
+    private int _sortKeyIndex;
+    private bool _sortDesc = true;
+
+    public int SortKeyIndex
     {
-        get => _gridSortIndex;
+        get => _sortKeyIndex;
         set
         {
-            if (_gridSortIndex == value) return;
-            _gridSortIndex = value;
-            _store.SetSetting("grid_sort", value.ToString());
-            ApplySortSpec(value);
+            int i = Math.Clamp(value, 0, SortKeyNames.Length - 1);
+            if (_sortKeyIndex == i) return;
+            _sortKeyIndex = i;
+            _store.SetSetting("grid_sort_key", i.ToString());
+            ApplySort();
             RefreshGrid();
         }
     }
 
-    /// <summary>下拉框的 7 个选项 → 排序键。启动恢复时不重排网格，只把状态摆好。</summary>
-    private void ApplySortSpec(int index)
+    public bool SortDesc
     {
-        var key = index switch
+        get => _sortDesc;
+        set
         {
-            1 => "Date|0",
-            2 => "Rating|1",
-            3 => "Rating|0",
-            4 => "Name|1",
-            5 => "Resolution|1",
-            6 => "Size|1",
-            _ => "Date|1",
-        };
-        var parts = key.Split('|');
-        if (!Enum.TryParse<SortKey>(parts[0], out var k)) return;
-        bool desc = parts.Length < 2 || parts[1] == "1";
-        Sort = new SortSpec(k, desc);
-        SortLabel = $"{ColumnEngine.SortLabel(k)} · {(desc ? "新/大在前" : "旧/小在前")}";
+            if (_sortDesc == value) return;
+            _sortDesc = value;
+            _store.SetSetting("grid_sort_desc", value ? "1" : "0");
+            ApplySort();
+            OnPropertyChanged(nameof(SortDirGlyph));
+            RefreshGrid();
+        }
+    }
+
+    /// <summary>方向按钮上的箭头。</summary>
+    public string SortDirGlyph => _sortDesc ? "▾" : "▴";
+
+    /// <summary>状态栏/无障碍用的一句话，比如「文件名 · Z-A」。</summary>
+    public string SortSummary => $"{SortKeyNames[_sortKeyIndex]} · {DirWord(_sortKeyIndex, _sortDesc)}";
+
+    public static string DirWord(int keyIndex, bool desc) => keyIndex switch
+    {
+        0 => desc ? "新在前" : "旧在前",
+        1 => desc ? "高在前" : "低在前",
+        2 => desc ? "Z-A" : "A-Z",
+        _ => desc ? "大在前" : "小在前",
+    };
+
+    /// <summary>下拉框的 5 个键 → 排序键。启动恢复时不重排网格，只把状态摆好。</summary>
+    private void ApplySort()
+    {
+        Sort = new SortSpec(SortKeyValues[_sortKeyIndex], _sortDesc);
+        SortLabel = SortSummary;
     }
 
     [RelayCommand]
@@ -1483,16 +1558,21 @@ public sealed partial class AppVm : ObservableObject
     /// <summary>左栏人物缩略块：10 个一直铺满栏宽，卡片是正方形（不裁剪）。</summary>
     public double PeopleCardSide => Math.Max(24, (LeftWidth - 20) / 5.0 - 4);
 
+    /// <summary>两行卡片加内外边距 —— 给 ItemsControl 定死高度，UniformGrid 才不会把行拉开。</summary>
+    public double PeopleBlockHeight => PeopleCardSide * 2 + 8;
+
     /// <summary>
     /// 人物那一行实际要占多高：栏拖宽了卡片就变大，两行装不下就得把这一块也撑高
     /// （否则卡片被裁一半）。
     /// </summary>
-    public double LeftPeopleRowHeight => Math.Max(LeftPeopleHeight, PeopleCardSide * 2 + 58);
+    public double LeftPeopleRowHeight => Math.Max(LeftPeopleHeight, PeopleBlockHeight + 44);
 
     private void RaisePeopleCard()
     {
         OnPropertyChanged(nameof(PeopleCardSide));
+        OnPropertyChanged(nameof(PeopleBlockHeight));
         OnPropertyChanged(nameof(LeftPeopleRowHeight));
+        OnPropertyChanged(nameof(LeftHandleMargin));
     }
 
     // ================= 临时筛选（顶部「筛选」按钮） =================

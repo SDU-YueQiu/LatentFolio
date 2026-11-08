@@ -56,6 +56,9 @@ public sealed class JustifiedGridPanel : VirtualizingPanel, IScrollInfo
     private readonly List<int> _rowEnd = [];
     private double _layoutWidth = -1;
     private int _layoutCount = -1;
+    private double _layoutTarget = -1;
+    private double _layoutCaption = -1;
+    private double _layoutSpacing = -1;
 
     // ---------------- 集合变化 ----------------
 
@@ -166,7 +169,12 @@ public sealed class JustifiedGridPanel : VirtualizingPanel, IScrollInfo
         if (count != _layoutCount) { _rects = new Rect[count]; _layoutCount = count; }
 
         _rowTop.Clear(); _rowBottom.Clear(); _rowStart.Clear(); _rowEnd.Clear();
-        if (count == 0) { _layoutWidth = availW; return; }
+        if (count == 0)
+        {
+            _layoutWidth = availW; _layoutTarget = TargetHeight;
+            _layoutCaption = CaptionHeight; _layoutSpacing = Spacing;
+            return;
+        }
 
         double sp = Spacing, target = Math.Max(24, TargetHeight), cap = CaptionHeight;
         double y = Pad.Top;
@@ -216,6 +224,9 @@ public sealed class JustifiedGridPanel : VirtualizingPanel, IScrollInfo
         }
 
         _layoutWidth = availW;
+        _layoutTarget = TargetHeight;
+        _layoutCaption = CaptionHeight;
+        _layoutSpacing = Spacing;
     }
 
     // ---------------- 测量 ----------------
@@ -230,8 +241,13 @@ public sealed class JustifiedGridPanel : VirtualizingPanel, IScrollInfo
         double vh = double.IsInfinity(availableSize.Height) ? ItemHeight * 2 : availableSize.Height;
         double availW = Math.Max(1, vw - pad.Left - pad.Right);
 
-        // 宽度变了就要重排；重排前先记住视口顶上那条，排完再把它锚回去
-        bool relayout = Math.Abs(availW - _layoutWidth) > 0.4 || count != _layoutCount || _rects.Length != count;
+        // 宽度、数量、行高、图注高度、间距，任何一个变了都要重排（换档位就是改行高）
+        bool relayout = Math.Abs(availW - _layoutWidth) > 0.4
+                        || count != _layoutCount
+                        || _rects.Length != count
+                        || Math.Abs(TargetHeight - _layoutTarget) > 0.01
+                        || Math.Abs(CaptionHeight - _layoutCaption) > 0.01
+                        || Math.Abs(Spacing - _layoutSpacing) > 0.01;
         int anchorIndex = -1;
         double anchorDelta = 0;
         if (relayout && count > 0 && _rowTop.Count > 0)

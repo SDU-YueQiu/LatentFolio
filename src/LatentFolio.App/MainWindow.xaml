@@ -315,7 +315,8 @@
                         </Grid>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
-                            <ItemsControl ItemsSource="{Binding PeoplePreview}" Margin="12,0,8,6">
+                            <ItemsControl ItemsSource="{Binding PeoplePreview}" Margin="12,0,8,6"
+                                          Height="{Binding PeopleBlockHeight}" VerticalAlignment="Top">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <UniformGrid Columns="5" />
@@ -472,21 +473,6 @@
                                   ResizeDirection="Columns" Cursor="SizeWE"
                                   DragDelta="OnLeftSplitterDrag"
                                   Visibility="{Binding LeftCollapsed, Converter={StaticResource InvB2V}}" />
-                    <Button x:Name="LeftTab" HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Click="OnToggleLeftRail" Panel.ZIndex="10" AutomationProperties.Name="收起左栏">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource Btn.Tab}">
-                                <Setter Property="Content" Value="‹" />
-                                <Setter Property="ToolTip" Value="收起左栏" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding LeftCollapsed}" Value="True">
-                                        <Setter Property="Content" Value="›" />
-                                        <Setter Property="ToolTip" Value="展开左栏" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
                 </Grid>
 
                 <!-- ── 内容区 ── -->
@@ -541,15 +527,20 @@
 
                                 <TextBlock Text="排序" Style="{StaticResource T.Label}" VerticalAlignment="Center"
                                            Margin="14,0,6,0" />
-                                <ComboBox x:Name="SortBox" Width="150" SelectedIndex="0" SelectionChanged="OnSortChanged">
-                                    <ComboBoxItem Content="添加时间 · 新在前" />
-                                    <ComboBoxItem Content="添加时间 · 旧在前" />
-                                    <ComboBoxItem Content="评分 · 高在前" />
-                                    <ComboBoxItem Content="评分 · 低在前" />
-                                    <ComboBoxItem Content="文件名 · A-Z" />
-                                    <ComboBoxItem Content="分辨率 · 大在前" />
-                                    <ComboBoxItem Content="文件大小 · 大在前" />
+                                <ComboBox x:Name="SortBox" Width="112" SelectedIndex="0"
+                                          SelectionChanged="OnSortKeyChanged">
+                                    <ComboBoxItem Content="添加时间" />
+                                    <ComboBoxItem Content="评分" />
+                                    <ComboBoxItem Content="文件名" />
+                                    <ComboBoxItem Content="分辨率" />
+                                    <ComboBoxItem Content="文件大小" />
                                 </ComboBox>
+                                <Button x:Name="SortDirBtn" Style="{StaticResource Btn.Outline}"
+                                        Width="30" Height="30" Padding="0" FontSize="13" Margin="4,0,0,0"
+                                        Click="OnToggleSortDir" ToolTip="正序 / 倒序"
+                                        AutomationProperties.Name="排序方向">
+                                    <TextBlock Text="{Binding SortDirGlyph}" FontSize="12" />
+                                </Button>
 
                                 <Border Style="{StaticResource VLine}" Height="18" Margin="14,0" VerticalAlignment="Center" />
 
@@ -632,17 +623,6 @@
                                 <views:DetailPanel />
                             </Border>
 
-                            <Button Style="{StaticResource Btn.Tab}" Content="‹"
-                                    HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-8,0"
-                                    Grid.Column="0" Panel.ZIndex="10"
-                                    Click="OnTogglePanel" AutomationProperties.Name="收起详情栏"
-                                    Visibility="{Binding IsPanelVisible, Converter={StaticResource B2V}}" />
-                            <Button Style="{StaticResource Btn.Tab}" Content="›"
-                                    HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-8,0"
-                                    Grid.Column="0" Panel.ZIndex="10"
-                                    Click="OnTogglePanel" AutomationProperties.Name="展开详情栏"
-                                    Visibility="{Binding IsPanelVisible, Converter={StaticResource InvB2V}}" />
-
                             <StackPanel Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center"
                                         Visibility="{Binding IsEmpty, Converter={StaticResource B2V}}">
                                 <TextBlock Text="{Binding EmptyText}" FontSize="13"
@@ -654,6 +634,7 @@
                             </StackPanel>
                         </Grid>
                     </Grid>
+
 
                     <!-- 人物墙（中间显示，不弹窗） -->
                     <Grid x:Name="PeoplePane" Visibility="{Binding ShowPeoplePane, Converter={StaticResource B2V}}"
@@ -790,16 +771,7 @@
                             </Grid>
                         </Border>
 
-                        <Button Style="{StaticResource Btn.Tab}" Content="‹"
-                                HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-8,0"
-                                Grid.Row="1" Grid.Column="0" Panel.ZIndex="10"
-                                Click="OnTogglePanel" AutomationProperties.Name="收起详情栏"
-                                Visibility="{Binding IsPanelVisible, Converter={StaticResource B2V}}" />
-                        <Button Style="{StaticResource Btn.Tab}" Content="›"
-                                HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-8,0"
-                                Grid.Row="1" Grid.Column="0" Panel.ZIndex="10"
-                                Click="OnTogglePanel" AutomationProperties.Name="展开详情栏"
-                                Visibility="{Binding IsPanelVisible, Converter={StaticResource InvB2V}}" />
+                        <!-- 折叠把手用外层那套叠层，这里不再放一份 -->
 
                         <!-- 胶片条：高度可拖，每张按原图比例铺开（不裁切），横向滚 -->
                         <Border Grid.Row="2" Grid.Column="0" Height="7" Background="{StaticResource B.Window}"
@@ -884,6 +856,42 @@
                             <StackPanel x:Name="StatsHost" Margin="20,0,20,24" />
                         </ScrollViewer>
                     </Grid>
+                </Grid>
+
+                <!-- 折叠把手叠层：跨所有列、盖在最上面，两个把手同一套尺寸、同一个垂直中线 -->
+                <Grid Grid.Column="0" Grid.ColumnSpan="3" Panel.ZIndex="80">
+                    <Button x:Name="LeftTab" HorizontalAlignment="Left" VerticalAlignment="Center"
+                            Margin="{Binding LeftHandleMargin}"
+                            Click="OnToggleLeftRail" AutomationProperties.Name="收起左栏">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource Btn.Tab}">
+                                <Setter Property="Content" Value="‹" />
+                                <Setter Property="ToolTip" Value="收起左栏" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding LeftCollapsed}" Value="True">
+                                        <Setter Property="Content" Value="›" />
+                                        <Setter Property="ToolTip" Value="展开左栏" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button x:Name="DetailTab" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Margin="{Binding DetailHandleMargin}"
+                            Click="OnTogglePanel" AutomationProperties.Name="收起详情栏">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource Btn.Tab}">
+                                <Setter Property="Content" Value="‹" />
+                                <Setter Property="ToolTip" Value="收起详情栏" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsPanelVisible}" Value="False">
+                                        <Setter Property="Content" Value="›" />
+                                        <Setter Property="ToolTip" Value="展开详情栏" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                 </Grid>
             </Grid>
 
