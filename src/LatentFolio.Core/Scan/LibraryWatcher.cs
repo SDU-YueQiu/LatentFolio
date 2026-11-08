@@ -12,12 +12,16 @@ public sealed class LibraryWatcher : IDisposable
     private readonly LibraryScanner _scanner;
     private readonly object _lock = new();
     private readonly HashSet<string> _pending = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _gone = new(StringComparer.OrdinalIgnoreCase);
     private FileSystemWatcher? _fsw;
     private Timer? _timer;
     private bool _busy;
 
     /// <summary>有图入库了（参数：本批导入数量）。</summary>
     public event Action<int>? Imported;
+
+    /// <summary>有图的源文件不见了（参数：本批数量）。</summary>
+    public event Action<int>? Removed;
 
     public bool Enabled { get; private set; }
     public int ImportedTotal { get; private set; }
@@ -39,7 +43,13 @@ public sealed class LibraryWatcher : IDisposable
         };
         _fsw.Created += OnChange;
         _fsw.Changed += OnChange;
-        _fsw.Renamed += (s, e) => Enqueue(e.FullPath);
+        _fsw.Deleted += OnGone;
+        // 改名 = 老路径没了 + 新路径来了；两边都要处理，否则删不掉老记录
+        _fsw.Renamed += (s, e) =>
+        {
+            EnqueueGone(e.OldFullPath);
+            Enqueue(e.FullPath);
+        };
         _fsw.EnableRaisingEvents = true;
         _timer = new Timer(_ => Flush(), null, 1500, 1500);
         Enabled = true;
@@ -54,6 +64,14 @@ public sealed class LibraryWatcher : IDisposable
 
     private void OnChange(object sender, FileSystemEventArgs e) => Enqueue(e.FullPath);
 
+    private void OnGone(object sender, FileSystemEventArgs e) => EnqueueGone(e.FullPath);
+
+    private void EnqueueGone(string path)
+    {
+        if (!LibraryScanner.IsImage(path)) return;
+        lock (_lock) _gone.Add(path);
+    }
+
     private void Enqueue(string path)
     {
         if (!LibraryScanner.IsImage(path)) return;
@@ -63,16 +81,28 @@ public sealed class LibraryWatcher : IDisposable
     private void Flush()
     {
         List<string> batch;
+        List<string> gone;
         lock (_lock)
         {
-            if (_busy || _pending.Count == 0) return;
+            if (_busy) return;
+            if (_pending.Count == 0 && _gone.Count == 0) return;
             _busy = true;
             batch = [.. _pending];
+            gone = [.. _gone];
             _pending.Clear();
+            _gone.Clear();
         }
 
         try
         {
+            // 删除是不需要等写盘的；先把"没了"处理掉，界面上那一格立刻就消失
+            if (gone.Count > 0)
+            {
+                var ids = _scanner.MarkGone(gone);
+                if (ids.Count > 0) Removed?.Invoke(ids.Count);
+            }
+
+            if (batch.Count == 0) return;
             // 文件可能还没写完，稍等一下再读
             Thread.Sleep(400);
             var n = _scanner.ImportPaths(_root, batch);

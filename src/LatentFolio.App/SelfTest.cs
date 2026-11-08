@@ -141,19 +141,14 @@ public static class SelfTest
                 else Ok("等高布局", "这一屏只有一张图，跳过");
 
                 // 换档位必须真的改变格子大小（之前面板只在宽度变化时重排，档位白按）
-                double FirstH()
-                {
-                    for (int i = 0; i < VisualTreeHelper.GetChildrenCount(panel); i++)
-                        if (VisualTreeHelper.GetChild(panel, i) is FrameworkElement f) return f.ActualHeight;
-                    return 0;
-                }
                 int step0 = vm.TileStep;
-                double hBefore = FirstH();
+                double extBefore = panel.ExtentHeight;
                 vm.TileStep = step0 == 3 ? 0 : step0 + 1;
                 for (int i = 0; i < 5; i++) await Pulse(window);
-                double hAfter = FirstH();
-                Check(Math.Abs(hAfter - hBefore) > 15, "换档位后格子真的变了大小",
-                    $"{hBefore:F0} -> {hAfter:F0}  (档位 {step0} -> {vm.TileStep})");
+                Check(Math.Abs(panel.TargetHeight - vm.TileSize) < 0.5
+                      && Math.Abs(panel.ExtentHeight - extBefore) > 1,
+                    "换档位后网格真的重排了",
+                    $"行高 {panel.TargetHeight:F0}，总高 {extBefore:F0} -> {panel.ExtentHeight:F0}");
                 vm.TileStep = step0;
                 for (int i = 0; i < 4; i++) await Pulse(window);
 
@@ -370,14 +365,17 @@ public static class SelfTest
         var parent = vm.Folders.FirstOrDefault(f => f.HasChildren);
         if (parent is not null)
         {
+            // 默认是折叠的，所以第一次点是「展开」
             int visibleBefore = vm.Folders.Count(f => f.Visible);
             vm.ToggleFolder(parent);
             await Pulse(window);
             int visibleAfter = vm.Folders.Count(f => f.Visible);
-            Check(visibleAfter < visibleBefore, "目录树可以折叠", $"{visibleBefore} -> {visibleAfter}");
+            Check(visibleAfter != visibleBefore, "目录树可以折叠/展开", $"{visibleBefore} -> {visibleAfter}");
             vm.ToggleFolder(parent);
             await Pulse(window);
-            Check(vm.Folders.Count(f => f.Visible) == visibleBefore, "再点展开");
+            Check(vm.Folders.Count(f => f.Visible) == visibleBefore, "再点回原样");
+            vm.CollapseAllFolders();
+            await Pulse(window);
         }
         else Ok("目录折叠", "没有带子目录的目录，跳过");
 
@@ -651,9 +649,70 @@ public static class SelfTest
                 "资源库排序可以倒过来", $"{asc} / {desc}");
             vm.FolderDesc = false;
             await Pulse(window);
+
+            // ---------- 23b. 目录默认全折叠 / 点开展开 / 全展全折 ----------
+            int topLevel = vm.Folders.Count(f => f.Depth == 0);
+            Check(vm.Folders.Count(f => f.Visible) <= topLevel + 1, "目录树默认是折叠的",
+                $"可见 {vm.Folders.Count(f => f.Visible)} / 共 {vm.Folders.Count}，一级 {topLevel}");
+            var topNode = vm.Folders.FirstOrDefault(f => f.Depth == 0 && f.HasChildren);
+            if (topNode is not null)
+            {
+                int visBefore = vm.Folders.Count(f => f.Visible);
+                vm.ExpandFolder(topNode);
+                await Pulse(window);
+                Check(vm.Folders.Count(f => f.Visible) > visBefore && topNode.Expanded,
+                    "点一下会展开它", $"{visBefore} -> {vm.Folders.Count(f => f.Visible)}");
+            }
+            vm.ExpandAllFolders();
+            await Pulse(window);
+            Check(vm.Folders.All(f => f.Visible), "展开所有", $"{vm.Folders.Count(f => f.Visible)} 个");
+            vm.CollapseAllFolders();
+            await Pulse(window);
+            Check(vm.Folders.Count(f => f.Visible) <= topLevel + 1, "折叠所有",
+                $"{vm.Folders.Count(f => f.Visible)} 个");
+        }
+
+        // ---------- 23c. 人物块跟着栏宽缩放 ----------
+        double wKeep = vm.LeftWidth;
+        vm.SetLeftWidth(248);
+        await Pulse(window);
+        double sideNarrow = vm.PeopleCardSide;
+        int colsNarrow = vm.PeopleCols;
+        vm.SetLeftWidth(430);
+        await Pulse(window);
+        Check(vm.PeopleCardSide > sideNarrow + 8, "左栏变宽人物卡跟着变大",
+            $"{sideNarrow:F0}px -> {vm.PeopleCardSide:F0}px");
+        Check(vm.PeopleCols is >= 2 and <= 5 && vm.PeopleCardSide > 20, "人物是自适应方块网格",
+            $"{colsNarrow} 列 / {sideNarrow:F0}px → {vm.PeopleCols} 列 / {vm.PeopleCardSide:F0}px");
+        vm.SetLeftWidth(wKeep);
+        await Pulse(window);
+
+        // ---------- 23d. 源文件在被外部删掉 → 进「已删除」，不在图墙 ----------
+        if (vm.AllImages.Count > 0)
+        {
+            var victim = vm.AllImages.First(x => x.State == FileState.Present);
+            App.Services.Store.UpdateState(new ImageItem { Id = victim.Id, State = FileState.Missing });
+            vm.ReloadFromDb();
+            vm.RefreshGrid();
+            await Pulse(window);
+            Check(vm.MissingCount == 1, "丢失的图被记下来了", $"{vm.MissingCount}");
+            Check(vm.Items.All(x => x.Id != victim.Id), "丢失的图不在图墙里", $"{victim.FileName}");
+            var delView = vm.AllImages.Where(x => x.State is FileState.Deleted or FileState.Missing).ToList();
+            Check(delView.Any(x => x.Id == victim.Id) && vm.DeletedCount >= 1,
+                "丢失的图进「已删除」", $"共 {delView.Count} 张");
+            App.Services.Store.UpdateState(new ImageItem { Id = victim.Id, State = FileState.Present });
+            vm.ReloadFromDb();
+            vm.RefreshGrid();
+            await Pulse(window);
+            Check(vm.MissingCount == 0 && vm.Items.Any(x => x.Id == victim.Id), "标记回来就回图墙");
         }
 
         // ---------- 性能 / 内存 ----------
+        // 自检一路上会重建好几次 VM、跑 VSR、开查看器，先收一遍垃圾再读数，
+        // 否则量到的是"还没回收的垃圾"而不是常驻占用
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
         var proc = System.Diagnostics.Process.GetCurrentProcess();
         proc.Refresh();
         var st = App.Services.ThumbService.Stats;

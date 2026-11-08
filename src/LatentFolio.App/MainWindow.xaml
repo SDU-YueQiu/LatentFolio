@@ -27,12 +27,19 @@
                     <RowDefinition Height="17" />
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0" Background="{StaticResource B.Tile}" CornerRadius="7" ClipToBounds="True">
-                    <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="Uniform"
-                           RenderOptions.BitmapScalingMode="Linear"
-                           c:ThumbLoader.PixelWidth="{Binding DataContext.TileSize,
-                                       RelativeSource={RelativeSource AncestorType=Window}}" />
-                </Border>
+                <Grid Grid.Row="0">
+                    <Border Background="{StaticResource B.Tile}" CornerRadius="7" ClipToBounds="True">
+                        <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="Uniform"
+                               RenderOptions.BitmapScalingMode="Linear"
+                               c:ThumbLoader.PixelWidth="{Binding DataContext.TileSize,
+                                           RelativeSource={RelativeSource AncestorType=Window}}" />
+                    </Border>
+                    <Border Background="#E5484D" CornerRadius="5" Padding="7,2"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding IsMissing, Converter={StaticResource B2V}}">
+                        <TextBlock Text="源文件丢失" Foreground="White" FontSize="11" />
+                    </Border>
+                </Grid>
 
                 <TextBlock Grid.Row="1" Text="{Binding FileName}" FontSize="11.5"
                            Foreground="{StaticResource B.Text2}" TextTrimming="CharacterEllipsis"
@@ -319,7 +326,7 @@
                                           Height="{Binding PeopleBlockHeight}" VerticalAlignment="Top">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <UniformGrid Columns="5" />
+                                        <UniformGrid Columns="{Binding PeopleCols}" />
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>

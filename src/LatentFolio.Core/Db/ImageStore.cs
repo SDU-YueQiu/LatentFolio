@@ -111,6 +111,31 @@ public sealed class ImageStore(Db db)
         c.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// 一批路径对应的图都标成「源文件丢失」。只动还在的（Present），已删除的不碰。
+    /// 返回真正被改的 id。
+    /// </summary>
+    public List<long> MarkMissingByPaths(IEnumerable<string> paths)
+    {
+        var hits = new List<long>();
+        using var tx = db.Connection.BeginTransaction();
+        using var c = db.Cmd("UPDATE image SET state=$st WHERE path=$p AND state=$now RETURNING id");
+        c.Parameters.AddWithValue("$st", (int)FileState.Missing);
+        c.Parameters.AddWithValue("$now", (int)FileState.Present);
+        var p = c.CreateParameter();
+        p.ParameterName = "$p";
+        c.Parameters.Add(p);
+        foreach (var path in paths)
+        {
+            p.Value = path;
+            using var r = c.ExecuteReader();
+            while (r.Read()) hits.Add(r.GetInt64(0));
+            r.Close();
+        }
+        tx.Commit();
+        return hits;
+    }
+
     private static void Bind(Microsoft.Data.Sqlite.SqliteCommand c, ImageItem it, bool includeWorkflow)
     {
         c.Parameters.AddWithValue("$p", it.Path);

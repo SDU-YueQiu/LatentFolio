@@ -76,6 +76,17 @@ public sealed class ThumbCache
         catch { return null; }
     }
 
+    /// <summary>归档缩略图（256）。源文件没了以后就靠它把格子填上。</summary>
+    public byte[]? ReadArchive(long id)
+    {
+        try
+        {
+            var p = ArchivePath(id);
+            return File.Exists(p) ? File.ReadAllBytes(p) : null;
+        }
+        catch { return null; }
+    }
+
     /// <summary>当前缓存占用（字节）+ 文件数。</summary>
     public (long Bytes, int Files) Stat()
     {

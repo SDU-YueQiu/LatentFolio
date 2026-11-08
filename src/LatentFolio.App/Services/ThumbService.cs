@@ -100,10 +100,19 @@ public sealed class ThumbService : IDisposable
                 var bytes = _disk.ReadGrid(ThumbCache.Key(path, mtime, size));
                 if (bytes is null)
                 {
-                    var r = Thumbnailer.Make(path, Thumbnailer.GridSize, Thumbnailer.GridQuality);
-                    if (r.Webp is null) return null;
-                    _disk.SaveGrid(ThumbCache.Key(path, mtime, size), r.Webp);
-                    bytes = r.Webp;
+                    if (System.IO.File.Exists(path))
+                    {
+                        var r = Thumbnailer.Make(path, Thumbnailer.GridSize, Thumbnailer.GridQuality);
+                        if (r.Webp is null) return null;
+                        _disk.SaveGrid(ThumbCache.Key(path, mtime, size), r.Webp);
+                        bytes = r.Webp;
+                    }
+                    else
+                    {
+                        // 源文件没了（在资源管理器里删了）也别给个空白格：退回 256 的归档缩略图
+                        bytes = _disk.ReadArchive(id);
+                        if (bytes is null) return null;
+                    }
                 }
 
                 var bmp = DecodeScaled(bytes, bucket);

@@ -182,6 +182,7 @@ public partial class MainWindow : Window
         SyncSizeButtons();
         // 排序、尺寸这些"上次留下的状态"在 InitAsync 里已经读回来了，这里把控件摆成一致的样子
         if (SortBox.SelectedIndex != Vm.SortKeyIndex) SortBox.SelectedIndex = Vm.SortKeyIndex;
+        if (Vm.LastScanLost > 0) AskAboutLostFiles(Vm.LastScanLost);
 
         var args = Environment.GetCommandLineArgs();
         if (args.Contains("--self-test"))
@@ -286,6 +287,7 @@ public partial class MainWindow : Window
     {
         if (FolderList.SelectedItem is not FolderVm f) return;
         ColList.SelectedItem = null;
+        Vm.ExpandFolder(f);       // 点目录顺手展开它的子目录
         Vm.ShowFolder(f);
     }
 
@@ -568,6 +570,9 @@ public partial class MainWindow : Window
             Vm.StartWatcher();
         });
         Item("重新扫描", async () => await Vm.ScanCommand.ExecuteAsync(null));
+        menu.Items.Add(new Separator());
+        Item("展开所有文件夹", Vm.ExpandAllFolders);
+        Item("折叠所有文件夹", Vm.CollapseAllFolders);
 
         menu.PlacementTarget = (UIElement)sender;
         menu.IsOpen = true;
@@ -734,6 +739,21 @@ public partial class MainWindow : Window
         _leftRowDragging = false;
         (sender as UIElement)?.ReleaseMouseCapture();
         e.Handled = true;
+    }
+
+    // ================= 源文件丢失 =================
+
+    /// <summary>
+    /// 启动扫描发现源文件不见了。问一句：当成「已删除」，还是先记成「源文件丢失」留着。
+    /// </summary>
+    private void AskAboutLostFiles(int count)
+    {
+        var r = MessageBox.Show(
+            $"有 {count} 张图的源文件找不到了（可能是在资源管理器里删掉或改名了）。\n\n" +
+            "「是」= 标记为已删除，跟在这里删的一样\n" +
+            "「否」= 标记为源文件丢失（缩略图还在，文件回来还能恢复）",
+            "LatentFolio", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (r == MessageBoxResult.Yes) Vm.MarkMissingAsDeleted();
     }
 
     // ================= 胶片条：滚轮横滚 / 拖高度 =================

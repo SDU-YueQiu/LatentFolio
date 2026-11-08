@@ -278,7 +278,7 @@ public partial class ColumnEditorWindow : Window
 
     private void RefreshPreview()
     {
-        var images = App.Root.AllImages.Where(x => x.State != FileState.Deleted).ToList();
+        var images = App.Root.AllImages.Where(x => x.State == FileState.Present).ToList();
         var hits = ColumnEngine.Filter(images, Tree, App.Root.MakeContext());
         double pct = images.Count == 0 ? 0 : hits.Count * 100.0 / images.Count;
         PreviewText.Text = $"{hits.Count:N0} 张 · {pct:F1}%";

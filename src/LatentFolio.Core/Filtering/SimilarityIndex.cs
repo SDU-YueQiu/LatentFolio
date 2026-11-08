@@ -21,7 +21,7 @@ public sealed class SimilarityIndex
     public static SimilarityIndex Build(IReadOnlyList<ImageItem> images, int maxDistance = DefaultMaxDistance)
     {
         var idx = new SimilarityIndex();
-        var items = images.Where(x => x.State != FileState.Deleted && x.DHash != 0).ToList();
+        var items = images.Where(x => x.State == FileState.Present && x.DHash != 0).ToList();
         if (items.Count < 2) return idx;
 
         // 4 段 LSH 桶

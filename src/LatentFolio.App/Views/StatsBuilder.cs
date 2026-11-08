@@ -27,7 +27,7 @@ public static class StatsBuilder
     {
         _host = host;
         _vm = vm;
-        _images = vm.AllImages.Where(x => x.State != FileState.Deleted).ToList();
+        _images = vm.AllImages.Where(x => x.State == FileState.Present).ToList();
 
         host.Children.Clear();
 

@@ -43,7 +43,7 @@ public sealed class ColumnEngine
         var ids = new List<long>(256);
         foreach (var it in all)
         {
-            if (it.State == FileState.Deleted) continue;
+            if (it.State != FileState.Present) continue;
             if (tree.Evaluate(it, ctx)) ids.Add(it.Id);
         }
         return new HitSet

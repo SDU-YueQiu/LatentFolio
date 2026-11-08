@@ -120,6 +120,17 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         }
     }
 
+    /// <summary>
+    /// 监视器发现文件没了（删除/改名）：把这些路径的图标成「源文件丢失」。
+    /// 只改 Present 的，已删除的不动。返回受影响的 id。
+    /// </summary>
+    public List<long> MarkGone(IEnumerable<string> paths)
+    {
+        var list = paths.Where(p => !string.IsNullOrEmpty(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (list.Count == 0) return [];
+        return store.MarkMissingByPaths(list);
+    }
+
     /// <summary>监视器触发的单批导入。返回新增/更新的张数。</summary>
     public int ImportPaths(string root, IEnumerable<string> paths)
     {

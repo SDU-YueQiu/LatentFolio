@@ -16,6 +16,7 @@ public sealed class VsrService : IDisposable
     public VsrEngine Engine { get; } = new();
 
     private readonly Dictionary<long, BitmapSource> _cache = [];
+    private readonly List<long> _order = [];
     private readonly SemaphoreSlim _one = new(1, 1);
 
     /// <summary>依赖文件齐不齐（便宜，不加载 DLL）。</summary>
@@ -66,7 +67,7 @@ public sealed class VsrService : IDisposable
 
     public void Clear()
     {
-        lock (_cache) _cache.Clear();
+        lock (_cache) { _cache.Clear(); _order.Clear(); }
     }
 
     /// <summary>放大倍数：2 或 4。4× 就是跑两遍 2×。</summary>
@@ -85,7 +86,19 @@ public sealed class VsrService : IDisposable
 
             var bmp = await Task.Run(() => RunOne(item)).ConfigureAwait(false);
             if (bmp is null) return null;
-            lock (_cache) _cache[item.Id] = bmp;
+            lock (_cache)
+            {
+                _cache[item.Id] = bmp;
+                _order.Remove(item.Id);
+                _order.Add(item.Id);
+                // 一张 4× 超分图能有一两百 MB，留最近两张就够了（界面自己还拿着当前这张的引用）
+                while (_order.Count > 2)
+                {
+                    var old = _order[0];
+                    _order.RemoveAt(0);
+                    _cache.Remove(old);
+                }
+            }
             return bmp;
         }
         finally

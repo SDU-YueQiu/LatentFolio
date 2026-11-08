@@ -59,7 +59,7 @@ public sealed partial class FolderVm : ObservableObject
     [ObservableProperty] private string _display = "";
     public int Depth;
     [ObservableProperty] private int _count;
-    [ObservableProperty] private bool _expanded = true;
+    [ObservableProperty] private bool _expanded;
     [ObservableProperty] private bool _visible = true;
     [ObservableProperty] private bool _hasChildren;
     public long NewestMTime;
@@ -175,6 +175,7 @@ public sealed partial class AppVm : ObservableObject
             _watcher?.Dispose();
             _watcher = new LibraryWatcher(LibraryRoot, _svc.Scanner);
             _watcher.Imported += OnWatcherImported;
+            _watcher.Removed += OnWatcherRemoved;
             _watcher.Start();
         }
         catch
@@ -204,6 +205,29 @@ public sealed partial class AppVm : ObservableObject
         });
     }
 
+    /// <summary>
+    /// 在资源管理器里删/改名 → 库里这些图标成「源文件丢失」，从图墙消失、进「已删除」。
+    /// </summary>
+    private void OnWatcherRemoved(int count)
+    {
+        var app = System.Windows.Application.Current;
+        if (app is null) return;
+        app.Dispatcher.BeginInvoke(() =>
+        {
+            var selected = Selection.Select(x => x.Id).ToHashSet();
+            ReloadFromDb();
+            _engine.Invalidate();
+            _ = RunColumnCountsAsync();
+            BuildPeople();
+            foreach (var vm in VmById.Values) vm.RefreshTags(AvatarFor);
+            BuildFolders();
+            RefreshGrid();
+            Selection.Clear();
+            foreach (var vm in Items) if (selected.Contains(vm.Id)) Selection.Add(vm);
+            StatusLeft = $"{count} 张源文件丢失（已移到「已删除」）";
+        });
+    }
+
     public double TileHeight => TileSize + 46;
 
     partial void OnTileSizeChanged(double value) => OnPropertyChanged(nameof(TileHeight));
@@ -213,7 +237,7 @@ public sealed partial class AppVm : ObservableObject
         get
         {
             int folders = Folders.Count(f => f.Depth > 0 && f.Path.Length > 0);
-            int n = AllImages.Count(x => x.State != FileState.Deleted);
+            int n = AllImages.Count(x => x.State == FileState.Present);
             return $"{n:N0} 张 · {folders:N0} 个文件夹";
         }
     }
@@ -337,7 +361,12 @@ public sealed partial class AppVm : ObservableObject
         PanelCollapsed = _store.GetSetting("panel_collapsed") == "1";
         LeftCollapsed = _store.GetSetting("left_collapsed") == "1";
         if (double.TryParse(_store.GetSetting("left_width"), out var lw) && lw >= 180)
+        {
             _leftExpanded = Math.Clamp(lw, 180, 460);
+            // 直接改字段不会发通知，绑定在 XAML 载入时已经用默认值算过一次了，这里补上
+            OnPropertyChanged(nameof(LeftWidth));
+            RaisePeopleCard();
+        }
         if (double.TryParse(_store.GetSetting("film_height"), out var fh) && fh >= 40)
             FilmHeight = Math.Clamp(fh, 48, 300);
         FolderDesc = _store.GetSetting("folder_desc") == "1";
@@ -411,7 +440,7 @@ public sealed partial class AppVm : ObservableObject
             var vm = new ImageVm(it) { RatingPersist = OnVmRating, NotePersist = OnVmNote };
             VmById[it.Id] = vm;
         }
-        TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
+        TotalCount = AllImages.Count(x => x.State == FileState.Present);
 
         if (selIds.Count > 0)
         {
@@ -519,6 +548,9 @@ public sealed partial class AppVm : ObservableObject
                          + (result.DupSkipped > 0 ? $" · 重复 {result.DupSkipped}" : "")
                          + (result.Removed > 0 ? $" · 丢失 {result.Removed}" : "")
                          + (imported > 0 ? $" · 导入旧评分 {imported}" : "");
+
+            LastScanLost = result.Removed;
+            if (initial && result.Removed > 0) LostFilesDetected?.Invoke(result.Removed);
         }
         catch (Exception ex)
         {
@@ -533,6 +565,29 @@ public sealed partial class AppVm : ObservableObject
     }
 
     // ================= 栏目 =================
+
+    /// <summary>本次启动扫描发现的「源文件不见了」张数（留给主窗口弹窗问一句）。</summary>
+    public int LastScanLost { get; private set; }
+
+    /// <summary>启动扫描发现源文件丢失时抛出来，让界面问「标记为已删除还是丢失」。</summary>
+    public event Action<int>? LostFilesDetected;
+
+    /// <summary>把当前所有「丢失」的图直接改成「已删除」。</summary>
+    public int MarkMissingAsDeleted()
+    {
+        var lost = AllImages.Where(x => x.State == FileState.Missing).ToList();
+        foreach (var it in lost)
+        {
+            it.State = FileState.Deleted;
+            _store.UpdateState(it);
+        }
+        if (lost.Count == 0) return 0;
+        foreach (var it in lost) if (VmById.TryGetValue(it.Id, out var vm)) vm.RefreshState();
+        _engine.Invalidate();
+        _ = RunColumnCountsAsync();
+        RefreshGrid();
+        return lost.Count;
+    }
 
     private void LoadColumns()
     {
@@ -645,7 +700,7 @@ public sealed partial class AppVm : ObservableObject
     /// <summary>老库的 dHash 是 0，相似图分不出来。这里补一遍，补完重建相似索引。</summary>
     private async Task BackfillDHashAsync()
     {
-        int missing = AllImages.Count(x => x.DHash == 0 && x.State != FileState.Deleted);
+        int missing = AllImages.Count(x => x.DHash == 0 && x.State == FileState.Present);
         if (missing == 0) return;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         BusyText = $"补算相似指纹 · {missing:N0} 张";
@@ -925,7 +980,10 @@ public sealed partial class AppVm : ObservableObject
         _ => "名称",
     }) + (FolderDesc ? " ▾" : " ▴");
 
-    public int DeletedCount => AllImages.Count(x => x.State == FileState.Deleted);
+    /// <summary>「已删除」那一栏里装的是：手动删的 + 源文件丢失的。</summary>
+    public int DeletedCount => AllImages.Count(x => x.State is FileState.Deleted or FileState.Missing);
+
+    public int MissingCount => AllImages.Count(x => x.State == FileState.Missing);
 
     // ================= 视图 =================
 
@@ -1097,9 +1155,9 @@ public sealed partial class AppVm : ObservableObject
         var list = tree is null ? [.. AllImages] : ColumnEngine.Filter(AllImages, tree, ctx);
 
         if (View == ViewKind.Deleted)
-            list = list.Where(x => x.State == FileState.Deleted).ToList();
+            list = list.Where(x => x.State is FileState.Deleted or FileState.Missing).ToList();
         else
-            list = list.Where(x => x.State != FileState.Deleted).ToList();
+            list = list.Where(x => x.State == FileState.Present).ToList();
 
         ColumnEngine.Sort(list, Sort);
 
@@ -1242,7 +1300,7 @@ public sealed partial class AppVm : ObservableObject
         Selection.RemoveAll(x => list.Contains(x));
         // 直接重算列表：删/还原都会改变「当前视图该有哪些图」，
         // 只 Remove 不移回来的话，还原之后图就从这个视图里消失了。
-        TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
+        TotalCount = AllImages.Count(x => x.State == FileState.Present);
         RefreshGrid();
         _ = RunColumnCountsAsync();
     }
@@ -1258,7 +1316,7 @@ public sealed partial class AppVm : ObservableObject
         }
         tx.Commit();
         Selection.RemoveAll(x => list.Contains(x));
-        TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
+        TotalCount = AllImages.Count(x => x.State == FileState.Present);
         RefreshGrid();
         _ = RunColumnCountsAsync();
     }
@@ -1545,7 +1603,7 @@ public sealed partial class AppVm : ObservableObject
     /// <summary>左栏「人物」那一块的高度（拖出来的值）。</summary>
     [ObservableProperty] private double _leftPeopleHeight = 118;
 
-    partial void OnLeftPeopleHeightChanged(double value) => OnPropertyChanged(nameof(LeftPeopleRowHeight));
+    partial void OnLeftPeopleHeightChanged(double value) => RaisePeopleCard();
 
     public void SetLeftPeopleHeight(double v)
     {
@@ -1555,20 +1613,30 @@ public sealed partial class AppVm : ObservableObject
         _store.SetSetting("left_people_h", ((int)Math.Round(h)).ToString());
     }
 
-    /// <summary>左栏人物缩略块：10 个一直铺满栏宽，卡片是正方形（不裁剪）。</summary>
-    public double PeopleCardSide => Math.Max(24, (LeftWidth - 20) / 5.0 - 4);
-
-    /// <summary>两行卡片加内外边距 —— 给 ItemsControl 定死高度，UniformGrid 才不会把行拉开。</summary>
-    public double PeopleBlockHeight => PeopleCardSide * 2 + 8;
-
     /// <summary>
-    /// 人物那一行实际要占多高：栏拖宽了卡片就变大，两行装不下就得把这一块也撑高
-    /// （否则卡片被裁一半）。
+    /// 人物块：固定 5 列 2 行装 10 个，卡片是正方形，边长跟着栏宽走
+    /// （栏拖宽 → 卡片变大 → 这一块自己长高，不会裁）。
     /// </summary>
+    public int PeopleCols => 5;
+
+    public double PeopleCardSide
+    {
+        get
+        {
+            double w = Math.Max(60, LeftWidth - 20);
+            return Math.Max(16, Math.Floor(w / 5 - 4));
+        }
+    }
+
+    /// <summary>整块的高度：两行 × (卡片 + 上下边距)。</summary>
+    public double PeopleBlockHeight => 2 * (PeopleCardSide + 4);
+
+    /// <summary>人物那一行实际占多高：至少能装下卡片，用户拖得更矮也不会裁。</summary>
     public double LeftPeopleRowHeight => Math.Max(LeftPeopleHeight, PeopleBlockHeight + 44);
 
     private void RaisePeopleCard()
     {
+        OnPropertyChanged(nameof(PeopleCols));
         OnPropertyChanged(nameof(PeopleCardSide));
         OnPropertyChanged(nameof(PeopleBlockHeight));
         OnPropertyChanged(nameof(LeftPeopleRowHeight));
@@ -1608,8 +1676,8 @@ public sealed partial class AppVm : ObservableObject
         var ctx = MakeContext();
         var list = tree is null ? [.. AllImages] : ColumnEngine.Filter(AllImages, tree, ctx);
         return View == ViewKind.Deleted
-            ? list.Where(x => x.State == FileState.Deleted).ToList()
-            : list.Where(x => x.State != FileState.Deleted).ToList();
+            ? list.Where(x => x.State is FileState.Deleted or FileState.Missing).ToList()
+            : list.Where(x => x.State == FileState.Present).ToList();
     }
 
     /// <summary>当前网格里出现的角色，按张数排序（简易筛选用）。</summary>
@@ -2009,13 +2077,37 @@ public sealed partial class AppVm : ObservableObject
         BuildFolders();
     }
 
-    private readonly HashSet<string> _collapsedFolders = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// 记「展开」而不是「折叠」：默认一个都不展开，所以整棵树一开就是收起的。
+    /// </summary>
+    private readonly HashSet<string> _expandedFolders = new(StringComparer.OrdinalIgnoreCase);
+
+    public bool IsFolderExpanded(string path) => _expandedFolders.Contains(path);
 
     public void ToggleFolder(FolderVm f)
     {
         if (!f.HasChildren) return;
-        if (!_collapsedFolders.Remove(f.Path)) _collapsedFolders.Add(f.Path);
-        f.Expanded = !_collapsedFolders.Contains(f.Path);
+        if (!_expandedFolders.Remove(f.Path)) _expandedFolders.Add(f.Path);
+        ApplyFolderVisibility();
+    }
+
+    /// <summary>点一下目录行：选中它，同时把它展开（有子目录才展开）。</summary>
+    public void ExpandFolder(FolderVm f)
+    {
+        if (!f.HasChildren || f.Expanded) return;
+        _expandedFolders.Add(f.Path);
+        ApplyFolderVisibility();
+    }
+
+    public void ExpandAllFolders()
+    {
+        foreach (var f in Folders) if (f.HasChildren) _expandedFolders.Add(f.Path);
+        ApplyFolderVisibility();
+    }
+
+    public void CollapseAllFolders()
+    {
+        _expandedFolders.Clear();
         ApplyFolderVisibility();
     }
 
@@ -2030,12 +2122,14 @@ public sealed partial class AppVm : ObservableObject
                 int i = p.LastIndexOf('/');
                 p = i < 0 ? "" : p[..i];
                 if (p.Length == 0) break;
-                if (_collapsedFolders.Contains(p)) { hidden = true; break; }
+                if (!_expandedFolders.Contains(p)) { hidden = true; break; }
             }
             f.Visible = !hidden;
-            f.Expanded = !_collapsedFolders.Contains(f.Path);
+            f.Expanded = _expandedFolders.Contains(f.Path);
         }
     }
+
+    // ================= 资源库：排序 / 折叠 =================
 
     [RelayCommand]
     private void OpenColumnEditor(ColumnVm? col) => ColumnEditorRequested?.Invoke(col);

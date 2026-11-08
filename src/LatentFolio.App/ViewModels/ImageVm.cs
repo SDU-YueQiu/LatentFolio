@@ -61,6 +61,18 @@ public sealed partial class ImageVm : ObservableObject, Controls.IAspectItem
 
     public string StarText => Rating > 0 ? new string('★', Rating) : "";
 
+    /// <summary>源文件在资源管理器里被删/改名了（库里还留着记录）。</summary>
+    public bool IsMissing => Item.State == FileState.Missing;
+
+    public bool IsDeletedFile => Item.State == FileState.Deleted;
+
+    /// <summary>状态改了要重刷那几个只读属性。</summary>
+    public void RefreshState()
+    {
+        OnPropertyChanged(nameof(IsMissing));
+        OnPropertyChanged(nameof(IsDeletedFile));
+    }
+
     [ObservableProperty]
     private string _note = "";
 
