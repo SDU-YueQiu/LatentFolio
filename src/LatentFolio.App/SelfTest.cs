@@ -383,6 +383,17 @@ public static class SelfTest
             double rightEdge = zoom.ActualWidth / 2 + cw * 3.0 / 2 + zoom.OffsetX;
             Check(Math.Abs(rightEdge - zoom.ActualWidth) < 2, "拖到极限时图片右边缘贴住视口右边",
                 $"{rightEdge:F1} / {zoom.ActualWidth:F1}");
+
+            // 报过的问题：从头顶拖到脚，图只挪一点点 —— 2 倍缩放下拖动被打了对折
+            zoom.PanBy(0, -100000);
+            await Pulse(window);
+            zoom.SetScale(2.0);
+            double m2 = zoom.DragBy(0, 100);
+            zoom.SetScale(3.0);
+            double m3 = zoom.DragBy(0, 100);
+            Check(Math.Abs(m2 - 100) < 1 && Math.Abs(m3 - 100) < 1,
+                "拖动 1:1 跟手，且不随缩放打折", $"2× 走 {m2:F0}，3× 走 {m3:F0}");
+
             _ = ch;
             zoom.Reset();
             await Pulse(window);

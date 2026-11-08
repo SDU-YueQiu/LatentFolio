@@ -43,7 +43,7 @@ public partial class SettingsWindow : Window
         GpuText.Text = _vm.VsrStarted
             ? "显卡可用 · RTX Video Super Resolution 已就绪"
             : _vm.VsrReady
-                ? "显卡可用 · RTX VSR 待命（第一次点右键 VSR 时才加载，省 3 秒和几百 MB）"
+                ? "显卡可用 · RTX VSR 正在加载…"
                 : _vm.VsrStatus.Length == 0 ? "检测中…" : "不可用：" + _vm.VsrStatus;
 
         BuildChips();

@@ -119,6 +119,14 @@ public sealed class ZoomBox : ContentControl
     internal double OffsetX => _tx;
     internal double OffsetY => _ty;
 
+    /// <summary>
+    /// 鼠标位置要用「父容器坐标」算，不能用 this。
+    /// this 身上挂着 RenderTransform，GetPosition(this) 会把屏幕点反变换回
+    /// 缩放前的局部坐标 —— 2 倍时拖 100 像素只算出 50，图只走一半，
+    /// 就是「从头顶拖到脚也拖不动」的根因。
+    /// </summary>
+    private IInputElement Space => Parent as IInputElement ?? this;
+
     /// <summary>给自检用：按像素平移，内部会夹到边界。</summary>
     internal void PanBy(double dx, double dy)
     {
@@ -126,6 +134,17 @@ public sealed class ZoomBox : ContentControl
         _ty += dy;
         Clamp();
         Apply();
+    }
+
+    /// <summary>给自检用：跟鼠标拖动走同一条路径，返回实际位移。</summary>
+    internal double DragBy(double dx, double dy)
+    {
+        double before = _ty;
+        _tx += dx;
+        _ty += dy;
+        Clamp();
+        Apply();
+        return _ty - before;
     }
 
     /// <summary>以某个点为锚点缩放。</summary>
@@ -157,14 +176,14 @@ public sealed class ZoomBox : ContentControl
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
         if (_scale <= 1.01 && e.Delta <= 0) return;
-        ZoomAt(e.GetPosition(this), e.Delta > 0 ? 1.15 : 1 / 1.15);
+        ZoomAt(e.GetPosition(Space), e.Delta > 0 ? 1.15 : 1 / 1.15);
         e.Handled = true;
     }
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         Focus();
-        _dragStart = e.GetPosition(this);
+        _dragStart = e.GetPosition(Space);
         _dragging = _scale > 1.01;
         if (_dragging)
         {
@@ -178,8 +197,8 @@ public sealed class ZoomBox : ContentControl
     {
         if (_dragging && e.LeftButton == MouseButtonState.Pressed)
         {
-            var p = e.GetPosition(this);
-            // 1:1 跟手：鼠标移动多少像素，图就移多少像素（之前乘了 0.9，拖起来发飘）
+            var p = e.GetPosition(Space);
+            // 1:1 跟手：鼠标移动多少像素，图就移多少像素
             _tx += p.X - _dragStart.X;
             _ty += p.Y - _dragStart.Y;
             _dragStart = p;

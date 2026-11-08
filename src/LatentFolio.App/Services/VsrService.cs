@@ -27,27 +27,37 @@ public sealed class VsrService : IDisposable
 
     public string Status => Engine.Available
         ? Engine.Status
-        : Capable ? "待命 · 首次使用时加载" : Engine.Status;
+        : Capable ? "加载中…" : Engine.Status;
 
     public int CachedCount { get { lock (_cache) return _cache.Count; } }
 
     public VsrService()
     {
-        // 只在构造时看一眼文件，真正的 NvVFX_Load 留到第一次要用的时候
+        // 先看一眼依赖文件，引擎本体在启动后台线程里加载（常驻，用户要求不要按需加载）
         Capable = VsrEngine.Probe(out var dir);
         if (Capable) Engine.LibDir = dir;
     }
 
-    /// <summary>加载引擎（约 3 秒、几百 MB）。第一次点 VSR 时才调。</summary>
-    public Task<bool> StartAsync() => Task.Run(() => Engine.Start());
+    private readonly SemaphoreSlim _startGate = new(1, 1);
 
-    /// <summary>要用了：没加载就加载一次。</summary>
-    public async Task<bool> EnsureStartedAsync()
+    /// <summary>加载引擎（约 3 秒、几百 MB）。重复调用安全。</summary>
+    public async Task<bool> StartAsync()
     {
         if (Engine.Available) return true;
         if (!Capable) return false;
-        return await StartAsync().ConfigureAwait(false);
+        await _startGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (Engine.Available) return true;
+            return await Task.Run(() => Engine.Start()).ConfigureAwait(false);
+        }
+        finally
+        {
+            _startGate.Release();
+        }
     }
+
+    public Task<bool> EnsureStartedAsync() => StartAsync();
 
     public BitmapSource? Peek(long id)
     {

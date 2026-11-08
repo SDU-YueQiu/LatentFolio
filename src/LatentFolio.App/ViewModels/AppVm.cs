@@ -321,9 +321,13 @@ public sealed partial class AppVm : ObservableObject
         LoadAliases();
         LoadPersonAvatars();
         LoadPersonMeta();
-        // VSR 引擎按需加载：不点就不建 CUDA 上下文（省 3 秒和几百 MB）
-        OnPropertyChanged(nameof(VsrReady));
-        OnPropertyChanged(nameof(VsrStatus));
+        // VSR 常驻：启动后台线程就把引擎加载好，第一次点右键不用等 3 秒
+        _ = _svc.Vsr.StartAsync().ContinueWith(_ =>
+        {
+            OnPropertyChanged(nameof(VsrReady));
+            OnPropertyChanged(nameof(VsrStatus));
+            OnPropertyChanged(nameof(VsrStarted));
+        }, TaskScheduler.FromCurrentSynchronizationContext());
 
         ReloadFromDb();
         await EnsureSeed();
