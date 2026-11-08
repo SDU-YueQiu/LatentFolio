@@ -37,6 +37,8 @@ public partial class MainWindow : Window
         // 鼠标侧键：后退 = 关查看器 / 清搜索 / 清筛选 / 回总览，前进 = 重新打开当前那张
         PreviewMouseDown += OnNavMouseDown;
         BigZoom.ZoomChanged += UpdateZoomLabel;
+        // VSR 出图后源换了，百分比也要跟着重算
+        App.Root.CurrentChangedForViewer += UpdateZoomLabel;
     }
 
     private void OnNavMouseDown(object sender, MouseButtonEventArgs e)
@@ -1059,7 +1061,6 @@ public partial class MainWindow : Window
             _ = Vm.ApplyVsrAsync();
         }, null, vsrOk);
         Item("显示原图", () => Vm.ToggleOriginalCommand.Execute(null), null, !gallery && !Vm.ShowOriginal);
-            Item("用 RTX VSR 处理", () => _ = Vm.ApplyVsrAsync(), null, !gallery && Vm.VsrReady);
         Item("始终使用 RTX VSR", () => Vm.ToggleAlwaysVsrCommand.Execute(null), null, vsrOk, Vm.AlwaysVsr);
 
         menu.Items.Add(new Separator());
