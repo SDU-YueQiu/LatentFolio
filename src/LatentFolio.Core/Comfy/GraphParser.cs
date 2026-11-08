@@ -56,7 +56,7 @@ public static partial class GraphParser
     private static readonly HashSet<string> NegKeys = new(StringComparer.OrdinalIgnoreCase)
     { "negative", "text_negative", "negative_prompt" };
 
-    private static readonly string[] ConcatStrings = ["string_a", "string_b", "text_a", "text_b", "a", "b"];
+    private static readonly string[] ConcatStrings = ["string_a", "string_b", "text_a", "text_b", "text_c", "text_d", "a", "b"];
 
     [GeneratedRegex("concat|join|append|stringfunction|combine|text_?merge", RegexOptions.IgnoreCase)]
     private static partial Regex ConcatRe();
@@ -127,42 +127,94 @@ public static partial class GraphParser
 
     // ---------- 文本求值 ----------
 
-    private static string ResolveValue(Dictionary<string, Node> g, object? v, int depth, HashSet<string> seen)
+    /// <summary>求值上下文：图 + ShowText 记下来的实际输出。</summary>
+    private sealed class Eval(Dictionary<string, Node> g)
+    {
+        public Dictionary<string, Node> G { get; } = g;
+
+        /// <summary>节点 id → ShowText 在那次运行里实际显示的文字。</summary>
+        public Dictionary<string, string> Snapshot { get; } = new(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// ShowText 节点会把「这次运行实际显示的文本」写进 text_0，text 则是它连着的上游。
+    /// 通配符（Wildcards）和随机分支（easy anythingIndexSwitch）真正选中哪一条只在运行时才知道，
+    /// 从图里推不出来，但 ShowText 记着 —— 所以链路上遇到有快照的节点，直接用快照。
+    /// </summary>
+    private static void CollectSnapshots(Eval e)
+    {
+        foreach (var node in e.G.Values)
+        {
+            if (!node.ClassType.Contains("ShowText", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!node.Inputs.TryGetValue("text", out var v) || v is not Link l) continue;
+
+            string? snap = null;
+            foreach (var k in (string[])["text_0", "text_1"])
+            {
+                if (node.Inputs.TryGetValue(k, out var s) && s is string str && !string.IsNullOrWhiteSpace(str))
+                {
+                    snap = str;
+                    break;
+                }
+            }
+            if (snap is null) continue;
+
+            // 同一个上游可能挂了多个 ShowText，取最长的那个（最完整的）
+            if (!e.Snapshot.TryGetValue(l.NodeId, out var old) || snap.Length > old.Length)
+                e.Snapshot[l.NodeId] = snap;
+        }
+    }
+
+    private static string ResolveValue(Eval e, object? v, int depth, HashSet<string> seen)
     {
         if (v is string s) return s;
         if (v is not Link l || depth > 8) return "";
         if (!seen.Add(l.NodeId)) return "";
-        if (!g.TryGetValue(l.NodeId, out var node)) return "";
-        return ResolveNodeText(g, node, depth + 1, seen);
+        if (!e.G.TryGetValue(l.NodeId, out var node)) return "";
+        return ResolveNodeText(e, node, depth + 1, seen);
     }
 
-    private static string ResolveNodeText(Dictionary<string, Node> g, Node node, int depth, HashSet<string> seen)
+    private static string ResolveNodeText(Eval e, Node node, int depth, HashSet<string> seen)
     {
         var ins = node.Inputs;
+
+        // 这个节点有一次运行的实际输出（ShowText 记的），比从图里推的完整：
+        // 通配符 / 随机分支推不出来，硬推会得到断断续续的半截文本
+        if (e.Snapshot.TryGetValue(node.Id, out var snap) && snap.Length > 0)
+            return snap;
+
         bool isConcat = ConcatRe().IsMatch(node.ClassType)
                         || ins.ContainsKey("string_a") || ins.ContainsKey("string_b");
 
+        string normal;
         if (isConcat)
         {
-            var parts = new List<string>(3);
+            var parts = new List<string>(4);
             foreach (var k in ConcatStrings)
             {
                 if (!ins.TryGetValue(k, out var raw)) continue;
-                var t = ResolveValue(g, raw, depth, [.. seen]);
+                var t = ResolveValue(e, raw, depth, [.. seen]);
                 if (!string.IsNullOrWhiteSpace(t)) parts.Add(t.Trim());
             }
             string delim = "";
             if (ins.TryGetValue("delimiter", out var d1) && d1 is string ds) delim = ds;
             else if (ins.TryGetValue("delim", out var d2) && d2 is string ds2) delim = ds2;
-            return string.Join(delim, parts);
+            normal = string.Join(delim, parts);
+        }
+        else
+        {
+            normal = "";
+            foreach (var k in TextKeys)
+            {
+                if (ins.TryGetValue(k, out var v) && v is string s && !string.IsNullOrWhiteSpace(s))
+                {
+                    normal = s;
+                    break;
+                }
+            }
         }
 
-        foreach (var k in TextKeys)
-        {
-            if (ins.TryGetValue(k, out var v) && v is string s && !string.IsNullOrWhiteSpace(s))
-                return s;
-        }
-        return "";
+        return normal;
     }
 
     /// <summary>
@@ -176,16 +228,16 @@ public static partial class GraphParser
         "ConditioningSetAreaEmpty",
     };
 
-    private static void WalkUp(Dictionary<string, Node> g, string nodeId, string role,
+    private static void WalkUp(Eval e, string nodeId, string role,
         List<(string Id, string Role, string Text, string Cls)> found, HashSet<string> seen, int depth)
     {
         if (depth > 25 || !seen.Add(nodeId)) return;
-        if (!g.TryGetValue(nodeId, out var node)) return;
+        if (!e.G.TryGetValue(nodeId, out var node)) return;
 
         // 空 conditioning：到此为止，这一口就是没有文本
         if (EmptyCond.Contains(node.ClassType)) return;
 
-        var txt = ResolveNodeText(g, node, 0, []);
+        var txt = ResolveNodeText(e, node, 0, []);
         if (!string.IsNullOrWhiteSpace(txt))
         {
             found.Add((nodeId, role, txt, node.ClassType));
@@ -199,7 +251,7 @@ public static partial class GraphParser
             if (NoFollow.Contains(kl)) continue;
             if (PosKeys.Contains(kl) && role != "positive") continue;
             if (NegKeys.Contains(kl) && role != "negative") continue;
-            WalkUp(g, l.NodeId, role, found, [.. seen], depth + 1);
+            WalkUp(e, l.NodeId, role, found, [.. seen], depth + 1);
         }
     }
 
@@ -225,7 +277,9 @@ public static partial class GraphParser
             if (root.ValueKind != System.Text.Json.JsonValueKind.Object) return res;
             var g = BuildGraph(root);
             if (g.Count == 0) return res;
-            Fill(g, res);
+            var e = new Eval(g);
+            CollectSnapshots(e);
+            Fill(e, res);
         }
         return res;
     }
@@ -239,13 +293,13 @@ public static partial class GraphParser
     [GeneratedRegex(@"(?<=[:\[,\s])-?(?:Infinity|NaN)(?=\s*[,\}\]])")]
     private static partial Regex NaNRe();
 
-    private static void Fill(Dictionary<string, Node> g, ParseResult res)
+    private static void Fill(Eval e, ParseResult res)
     {
         var found = new List<(string Id, string Role, string Text, string Cls)>(8);
         var seedsPos = new List<string>();
         var seedsNeg = new List<string>();
 
-        foreach (var node in g.Values)
+        foreach (var node in e.G.Values)
         {
             foreach (var (k, v) in node.Inputs)
             {
@@ -271,17 +325,17 @@ public static partial class GraphParser
             }
         }
 
-        foreach (var s in seedsPos) WalkUp(g, s, "positive", found, [], 0);
-        foreach (var s in seedsNeg) WalkUp(g, s, "negative", found, [], 0);
+        foreach (var s in seedsPos) WalkUp(e, s, "positive", found, [], 0);
+        foreach (var s in seedsNeg) WalkUp(e, s, "negative", found, [], 0);
 
         res.Method = found.Any(x => x.Role == "positive") ? "conditioning-trace" : "fallback";
 
         if (res.Method == "fallback")
         {
             var cands = new List<(string Id, string Cls, string Text)>();
-            foreach (var node in g.Values)
+            foreach (var node in e.G.Values)
             {
-                var t = ResolveNodeText(g, node, 0, []);
+                var t = ResolveNodeText(e, node, 0, []);
                 if (!string.IsNullOrWhiteSpace(t)) cands.Add((node.Id, node.ClassType, t));
             }
             if (cands.Count == 1)
@@ -325,7 +379,7 @@ public static partial class GraphParser
             .Where(x => x.Length > 0).Distinct().OrderBy(x => x).ToArray();
 
         // 技术参数
-        foreach (var node in g.Values)
+        foreach (var node in e.G.Values)
         {
             var ins = node.Inputs;
             if (res.Model is null)

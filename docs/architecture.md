@@ -40,7 +40,13 @@
 - 从任意带 `positive` / `negative` 输入的节点出发，反向走图找文本源
 - 穿过中间节点时**只跟同角色的那一口**（否则 `ToBasicPipe` 这类会把正负两份都收进同一个角色，
   实测 2,495 张被这样搞错）
-- 支持 `StringConcatenate` 之类拼接节点、`Efficient Loader` 的字符串 widget
+- 支持 `StringConcatenate` / `Text Concatenate` 这类拼接节点（`text_a`–`text_d` 都认）、
+  `Efficient Loader` 的字符串 widget
+- 通配符（`Wildcards`）和随机分支（`easy anythingIndexSwitch`）最后选中哪一条只在运行时才知道，
+  图里推不出来。`ShowText|pysssss` 会把那次运行实际显示的整段文本写进 `text_0`，
+  所以链路上遇到带快照的节点就直接采用它 —— 不然只能拼出半截（实测：一条 wildcard 工作流的
+  正向词从 80 字符修成完整的 208 字符）
+- 解析器逻辑改了要 `ParserVersion++`：老库下次启动会强制重解析一遍元数据（不是只重打标）
 - 都没有时退化为「全图找文本」，再按节点类型猜正负
 - 正面里内嵌 `Negative prompt:` 分隔符时自动切开
 

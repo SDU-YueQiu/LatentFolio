@@ -210,17 +210,22 @@ public static class SelfTest
         Check(vm.Items.Count == before - 1, "删除后网格少一张", $"{before} -> {vm.Items.Count}");
         Check(vm.AllImages.First(x => x.Id == first.Id).State == FileState.Deleted, "状态改成已删除");
 
-        // 批量删 50 张：逐条 Remove 会把面板的 OnItemsChanged 跑 50 遍
-        var batch = vm.Items.Take(50).ToList();
+        // 批量删 50 张：逐条 Remove 会把面板的 OnItemsChanged 跑 50 遍。
+        // 库里随时会进新图（ReloadFromDb 会把 ImageVm 全换掉），所以断言一律按 id 算，
+        // 每次操作前再从 VmById 取一遍当前实例，不拿旧引用。
+        var batchIds = vm.Items.Take(50).Select(x => x.Id).ToList();
         int before2 = vm.Items.Count;
-        vm.MoveToDeleted(batch);
+        vm.MoveToDeleted(vm.Items.Take(50).ToList());
         await Pulse(window, 3);
-        Check(vm.Items.Count == before2 - batch.Count, "一次删 50 张不崩", $"{before2} -> {vm.Items.Count}");
-        vm.RestoreFromDeleted(batch);
+        Check(batchIds.All(id => vm.Items.All(i => i.Id != id)), "一次删 50 张不崩",
+            $"{before2} -> {vm.Items.Count}");
+        var batchNow = batchIds.Select(id => vm.VmById.GetValueOrDefault(id))
+                               .Where(x => x is not null).Select(x => x!).ToList();
+        vm.RestoreFromDeleted(batchNow);
         await Pulse(window, 3);
-        Check(vm.Items.Count == before2, "一次还原 50 张", $"{vm.Items.Count}");
+        Check(batchIds.All(id => vm.Items.Any(i => i.Id == id)), "一次还原 50 张", $"{vm.Items.Count}");
 
-        vm.RestoreFromDeleted([first]);
+        vm.RestoreFromDeleted([vm.VmById[first.Id]]);
         await Pulse(window, 3);
         Check(vm.AllImages.First(x => x.Id == first.Id).State == FileState.Present, "还原后状态恢复");
         first = vm.Items[0];
@@ -394,19 +399,22 @@ public static class SelfTest
         var cand = App.Services.Store.LoadCandidates().FirstOrDefault();
         if (cand is not null && cand.Suggest.Length > 0)
         {
-            string charsBefore = vm.AllImages.FirstOrDefault(x => x.Prompt.Contains(cand.Key))?.Chars.Length.ToString() ?? "?";
             vm.ConfirmCandidate(cand.Key, cand.Suggest);
             await Pulse(window, 3);
             Check(App.Services.Store.LoadAliases().TryGetValue(cand.Key, out var mapped) && mapped == cand.Suggest,
                 "确认候选写进别名表", $"{cand.Key} -> {cand.Suggest}");
-            Check(App.Services.Store.CandidateCount() < cands, "确认后从候选池移走", $"{App.Services.Store.CandidateCount()}");
+            // 整库重打标会顺带发现新候选，所以不能拿「池子总数」判断，
+            // 要看这一条本身有没有从待确认名单里消失
+            Check(!App.Services.Store.LoadCandidates().Any(x => x.Key == cand.Key),
+                "确认后从候选池移走", cand.Key);
             // 回滚，别把用户的库改了
             App.Services.Store.DeleteAlias(cand.Key);
             App.Services.Store.SetCandidateState(cand.Key, 0);
             vm.LoadAliases();
             vm.RetagAll();
             await Pulse(window, 2);
-            Check(App.Services.Store.CandidateCount() == cands, "回滚后候选池复原", charsBefore);
+            Check(App.Services.Store.LoadCandidates().Any(x => x.Key == cand.Key),
+                "回滚后候选池复原", cand.Key);
         }
         else Ok("候选池", "没有带建议的候选，跳过确认流程");
 
@@ -659,6 +667,36 @@ public static class SelfTest
             }
         }
         else Ok("解析回归", "样本图不在，跳过");
+
+        // ShowText 快照：wildcard / 随机分支的真实取值只在运行时出现，图里推不出来，
+        // 但 ShowText 的 text_0 记着那次实际显示的整段文本
+        const string snapJson = """
+        {
+          "1": {"class_type":"KSampler","inputs":{"positive":["2",0],"negative":["9",0]}},
+          "2": {"class_type":"CLIPTextEncode","inputs":{"text":["3",0]}},
+          "3": {"class_type":"StringConcatenate","inputs":{"string_a":["4",0],"string_b":["5",0],"delimiter":","}},
+          "4": {"class_type":"PrimitiveStringMultiline","inputs":{"value":"a,"}},
+          "5": {"class_type":"Text Concatenate","inputs":{"text_a":["6",0],"text_b":["7",0],"delimiter":""}},
+          "6": {"class_type":"Wildcards","inputs":{"textfile":"x.txt","entries_returned":1}},
+          "7": {"class_type":"ShowText|pysssss","inputs":{"text_0":"b,","text":["8",0]}},
+          "8": {"class_type":"easy anythingIndexSwitch","inputs":{"index":["10",0],"value0":["6",0]}},
+          "9": {"class_type":"CLIPTextEncode","inputs":{"text":"worst quality"}},
+          "10":{"class_type":"Random Number","inputs":{"seed":1}},
+          "11":{"class_type":"ShowText|pysssss","inputs":{"text_0":"a,,b,","text":["3",0]}}
+        }
+        """;
+        var snapRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(snapJson);
+        Check(snapRes.Positive == "a,,b,", "拼接节点用 ShowText 记下的实际结果", snapRes.Positive);
+
+        const string c4Json = """
+        {
+          "1": {"class_type":"KSampler","inputs":{"positive":["2",0]}},
+          "2": {"class_type":"CLIPTextEncode","inputs":{"text":["3",0]}},
+          "3": {"class_type":"Text Concatenate","inputs":{"delimiter":"","text_a":"1,","text_b":"2,","text_c":"3,","text_d":"4,"}}
+        }
+        """;
+        var c4Res = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(c4Json);
+        Check(c4Res.Positive == "1,2,3,4,", "四段拼接（text_c/text_d）也接上", c4Res.Positive);
 
         // ---------- 21. 左栏可拖宽 ----------
         double w0 = vm.LeftWidth;
