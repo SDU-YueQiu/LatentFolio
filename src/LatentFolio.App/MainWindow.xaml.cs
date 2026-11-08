@@ -272,7 +272,7 @@ public partial class MainWindow : Window
         if (e.Key == Key.OemComma && Vm.Selection.Count > 0) { OnAddTag(); e.Handled = true; }
     }
 
-    /// <summary>右键先把光标下的格子选中，不然菜单会作用到别处。</summary>
+    /// <summary>右键先把光标下的格子选中，再弹菜单。</summary>
     private void OnGridPreviewRightDown(object sender, MouseButtonEventArgs e)
     {
         var el = e.OriginalSource as DependencyObject;
@@ -284,27 +284,28 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnGridContextOpening(object sender, ContextMenuEventArgs e)
+    private void OnGridRightUp(object sender, MouseButtonEventArgs e)
     {
         if (Vm.Selection.Count == 0 && GridList.SelectedItem is ImageVm only)
         {
             Vm.Selection.Clear();
             Vm.Selection.Add(only);
         }
-        if (Vm.Selection.Count == 0) { e.Handled = true; return; }
-        e.Handled = true;
+        if (Vm.Selection.Count == 0) return;
+
         var menu = BuildMenu(gallery: true);
         menu.PlacementTarget = GridList;
         menu.IsOpen = true;
+        e.Handled = true;
     }
 
-    private void OnViewerContextOpening(object sender, ContextMenuEventArgs e)
+    private void OnViewerRightUp(object sender, MouseButtonEventArgs e)
     {
-        if (Vm.Current is null) { e.Handled = true; return; }
-        e.Handled = true;
+        if (Vm.Current is null) return;
         var menu = BuildMenu(gallery: false);
         menu.PlacementTarget = BigImage;
         menu.IsOpen = true;
+        e.Handled = true;
     }
 
     private ContextMenu BuildMenu(bool gallery)
@@ -458,6 +459,8 @@ public partial class MainWindow : Window
         StatsPane.Visibility = Visibility.Visible;
         StatsBuilder.Build(StatsHost, Vm);
     }
+
+    private void OnStatsClick(object sender, RoutedEventArgs e) => ShowStats();
 
     private void OnCloseStats(object sender, RoutedEventArgs e) => StatsPane.Visibility = Visibility.Collapsed;
 }

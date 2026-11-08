@@ -639,10 +639,13 @@ public sealed partial class AppVm : ObservableObject
         foreach (var v in vms) Items.Add(v);
 
         HitCount = Items.Count;
+        IsEmpty = Items.Count == 0;
         OnPropertyChanged(nameof(Chips));
         GridReloaded?.Invoke();
         RefreshStatus();
     }
+
+    [ObservableProperty] private bool _isEmpty;
 
     public List<string> Chips
     {

@@ -139,7 +139,7 @@
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True">
                 <Button Content="&#xE713;" FontFamily="Segoe MDL2 Assets" Width="40" Height="34"
-                        Style="{StaticResource Btn.Ghost}" Click="OnScanClick" ToolTip="重新扫描图库" />
+                        Style="{StaticResource Btn.Ghost}" Click="OnScanClick" ToolTip="重新扫描图库" AutomationProperties.Name="重新扫描" />
                 <Button Content="&#xE921;" FontFamily="Segoe MDL2 Assets" Width="40" Height="34"
                         Style="{StaticResource Btn.Ghost}" Click="OnMinClick" />
                 <Button x:Name="MaxBtn" Content="&#xE922;" FontFamily="Segoe MDL2 Assets" Width="40" Height="34"
@@ -167,21 +167,29 @@
 
                 <!-- 总览 / 我的栏 -->
                 <StackPanel Grid.Row="0" Margin="8,8,8,0">
-                    <Button Style="{StaticResource Btn.Ghost}" HorizontalContentAlignment="Stretch"
-                            Click="OnOverviewClick" Padding="10,7">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="&#xE8A9;" FontFamily="Segoe MDL2 Assets"
-                                       FontSize="13" Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Text="总览 · 全部图片" Margin="9,0,0,0" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="2" Text="{Binding TotalCount, StringFormat={}{0:N0}}" Style="{StaticResource T.Sub}"
-                                       VerticalAlignment="Center" Margin="14,0,0,0" />
-                        </Grid>
-                    </Button>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button Style="{StaticResource Btn.Ghost}" HorizontalContentAlignment="Stretch"
+                                Click="OnOverviewClick" Padding="10,7">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="&#xE8A9;" FontFamily="Segoe MDL2 Assets"
+                                           FontSize="13" Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="总览 · 全部图片" Margin="9,0,0,0" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2" Text="{Binding TotalCount, StringFormat={}{0:N0}}" Style="{StaticResource T.Sub}"
+                                           VerticalAlignment="Center" Margin="14,0,0,0" />
+                            </Grid>
+                        </Button>
+                        <Button Grid.Column="1" Content="&#xE9D9;" FontFamily="Segoe MDL2 Assets" Width="34"
+                                Style="{StaticResource Btn.Ghost}" Click="OnStatsClick" ToolTip="统计" AutomationProperties.Name="统计" />
+                    </Grid>
 
                     <Grid Margin="10,14,4,6">
                         <Grid.ColumnDefinitions>
@@ -377,7 +385,7 @@
                              MouseDoubleClick="OnGridDoubleClick"
                              KeyDown="OnGridKeyDown"
                              PreviewMouseRightButtonDown="OnGridPreviewRightDown"
-                             ContextMenuOpening="OnGridContextOpening">
+                             PreviewMouseRightButtonUp="OnGridRightUp">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <c:VirtualizingWrapPanel ItemWidth="{Binding TileSize}"
@@ -386,6 +394,10 @@
                             </ItemsPanelTemplate>
                         </ListBox.ItemsPanel>
                     </ListBox>
+
+                    <TextBlock Grid.Row="1" Text="这里一张都没有" HorizontalAlignment="Center"
+                               VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource B.Text3}"
+                               Visibility="{Binding IsEmpty, Converter={StaticResource B2V}}" />
                 </Grid>
 
                 <!-- 查看器 -->
@@ -416,7 +428,7 @@
                             </Border>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button Content="RTX VSR" Style="{StaticResource Btn.Outline}" Padding="10,4"
+                            <Button Content="RTX VSR" AutomationProperties.Name="RTX VSR 按钮" Style="{StaticResource Btn.Outline}" Padding="10,4"
                                     FontSize="12" Click="OnVsrClick" Margin="0,0,6,0" />
                             <Button Content="&#xE890;" FontFamily="Segoe MDL2 Assets" Style="{StaticResource Btn.Ghost}"
                                     Padding="10,4" Click="OnToggleOriginal" ToolTip="显示原图" />
@@ -434,7 +446,7 @@
                         <Grid>
                             <Image x:Name="BigImage" Source="{Binding ViewerImage.Source}" Stretch="Uniform"
                                    RenderOptions.BitmapScalingMode="HighQuality" Margin="12"
-                                   ContextMenuOpening="OnViewerContextOpening" />
+                                   PreviewMouseRightButtonUp="OnViewerRightUp" />
                             <TextBlock Text="加载中…" Foreground="#99FFFFFF" HorizontalAlignment="Center"
                                        VerticalAlignment="Center"
                                        Visibility="{Binding ViewerLoading, Converter={StaticResource B2V}}" />
@@ -640,4 +652,6 @@
         </Border>
     </Grid>
 </Window>
+
+
 

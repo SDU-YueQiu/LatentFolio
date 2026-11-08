@@ -12,7 +12,16 @@ public partial class ColumnEditorWindow : Window
     public string ColumnName { get; private set; } = "";
     public FilterNode Tree { get; private set; }
 
-    private sealed record Opt(object Value, string Text);
+    /// <summary>下拉项。必须用公开类型 + 公开属性，不然 DisplayMemberPath 绑不上，
+    /// 界面上会直接显示 "Opt { Value = ... }"。</summary>
+    public sealed class Opt
+    {
+        public Opt(object value, string text) { Value = value; Text = text; }
+        public object Value { get; }
+        public string Text { get; }
+    }
+
+    private bool _rebuilding;
 
     public ColumnEditorWindow(ColumnVm? existing)
     {
@@ -38,9 +47,18 @@ public partial class ColumnEditorWindow : Window
 
     private void Rebuild()
     {
-        TreeHost.Children.Clear();
-        AddGroup(TreeHost, (FilterGroup)Tree, 0, isRoot: true);
-        RefreshFooter();
+        if (_rebuilding) return;
+        _rebuilding = true;
+        try
+        {
+            TreeHost.Children.Clear();
+            AddGroup(TreeHost, (FilterGroup)Tree, 0, isRoot: true);
+            RefreshFooter();
+        }
+        finally
+        {
+            _rebuilding = false;
+        }
     }
 
     private void RefreshFooter()
@@ -176,39 +194,35 @@ public partial class ColumnEditorWindow : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var fieldOpts = FieldNames.All.Select(f => new Opt(f, FieldNames.Label(f))).ToList();
+        // 直接用字符串当选项，SelectedIndex 取下标回查枚举。
+        // DisplayMemberPath / ItemTemplate 在这套自定义 ComboBox 模板上会退化成 ToString，
+        // 界面上就是一行 "LatentFolio.Views..."，所以干脆绕开。
+        var fields = FieldNames.All;
         var fieldBox = new ComboBox
         {
-            Height = 30,
+            MinHeight = 30,
             Margin = new Thickness(0, 0, 6, 0),
-            ItemsSource = fieldOpts,
-            DisplayMemberPath = "Text",
-            SelectedValuePath = "Value",
-            SelectedValue = cond.Field,
+            ItemsSource = fields.Select(FieldNames.Label).ToList(),
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         grid.Children.Add(fieldBox);
 
         var ops = FieldNames.OpsFor(cond.Field);
-        var opOpts = ops.Select(o => new Opt(o, FieldNames.OpLabel(o))).ToList();
+        if (!ops.Contains(cond.Op)) cond.Op = ops[0];
         var opBox = new ComboBox
         {
-            Height = 30,
+            MinHeight = 30,
             Margin = new Thickness(0, 0, 6, 0),
-            ItemsSource = opOpts,
-            DisplayMemberPath = "Text",
-            SelectedValuePath = "Value",
+            ItemsSource = ops.Select(FieldNames.OpLabel).ToList(),
             VerticalContentAlignment = VerticalAlignment.Center,
         };
-        if (!ops.Contains(cond.Op)) cond.Op = ops[0];
-        opBox.SelectedValue = cond.Op;
         Grid.SetColumn(opBox, 1);
         grid.Children.Add(opBox);
 
         bool needsValue = FieldNames.NeedsValue(cond.Field);
         var valueBox = new TextBox
         {
-            Height = 30,
+            MinHeight = 30,
             Text = needsValue ? cond.Value : "—",
             IsEnabled = needsValue,
             VerticalContentAlignment = VerticalAlignment.Center,
@@ -222,16 +236,28 @@ public partial class ColumnEditorWindow : Window
         del.Foreground = (Brush)FindResource("B.Text3");
         grid.Children.Add(del);
 
+        // 先设初值再挂事件：反过来设置 SelectedIndex 会立刻触发 SelectionChanged，
+        // 把 Op 从 ≥ 改成 =，还会在递归里重建整棵树。
+        fieldBox.SelectedIndex = Array.IndexOf(fields, cond.Field);
+        opBox.SelectedIndex = ops.IndexOf(cond.Op);
+
         fieldBox.SelectionChanged += (_, _) =>
         {
-            if (fieldBox.SelectedValue is not FieldType f) return;
+            if (_rebuilding) return;
+            int i = fieldBox.SelectedIndex;
+            if (i < 0 || i >= fields.Length) return;
+            var f = fields[i];
+            if (f == cond.Field) return;
             cond.Field = f;
             cond.Op = FieldNames.OpsFor(f)[0];
             Rebuild();
         };
         opBox.SelectionChanged += (_, _) =>
         {
-            if (opBox.SelectedValue is CondOp o && o != cond.Op) { cond.Op = o; Rebuild(); }
+            if (_rebuilding) return;
+            int i = opBox.SelectedIndex;
+            if (i < 0 || i >= ops.Length) return;
+            if (ops[i] != cond.Op) { cond.Op = ops[i]; Rebuild(); }
         };
         valueBox.TextChanged += (_, _) =>
         {
@@ -256,3 +282,4 @@ public partial class ColumnEditorWindow : Window
 
     private void OnCancel(object sender, RoutedEventArgs e) => DialogResult = false;
 }
+

@@ -21,7 +21,7 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <TextBlock Text="名称" Style="{StaticResource T.Label}" VerticalAlignment="Center" Margin="0,0,10,0" />
-            <TextBox Grid.Column="1" x:Name="NameBox" Height="34" FontSize="13" />
+            <TextBox Grid.Column="1" x:Name="NameBox" MinHeight="36" FontSize="13" VerticalContentAlignment="Center" />
         </Grid>
 
         <Border Grid.Row="2" BorderBrush="{StaticResource B.Border}" BorderThickness="1" CornerRadius="10"
@@ -48,3 +48,4 @@
         </StackPanel>
     </Grid>
 </Window>
+

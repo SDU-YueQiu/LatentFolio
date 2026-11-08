@@ -257,7 +257,8 @@
         <Setter Property="Background" Value="White" />
         <Setter Property="BorderBrush" Value="{StaticResource B.BorderStrong}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="Padding" Value="9,7" />
+        <Setter Property="MinHeight" Value="34" />
         <Setter Property="CaretBrush" Value="{StaticResource B.Text}" />
         <Setter Property="SelectionBrush" Value="{StaticResource B.Accent}" />
         <Setter Property="Template">
@@ -268,7 +269,9 @@
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="7">
                         <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
-                                      VerticalAlignment="Center" />
+                                      Focusable="False"
+                                      HorizontalScrollBarVisibility="Hidden"
+                                      VerticalScrollBarVisibility="Hidden" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsKeyboardFocused" Value="True">
@@ -497,3 +500,4 @@
     </Style>
 
 </ResourceDictionary>
+
