@@ -144,7 +144,7 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         var skipped = DedupeByHash ? store.LoadSkipped() : new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
         int n = 0;
-        using var tx = db.Connection.BeginTransaction();
+        using var tx = db.NewTx();
         foreach (var path in paths)
         {
             if (!File.Exists(path)) continue;
@@ -253,7 +253,7 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
             }
         });
 
-        using var tx = db.Connection.BeginTransaction();
+        using var tx = db.NewTx();
         using var c = db.Cmd("UPDATE image SET dhash=$d WHERE id=$id");
         var pd = c.Parameters.Add("$d", Microsoft.Data.Sqlite.SqliteType.Integer);
         var pi = c.Parameters.Add("$id", Microsoft.Data.Sqlite.SqliteType.Integer);
@@ -278,7 +278,7 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
 
         var cand = new Dictionary<string, (string Suggest, int Hits)>(StringComparer.Ordinal);
         int n = 0;
-        using (var tx = db.Connection.BeginTransaction())
+        using (var tx = db.NewTx())
         {
             foreach (var it in images)
             {
@@ -451,7 +451,7 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         // 批量落库
         await Task.Run(() =>
         {
-            using var tx = db.Connection.BeginTransaction();
+            using var tx = db.NewTx();
             foreach (var (item, wf) in toUpdate)
             {
                 store.Update(item);
@@ -545,7 +545,7 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         }
 
         int applied = 0;
-        using var tx = db.Connection.BeginTransaction();
+        using var tx = db.NewTx();
         foreach (var line in File.ReadLines(tsvPath))
         {
             if (line.Length == 0) continue;

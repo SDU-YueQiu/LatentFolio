@@ -118,7 +118,7 @@ public sealed class ImageStore(Db db)
     public List<long> MarkMissingByPaths(IEnumerable<string> paths)
     {
         var hits = new List<long>();
-        using var tx = db.Connection.BeginTransaction();
+        using var tx = db.NewTx();
         using var c = db.Cmd("UPDATE image SET state=$st WHERE path=$p AND state=$now RETURNING id");
         c.Parameters.AddWithValue("$st", (int)FileState.Missing);
         c.Parameters.AddWithValue("$now", (int)FileState.Present);
@@ -189,7 +189,7 @@ public sealed class ImageStore(Db db)
     public void DeleteMissing(IReadOnlyCollection<long> ids)
     {
         if (ids.Count == 0) return;
-        using var tx = db.Connection.BeginTransaction();
+        using var tx = db.NewTx();
         using var c = db.Cmd("DELETE FROM image WHERE id=$id");
         var p = c.Parameters.Add("$id", Microsoft.Data.Sqlite.SqliteType.Integer);
         foreach (var id in ids) { p.Value = id; c.ExecuteNonQuery(); }
@@ -374,7 +374,7 @@ public sealed class ImageStore(Db db)
     /// <summary>把一批候选写进池子；已存在的只更新命中数，不动状态。</summary>
     public void MergeCandidates(IEnumerable<(string Key, string Suggest, int Hits)> rows)
     {
-        using var tx = db.Connection.BeginTransaction();
+        using var tx = db.NewTx();
         using var c = db.Cmd("""
             INSERT INTO cand(key,suggest,hits,state,at) VALUES($k,$s,$h,0,$at)
             ON CONFLICT(key) DO UPDATE SET hits=$h, suggest=CASE WHEN $s<>'' THEN $s ELSE suggest END

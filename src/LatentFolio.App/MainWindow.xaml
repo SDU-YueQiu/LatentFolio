@@ -490,7 +490,7 @@
                         <Border Style="{StaticResource HLine}" VerticalAlignment="Center" IsHitTestVisible="False" />
                     </Border>
 
-                    <!-- 人物：10 个一直铺满栏宽，卡片随宽度变正方形 -->
+                    <!-- 人物：列数固定、行数跟块高走，格子铺满整块，边长跟栏宽走 -->
                     <Grid Grid.Row="4">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -532,18 +532,10 @@
                                                 <Binding Path="DataContext.PeopleCardSide"
                                                          RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
                                             </Border.Height>
-                                            <Grid>
-                                                <Border Background="{StaticResource B.Inset}" CornerRadius="8"
-                                                        ClipToBounds="True">
-                                                    <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
-                                                </Border>
-                                                <Border Background="#8C0B0F14" CornerRadius="3"
-                                                        Padding="2,1" Margin="0,0,3,3"
-                                                        HorizontalAlignment="Right" VerticalAlignment="Bottom">
-                                                    <TextBlock Text="{Binding Count}" FontSize="8"
-                                                               Foreground="White" />
-                                                </Border>
-                                            </Grid>
+                                            <Border Background="{StaticResource B.Inset}" CornerRadius="8"
+                                                    ClipToBounds="True">
+                                                <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
+                                            </Border>
                                         </Border>
                                         <DataTemplate.Triggers>
                                             <Trigger SourceName="cell" Property="IsMouseOver" Value="True">

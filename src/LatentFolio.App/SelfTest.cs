@@ -97,6 +97,14 @@ public static class SelfTest
         Check(vm.IsPanelVisible, "单选后右侧详情栏出现");
         Check(vm.CurrentParams.Count == 6, "详情栏采样参数 6 行", $"{vm.CurrentParams.Count}");
 
+        // 手动收起右栏之后再点一张图，右栏应该自己回来（收起是临时状态）
+        vm.PanelCollapsed = true;
+        await Pulse(window);
+        vm.SelectSingle(first);
+        await Pulse(window);
+        Check(vm.IsPanelVisible && Math.Abs(vm.DetailWidth - 380) < 0.1, "点图自动展开右栏",
+            $"{vm.DetailWidth:F0}");
+
         // ---------- 2. 滚动要能换出新的一批格子 ----------
         if (window is MainWindow mw0)
         {
@@ -759,5 +767,3 @@ public static class SelfTest
                        + $" · 缩略图解码缓存 {st.Count} 张 / {st.Bytes / 1024 / 1024} MB");
     }
 }
-
-

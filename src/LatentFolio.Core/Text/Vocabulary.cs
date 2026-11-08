@@ -11,6 +11,15 @@ public sealed class Vocabulary
     /// <summary>tag → 词表里的英文名（用来发现「同一个人、不同写法」）。</summary>
     public Dictionary<string, string> NameOf { get; private set; } = new(StringComparer.Ordinal);
     public HashSet<string> Artists { get; private set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 通用提示词（smile / sky / flower / solo …）。这些词在 danbooru 里也恰好是某些角色的
+    /// 裸名，以前会把整库的 "solo" 认成《龙战士》的 Solo。命中这张表就不再当人物、也不进候选池。
+    /// </summary>
+    public HashSet<string> General { get; private set; } = new(StringComparer.Ordinal);
+
+    /// <summary>算得上是「角色」但不是人的条目（怪物、机甲、宝可梦），不往人物栏里塞。</summary>
+    public HashSet<string> NotPeople { get; private set; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> ZhNames { get; private set; } = new(StringComparer.Ordinal);
 
     public bool Ready { get; private set; }
@@ -59,6 +68,10 @@ public sealed class Vocabulary
                     var artists = ReadTags(Path.Combine(assetsDir, "artists.txt"));
                     Artists = new HashSet<string>(artists, StringComparer.Ordinal);
 
+                    // 这两张表是可选的：老的资源目录里没有也不该让整份词表加载失败
+                    General = ReadOptional(Path.Combine(assetsDir, "general_tags.txt"));
+                    NotPeople = ReadOptional(Path.Combine(assetsDir, "not_people.txt"));
+
                     var zh = ReadPairs(Path.Combine(assetsDir, "zh_names.tsv"));
                     var zd = new Dictionary<string, string>(zh.Count, StringComparer.Ordinal);
                     foreach (var (k, v) in zh) zd[k] = v;
@@ -93,6 +106,10 @@ public sealed class Vocabulary
     /// <summary>匹配角色：先看本地别名，再看 exact / 去系列后缀；裸名进候选池。</summary>
     public (string? Tag, string? Candidate) MatchCharacter(string token)
     {
+        // 通用提示词先挡掉：solo / smile / sky 这类词在角色表里也有同名角色，
+        // 不挡的话整库的 "solo" 会被认成《龙战士》的 Solo（用户实测就是这么被污染的）。
+        if (General.Count > 0 && !CharTags.Contains(token) && General.Contains(token)) return (null, null);
+
         if (Alias.TryGetValue(token, out var aliased)) return (aliased, null);
         if (CharTags.Contains(token)) return (token, null);
 
@@ -136,6 +153,13 @@ public sealed class Vocabulary
         return l;
     }
 
+    /// <summary>可选表：文件不在就当空表，不让整份词表加载失败。</summary>
+    private static HashSet<string> ReadOptional(string path)
+        => File.Exists(path)
+            ? new HashSet<string>(ReadTags(path), StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+
+
     private static List<(string, string)> ReadPairs(string path)
     {
         var lines = File.ReadAllLines(path);
@@ -165,7 +189,7 @@ public sealed class Vocabulary
                 var (c, sug) = MatchCharacter(t);
                 if (c is not null)
                 {
-                    if (!chars.Contains(c)) chars.Add(c);
+                    if (!chars.Contains(c) && !NotPeople.Contains(c)) chars.Add(c);
                 }
                 else if (cand is not null && sug is not null && t.Length > 1)
                 {

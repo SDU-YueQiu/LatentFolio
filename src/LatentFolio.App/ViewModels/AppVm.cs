@@ -339,6 +339,9 @@ public sealed partial class AppVm : ObservableObject
     public void SelectSingle(ImageVm? vm)
     {
         if (ViewerOpen) return;
+        // 点一张图就把右栏亮出来：即使它已经是当前图（Current 没变、走不到 OnCurrentChanged），
+        // 用户手动收起过的右栏也应该重新出来
+        if (vm is not null && PanelCollapsed) PanelCollapsed = false;
         Current = vm;
     }
 
@@ -493,7 +496,7 @@ public sealed partial class AppVm : ObservableObject
     public const int ParserVersion = 4;
 
     /// <summary>角色/画师识别逻辑改了就 +1，老库下次启动会整库重打标并重建候选池。</summary>
-    public const int RetagVersion = 3;
+    public const int RetagVersion = 4;
 
     private async Task ScanAsyncCore(bool initial)
     {
@@ -781,8 +784,7 @@ public sealed partial class AppVm : ObservableObject
                     : meta is { AvatarId: > 0 } ? meta.AvatarId : x.BestId,
             });
         }
-        PeoplePreview.Clear();
-        foreach (var p in People.Take(10)) PeoplePreview.Add(p);
+        FillPeoplePreview(force: true);
         OnPropertyChanged(nameof(PeopleCountText));
         LastPeopleMs = sw.ElapsedMilliseconds;
     }
@@ -1616,33 +1618,81 @@ public sealed partial class AppVm : ObservableObject
     }
 
     /// <summary>
-    /// 人物块：固定 5 列 2 行装 10 个，卡片是正方形，边长跟着栏宽走
-    /// （栏拖宽 → 卡片变大 → 这一块自己长高，不会裁）。
+    /// 人物块：固定 5 列，边长先按栏宽算，行数按可用高度算；
+    /// 高度有富余时允许把边长放大一档去补空，但绝不会比宽度算出来的小。
     /// </summary>
     public int PeopleCols => 5;
+
+    private const double PeopleHeaderHeight = 44;
+    private const double PeopleCellGap = 4;
+
+    private double PeopleSideByWidth
+    {
+        get
+        {
+            double w = Math.Max(60, LeftWidth - 20);
+            return Math.Max(16, Math.Floor(w / PeopleCols - PeopleCellGap));
+        }
+    }
+
+    private double PeopleUsableHeight => Math.Max(0, LeftPeopleHeight - PeopleHeaderHeight);
+
+    public int PeopleRows
+    {
+        get
+        {
+            double side = PeopleSideByWidth;
+            // 四舍五入而不是向下取整：默认 118 高的块里 74 / 42 ≈ 1.76 应该排两行，
+            // 向下取整只会排一行，底部留一条空带 —— 用户要的是「始终填满」
+            int rows = (int)Math.Round(PeopleUsableHeight / (side + PeopleCellGap), MidpointRounding.AwayFromZero);
+            return Math.Clamp(rows, 1, 6);
+        }
+    }
 
     public double PeopleCardSide
     {
         get
         {
-            double w = Math.Max(60, LeftWidth - 20);
-            return Math.Max(16, Math.Floor(w / 5 - 4));
+            double side = PeopleSideByWidth;
+            int rows = PeopleRows;
+            // 行数定了之后把边长收到刚好铺满高度；但不能超过「按宽度算出来的那一档」，
+            // 否则左栏变宽时边长反而不涨（自检会挂）
+            double fit = Math.Floor(PeopleUsableHeight / rows - PeopleCellGap);
+            return fit >= 20 && fit < side ? fit : side;
         }
     }
 
-    /// <summary>整块的高度：两行 × (卡片 + 上下边距)。</summary>
-    public double PeopleBlockHeight => 2 * (PeopleCardSide + 4);
+    /// <summary>列 × 行：左栏预览铺满这么多格，最后一行不留空位。</summary>
+    public int PeopleSlots => PeopleCols * PeopleRows;
+
+    /// <summary>整块的高度：行数 × (卡片 + 上下边距)。</summary>
+    public double PeopleBlockHeight => PeopleRows * (PeopleCardSide + PeopleCellGap);
 
     /// <summary>人物那一行实际占多高：至少能装下卡片，用户拖得更矮也不会裁。</summary>
-    public double LeftPeopleRowHeight => Math.Max(LeftPeopleHeight, PeopleBlockHeight + 44);
+    public double LeftPeopleRowHeight => Math.Max(LeftPeopleHeight, PeopleBlockHeight + PeopleHeaderHeight);
 
     private void RaisePeopleCard()
     {
         OnPropertyChanged(nameof(PeopleCols));
+        OnPropertyChanged(nameof(PeopleRows));
         OnPropertyChanged(nameof(PeopleCardSide));
+        OnPropertyChanged(nameof(PeopleSlots));
         OnPropertyChanged(nameof(PeopleBlockHeight));
         OnPropertyChanged(nameof(LeftPeopleRowHeight));
         OnPropertyChanged(nameof(LeftHandleMargin));
+        FillPeoplePreview();
+    }
+
+    /// <summary>
+    /// 左栏预览按槽位从 People 里顺延取，人物不够时就有多少放多少。
+    /// 拖拽时槽位数没变就不重建，避免每动一像素重挂一遍头像。
+    /// </summary>
+    private void FillPeoplePreview(bool force = false)
+    {
+        int count = Math.Min(PeopleSlots, People.Count);
+        if (!force && PeoplePreview.Count == count) return;
+        PeoplePreview.Clear();
+        for (int i = 0; i < count; i++) PeoplePreview.Add(People[i]);
     }
 
     // ================= 临时筛选（顶部「筛选」按钮） =================

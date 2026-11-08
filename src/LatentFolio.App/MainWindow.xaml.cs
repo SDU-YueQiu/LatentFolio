@@ -202,6 +202,16 @@ public partial class MainWindow : Window
             Close();
             return;
         }
+        if (args.Contains("--retag"))
+        {
+            // 词表/别名改过之后把全库重新识别一遍（开发诊断用：不弹窗、跑完就退）
+            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            Vm.RetagAll();
+            var outPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lf-retag.txt");
+            System.IO.File.WriteAllText(outPath, Vm.StatusLeft + "\n" + Vm.LibrarySummary);
+            Close();
+            return;
+        }
         if (args.Contains("--show-tags"))
         {
             var win = new TagsWindow(Vm) { Owner = this };

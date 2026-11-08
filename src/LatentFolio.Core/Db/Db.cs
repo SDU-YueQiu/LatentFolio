@@ -33,6 +33,76 @@ public sealed class Db : IDisposable
 
     public SqliteConnection Connection => _conn;
 
+    /// <summary>
+    /// 整个进程只允许一个事务在飞。同一个连接不支持嵌套事务，
+    /// 而「后台扫描 / 栏位计数 / UI 批量删除」三条路会并发开事务，
+    /// 撞在一起就抛 "does not support nested transactions"（实测会整窗崩掉）。
+    /// 这里用一个信号量把事务串起来：先来的拿到，后来的等它提交完再进。
+    /// </summary>
+    private static readonly SemaphoreSlim TxGate = new(1, 1);
+
+    public Tx NewTx()
+    {
+        TxGate.Wait();
+        try
+        {
+            return new Tx(_conn.BeginTransaction());
+        }
+        catch
+        {
+            TxGate.Release();
+            throw;
+        }
+    }
+
+    /// <summary>事务壳：提交/回滚之后把闸门还回去（using 包着就不用管）。</summary>
+    public sealed class Tx : IDisposable
+    {
+        private readonly SqliteTransaction _tx;
+        private bool _closed;
+        private bool _released;
+
+        internal Tx(SqliteTransaction tx) => _tx = tx;
+
+        /// <summary>
+        /// 提交的同时**立刻**放开闸门。这一点很关键：调用方常常是
+        /// 「using var tx = NewTx(); ...; tx.Commit(); ...; _ = 某个会再开事务的异步方法」
+        /// —— using 的作用域要到方法末尾才结束，如果闸门等到 Dispose 才放，
+        /// 同一个线程就会自己等自己（死锁），或者像以前那样抛"嵌套事务"。
+        /// </summary>
+        public void Commit()
+        {
+            if (_closed) return;
+            _closed = true;
+            _tx.Commit();
+            Release();
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                if (!_closed)
+                {
+                    _closed = true;
+                    try { _tx.Rollback(); } catch { }
+                }
+            }
+            finally
+            {
+                _tx.Dispose();
+                Release();
+            }
+        }
+
+        private void Release()
+        {
+            if (_released) return;
+            _released = true;
+            TxGate.Release();
+        }
+    }
+
     public SqliteCommand Cmd(string sql)
     {
         var c = _conn.CreateCommand();
