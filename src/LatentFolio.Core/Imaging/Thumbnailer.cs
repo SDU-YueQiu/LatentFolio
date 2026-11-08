@@ -5,14 +5,20 @@ namespace LatentFolio.Core.Imaging;
 /// <summary>缩略图生成 + dHash。网格缓存 320 WebP q70，档案图 256 WebP q70 永久。</summary>
 public static class Thumbnailer
 {
-    public const int GridSize = 320;
+    /// <summary>
+    /// 网格缩略图长边。格子最大 330 DIP，125% 缩放下要 412 物理像素才够，
+    /// 所以给到 448 —— 之前是 320，放到最大档会糊。
+    /// </summary>
+    public const int GridSize = 448;
+
     public const int ArchiveSize = 256;
     public const int Quality = 70;
+    public const int GridQuality = 78;
 
     public sealed record Result(byte[]? Webp, int Width, int Height, long DHash, bool Ok, string? Error);
 
     /// <summary>生成缩略图字节。长边缩到 maxSide，保持比例。</summary>
-    public static Result Make(string path, int maxSide)
+    public static Result Make(string path, int maxSide, int quality = GridQuality)
     {
         try
         {
@@ -54,7 +60,7 @@ public static class Thumbnailer
                 {
                     long dh = DHashOf(scaled);
                     using var img = SKImage.FromBitmap(scaled);
-                    using var data = img.Encode(SKEncodedImageFormat.Webp, Quality);
+                    using var data = img.Encode(SKEncodedImageFormat.Webp, quality);
                     if (data is not null && data.Size > 0)
                         return new Result(data.ToArray(), scaled.Width, scaled.Height, dh, true, null);
 

@@ -170,10 +170,36 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         return n;
     }
 
+    /// <summary>按当前规格重建网格缩略图（只有换分辨率那一次会跑）。</summary>
+    public int RebuildGridThumbs(IReadOnlyList<ImageItem> images, CancellationToken ct = default)
+    {
+        int n = 0;
+        Parallel.ForEach(images, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Max(2, Environment.ProcessorCount),
+            CancellationToken = ct,
+        }, it =>
+        {
+            if (it.State == FileState.Deleted) return;
+            var key = ThumbCache.Key(it.Path, it.MTime, it.Size);
+            if (thumbs.HasGrid(key)) return;
+            try
+            {
+                if (!File.Exists(it.Path)) return;
+                var t = Thumbnailer.Make(it.Path, Thumbnailer.GridSize, Thumbnailer.GridQuality);
+                if (t.Webp is null) return;
+                thumbs.SaveGrid(key, t.Webp);
+                Interlocked.Increment(ref n);
+            }
+            catch { }
+        });
+        return n;
+    }
+
     /// <summary>
     /// 补算缺失的 dHash。老库里 4,800 张的 dHash 是 0（当年读的是已有缩略图，
     /// 只在新建缓存时才顺带算一次），相似图分组因此几乎分不出来。
-    /// 先从 320 的网格缓存算，缓存没有才回去解原图。
+    /// 先从网格缓存算，缓存没有才回去解原图。
     /// </summary>
     public int BackfillDHash(IReadOnlyList<ImageItem> images)
     {

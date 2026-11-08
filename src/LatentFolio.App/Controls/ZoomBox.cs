@@ -63,8 +63,11 @@ public sealed class ZoomBox : ContentControl
         // 1.0 = 铺满；真实 1:1 需要按渲染尺寸算
         if (Content is Image { Source: { } src } && ActualWidth > 0 && ActualHeight > 0)
         {
-            double fit = Math.Min(ActualWidth / src.Width, ActualHeight / src.Height);
-            _scale = Math.Clamp(1.0 / Math.Max(0.01, fit), 1, MaxScale);
+            var (cw, ch) = ContentSize;
+            double fit = Math.Min(cw / src.Width, ch / src.Height);
+            double actual = 1.0 / Math.Max(0.0001, fit);
+            if (actual <= 1.02) { Reset(); return; }
+            _scale = Math.Clamp(actual, 1.0, MaxScale);
             _tx = _ty = 0;
             Clamp();
             Apply();
@@ -80,6 +83,50 @@ public sealed class ZoomBox : ContentControl
     }
 
     private Point Center => new(ActualWidth / 2, ActualHeight / 2);
+
+    /// <summary>
+    /// 内容（图片）在 1 倍时实际渲染出来的大小。图片是 Uniform 摆放的，
+    /// 竖图两侧有留白 —— 平移边界要按图片本身算，不能按控件算，
+    /// 否则竖图会往两边拖出一片黑边，横图又拖不到边。
+    /// </summary>
+    internal (double W, double H) ContentSize
+    {
+        get
+        {
+            if (Content is not Image img || img.Source is not { } src || ActualWidth <= 0 || ActualHeight <= 0)
+                return (ActualWidth, ActualHeight);
+            var m = img.Margin;
+            double aw = Math.Max(1, ActualWidth - m.Left - m.Right);
+            double ah = Math.Max(1, ActualHeight - m.Top - m.Bottom);
+            if (src.Width <= 0 || src.Height <= 0) return (aw, ah);
+            double fit = Math.Min(aw / src.Width, ah / src.Height);
+            return (src.Width * fit, src.Height * fit);
+        }
+    }
+
+    /// <summary>当前能平移的最大距离（像素）。给自检和 Clamp 共用。</summary>
+    internal (double X, double Y) PanLimit
+    {
+        get
+        {
+            if (_scale <= 1.01) return (0, 0);
+            var (cw, ch) = ContentSize;
+            return (Math.Max(0, (cw * _scale - ActualWidth) / 2),
+                    Math.Max(0, (ch * _scale - ActualHeight) / 2));
+        }
+    }
+
+    internal double OffsetX => _tx;
+    internal double OffsetY => _ty;
+
+    /// <summary>给自检用：按像素平移，内部会夹到边界。</summary>
+    internal void PanBy(double dx, double dy)
+    {
+        _tx += dx;
+        _ty += dy;
+        Clamp();
+        Apply();
+    }
 
     /// <summary>以某个点为锚点缩放。</summary>
     private void ZoomAt(Point p, double factor)
@@ -101,9 +148,8 @@ public sealed class ZoomBox : ContentControl
     private void Clamp()
     {
         if (_scale <= 1.01) { _tx = _ty = 0; return; }
-        // 内容本身是铺满的，放大后允许平移的范围按比例放开
-        double maxX = (ActualWidth / 2) * (_scale - 1) / _scale;
-        double maxY = (ActualHeight / 2) * (_scale - 1) / _scale;
+        // 缩放是绕中心做的，平移量是「缩放后」的像素：边界 = (缩放后尺寸 - 视口) / 2
+        var (maxX, maxY) = PanLimit;
         _tx = Math.Clamp(_tx, -maxX, maxX);
         _ty = Math.Clamp(_ty, -maxY, maxY);
     }

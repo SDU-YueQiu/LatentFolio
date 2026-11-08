@@ -67,6 +67,66 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
         FitToMonitor();
+
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        System.Windows.Interop.HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
+    }
+
+    private const int WM_GETMINMAXINFO = 0x0024;
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int X, Y;
+    }
+
+    // 五个字段都是 POINT（8 字节），不能用 RECT 顶替 —— 那样结构体会翻倍，
+    // 读到的是垃圾，写回去还会踩坏后面的内存。
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MINMAXINFO
+    {
+        public POINT ptReserved;
+        public POINT ptMaxSize;
+        public POINT ptMaxPosition;
+        public POINT ptMinTrackSize;
+        public POINT ptMaxTrackSize;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr DefWindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    /// <summary>
+    /// 最大化时别把窗口撑到屏幕外。WindowChrome 的无边框窗口最大化会先按整块屏幕
+    /// 再往外加一圈 resize border（实测拿到 -8,-8 2576x1456，比工作区高 76 px），
+    /// 结果底部的胶片条和状态栏直接被切掉。这里把最大化尺寸钉回工作区。
+    ///
+    /// 必须先让 DefWindowProc 把结构填好默认值（尤其 ptMaxTrackSize），
+    /// 直接改写再 handled=true 会让最大跟踪尺寸留在 0，窗口会缩成 16x16。
+    /// </summary>
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg != WM_GETMINMAXINFO) return IntPtr.Zero;
+
+        var result = DefWindowProc(hwnd, msg, wParam, lParam);
+
+        var hmon = MonitorFromWindow(hwnd, 2);
+        var mi = new MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
+        if (hmon == IntPtr.Zero || !GetMonitorInfo(hmon, ref mi))
+        {
+            handled = true;
+            return result;
+        }
+
+        // 直接钉到工作区。这里不能再按 resize border 做补偿 —— 实测把这些值
+        // 写进去就是最终窗口矩形，加了补偿反而会多出一圈、又跑到屏幕外。
+        var mmi = System.Runtime.InteropServices.Marshal.PtrToStructure<MINMAXINFO>(lParam);
+        mmi.ptMaxPosition.X = mi.rcWork.Left;
+        mmi.ptMaxPosition.Y = mi.rcWork.Top;
+        mmi.ptMaxSize.X = mi.rcWork.Right - mi.rcWork.Left;
+        mmi.ptMaxSize.Y = mi.rcWork.Bottom - mi.rcWork.Top;
+        System.Runtime.InteropServices.Marshal.StructureToPtr(mmi, lParam, true);
+        handled = true;
+        return result;
     }
 
     private void FitToMonitor()

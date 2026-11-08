@@ -24,9 +24,13 @@ public sealed class ThumbCache
         Directory.CreateDirectory(ArchiveDir);
     }
 
+    /// <summary>
+    /// 缓存键。把缩略图尺寸也拌进去：改了两倍分辨率之后老文件自然失效，
+    /// 不会被当成「已经有了」而继续返回 320 的图。
+    /// </summary>
     public static string Key(string path, long mtime, long size)
     {
-        var s = $"{path.ToLowerInvariant()}|{mtime}|{size}";
+        var s = $"{path.ToLowerInvariant()}|{mtime}|{size}|{Thumbnailer.GridSize}";
         var b = System.Text.Encoding.UTF8.GetBytes(s);
         var h = XxHash64.Hash(b);
         return Convert.ToHexString(h).ToLowerInvariant();
@@ -87,6 +91,21 @@ public sealed class ThumbCache
         }
         catch { }
         return (total, n);
+    }
+
+    /// <summary>整目录清掉（换缩略图规格时用），顺便忘掉内存里的键。</summary>
+    public void ClearDiskAndMemory()
+    {
+        _memory.Clear();
+        try
+        {
+            if (!Directory.Exists(GridDir)) return;
+            foreach (var f in Directory.EnumerateFiles(GridDir, "*.webp", SearchOption.AllDirectories))
+            {
+                try { File.Delete(f); } catch { }
+            }
+        }
+        catch { }
     }
 
     /// <summary>超出预算时按最后访问时间删最老的。</summary>

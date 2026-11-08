@@ -8,6 +8,7 @@ using LatentFolio.App.Services;
 using LatentFolio.Core.Comfy;
 using LatentFolio.Core.Db;
 using LatentFolio.Core.Filtering;
+using LatentFolio.Core.Imaging;
 using LatentFolio.Core.Models;
 using LatentFolio.Core.Scan;
 using LatentFolio.Core.Text;
@@ -228,6 +229,7 @@ public sealed partial class AppVm : ObservableObject
             CurrentParams.Add(new("种子", value.SeedText));
         }
         IsPanelVisible = value is not null && !PanelCollapsed;
+        OnPropertyChanged(nameof(DetailWidth));
         RebuildFilmstrip();
         CurrentChangedForViewer?.Invoke();
     }
@@ -256,9 +258,13 @@ public sealed partial class AppVm : ObservableObject
     [ObservableProperty] private bool _panelCollapsed;
     [ObservableProperty] private bool _isPanelVisible;
 
+    /// <summary>右栏占的宽度。查看器里用它做可折叠的列宽，折叠时是 0。</summary>
+    public double DetailWidth => IsPanelVisible ? 380 : 0;
+
     partial void OnPanelCollapsedChanged(bool value)
     {
         IsPanelVisible = Current is not null && !value;
+        OnPropertyChanged(nameof(DetailWidth));
         _store.SetSetting("panel_collapsed", value ? "1" : "0");
     }
 
@@ -290,6 +296,7 @@ public sealed partial class AppVm : ObservableObject
         AlwaysVsr = _store.GetSetting("always_vsr") == "1";
         WatchEnabled = _store.GetSetting("watch") != "0";
         PanelCollapsed = _store.GetSetting("panel_collapsed") == "1";
+        LeftCollapsed = _store.GetSetting("left_collapsed") == "1";
         StatsThreshold = int.TryParse(_store.GetSetting("stats_threshold"), out var st) ? st : 5;
         VsrScale = int.TryParse(_store.GetSetting("vsr_scale"), out var vs) && vs == 4 ? 4 : 2;
         _svc.Vsr.Scale = VsrScale;
@@ -410,6 +417,7 @@ public sealed partial class AppVm : ObservableObject
             // 词表是后台加载的；扫描时可能还没好，这里补一次打标。
             // 判定词/别名逻辑升过级就整库过一遍，否则只补没打过标的。
             ReloadFromDb();
+            await EnsureThumbPresetAsync();
             await BackfillDHashAsync();
 
             var vocab = Vocabulary.Instance;
@@ -577,6 +585,21 @@ public sealed partial class AppVm : ObservableObject
         _similar = null;
         if (n > 0)
             StatusLeft = $"补算相似指纹 {n:N0} 张 · {sw.Elapsed.TotalSeconds:F0} 秒";
+    }
+
+    /// <summary>缩略图规格变了（比如分辨率翻倍）就把缓存整个重建一遍，只跑一次。</summary>
+    private async Task EnsureThumbPresetAsync()
+    {
+        var want = Thumbnailer.GridSize.ToString();
+        if (_store.GetSetting("thumb_preset") == want) return;
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        BusyText = "重建缩略图…";
+        _svc.ThumbService.ClearMemory();
+        await Task.Run(() => _svc.Thumbs.ClearDiskAndMemory());
+        int n = await Task.Run(() => _svc.Scanner.RebuildGridThumbs(AllImages));
+        _store.SetSetting("thumb_preset", want);
+        StatusLeft = $"缩略图重建 {n:N0} 张 · {sw.Elapsed.TotalSeconds:F0} 秒";
     }
 
     public long DataVersion()
@@ -799,7 +822,6 @@ public sealed partial class AppVm : ObservableObject
         ViewerOpen = false;
         ViewerImage = null;
         VsrBadge = "";
-        LeftCollapsed = false;
         Current = null;
     }
 
@@ -1071,7 +1093,6 @@ public sealed partial class AppVm : ObservableObject
         if (vm is null) return;
         Current = vm;
         ViewerOpen = true;
-        LeftCollapsed = true;
         ShowOriginal = false;
         VsrBadge = "";
         WorkflowText = "";
@@ -1226,7 +1247,6 @@ public sealed partial class AppVm : ObservableObject
         ViewerOpen = false;
         ViewerImage = null;
         VsrBadge = "";
-        LeftCollapsed = false;
         // 退出放大回到网格：把右栏还给「当前选中的那张」，不然面板会莫名其妙空着
         Current = Selection.Count > 0 ? Selection[^1] : null;
         ViewerClosed?.Invoke();
@@ -1307,6 +1327,7 @@ public sealed partial class AppVm : ObservableObject
     partial void OnLeftCollapsedChanged(bool value)
     {
         OnPropertyChanged(nameof(LeftWidth));
+        _store.SetSetting("left_collapsed", value ? "1" : "0");
     }
 
     [RelayCommand]

@@ -89,6 +89,9 @@ public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
 
     internal int RealizedCount => InternalChildren.Count;
 
+    /// <summary>当前这一行能放几个格子。</summary>
+    internal int Columns => _columns;
+
     /// <summary>第一个已实例化容器在面板坐标系里的 Y。正常应该落在视口范围内。</summary>
     internal double FirstChildTop => InternalChildren.Count > 0
         ? InternalChildren[0].TranslatePoint(new Point(0, 0), this).Y
@@ -107,7 +110,23 @@ public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
         double vh = double.IsInfinity(availableSize.Height) ? ih + sp + pad.Top + pad.Bottom : availableSize.Height;
 
         double innerW = Math.Max(iw, vw - pad.Left - pad.Right);
-        _columns = Math.Max(1, (int)Math.Floor((innerW + sp) / (iw + sp)));
+        int newCols = Math.Max(1, (int)Math.Floor((innerW + sp) / (iw + sp)));
+
+        // 列数变了（右侧详情栏开合、窗口缩放、缩略图换档）：把视口顶部那张锚住。
+        // 不锚的话列数一变 7 列->5 列，同一张图落到更靠后的行，滚动位置却没动，
+        // 选中的那张就跑到屏幕外了。
+        if (newCols != _columns && count > 0)
+        {
+            int row = Math.Max(0, (int)Math.Floor((_offset.Y - pad.Top) / (ih + sp)));
+            int anchorIndex = row * _columns;
+            double anchorTop = pad.Top + row * (ih + sp) - _offset.Y;
+            if (anchorIndex < count)
+            {
+                int nr = anchorIndex / newCols;
+                _offset.Y = Math.Max(0, pad.Top + nr * (ih + sp) - anchorTop);
+            }
+        }
+        _columns = newCols;
 
         int rows = (int)Math.Ceiling(count / (double)_columns);
         double extentH = pad.Top + pad.Bottom + rows * (ih + sp) - (rows > 0 ? sp : 0);

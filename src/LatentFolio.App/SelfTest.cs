@@ -335,24 +335,102 @@ public static class SelfTest
         }
         else Ok("目录折叠", "没有带子目录的目录，跳过");
 
-        // ---------- 16. 左栏收成图标轨 + 胶片条 ----------
-        // RetagAll 会重建所有 ImageVm，前面抓的 first 已经是旧对象，这里重新拿
+        // ---------- 16. 左右两栏都能折叠 ----------
         var firstNow = vm.Items.Count > 0 ? vm.Items[0] : first;
         await vm.OpenViewerCommand.ExecuteAsync(firstNow);
-        await Pulse(window, 2);
-        Check(vm.LeftCollapsed && Math.Abs(vm.LeftWidth - 56) < 0.1, "查看器里左栏收成 56px",
+        await Pulse(window, 3);
+        Check(!vm.LeftCollapsed, "打开查看器不会擅自收起左栏");
+        Check(Math.Abs(vm.DetailWidth - 380) < 0.1, "右栏默认展开", $"{vm.DetailWidth:F0}");
+
+        vm.ToggleLeftRailCommand.Execute(null);
+        await Pulse(window);
+        Check(vm.LeftCollapsed && Math.Abs(vm.LeftWidth - 56) < 0.1, "左栏可以收成 56px",
             $"{vm.LeftWidth:F0}");
+        vm.PanelCollapsed = true;
+        await Pulse(window);
+        Check(Math.Abs(vm.DetailWidth) < 0.1, "右栏可以折叠", $"{vm.DetailWidth:F0}");
+
+        vm.ToggleLeftRailCommand.Execute(null);
+        vm.PanelCollapsed = false;
+        await Pulse(window);
+        Check(!vm.LeftCollapsed && Math.Abs(vm.DetailWidth - 380) < 0.1, "两栏都能再展开",
+            $"{vm.LeftWidth:F0} / {vm.DetailWidth:F0}");
+
         Check(vm.Filmstrip.Count is > 0 and <= 12, "底部胶片条 12 张以内", $"{vm.Filmstrip.Count}");
         Check(vm.Items.Count < 12 || vm.Filmstrip.Count == 12, "胶片条填满 12 张", $"{vm.Filmstrip.Count}");
         Check(vm.Filmstrip.Any(x => x.IsCurrent), "胶片条标出当前那张");
-        vm.ToggleLeftRailCommand.Execute(null);
-        await Pulse(window);
-        Check(!vm.LeftCollapsed && Math.Abs(vm.LeftWidth - 248) < 0.1, "图标轨能展开");
+
+        // ---------- 17. 放大后能拖到图片边缘 ----------
+        if (window is MainWindow mw3)
+        {
+            var zoom = mw3.BigZoomControl;
+            zoom.SetScale(3.0);
+            await Pulse(window, 2);
+            var (cw, ch) = zoom.ContentSize;
+
+            zoom.PanBy(100000, 100000);
+            await Pulse(window);
+            var lim = zoom.PanLimit;
+            Check(lim.X > 0 && Math.Abs(zoom.OffsetX - lim.X) < 1.5 && Math.Abs(zoom.OffsetY - lim.Y) < 1.5,
+                "放大后能拖到左上角", $"tx={zoom.OffsetX:F1} 上限 {lim.X:F1}");
+            double leftEdge = zoom.ActualWidth / 2 - cw * 3.0 / 2 + zoom.OffsetX;
+            Check(Math.Abs(leftEdge) < 2, "拖到极限时图片左边缘贴住视口左边", $"{leftEdge:F1}");
+
+            zoom.PanBy(-100000, -100000);
+            await Pulse(window);
+            Check(Math.Abs(zoom.OffsetX + lim.X) < 1.5, "放大后能拖到右下角",
+                $"tx={zoom.OffsetX:F1} 下限 {-lim.X:F1}");
+            double rightEdge = zoom.ActualWidth / 2 + cw * 3.0 / 2 + zoom.OffsetX;
+            Check(Math.Abs(rightEdge - zoom.ActualWidth) < 2, "拖到极限时图片右边缘贴住视口右边",
+                $"{rightEdge:F1} / {zoom.ActualWidth:F1}");
+            _ = ch;
+            zoom.Reset();
+            await Pulse(window);
+        }
+        else Ok("拖动边界", "窗口类型不对，跳过");
+
         vm.CloseViewerCommand.Execute(null);
         await Pulse(window);
-        Check(!vm.LeftCollapsed, "退出查看器左栏自动展开");
+        Check(!vm.LeftCollapsed, "退出查看器左栏保持展开");
 
-        // ---------- 17. 内容判重 ----------
+        // ---------- 18. 详情栏开合不丢选中位置 ----------
+        if (window is MainWindow mw4)
+        {
+            var panel = FindChild<Controls.VirtualizingWrapPanel>(mw4.GridListForTest);
+            if (panel is not null && vm.Items.Count > 40)
+            {
+                // 右栏只在有当前图时才出现，先选一张，否则列宽根本不会变
+                vm.SelectSingle(vm.Items[0]);
+                vm.PanelCollapsed = true;
+                for (int i = 0; i < 5; i++) await Pulse(window);
+                panel.SetVerticalOffset(900);
+                for (int i = 0; i < 6; i++) await Pulse(window);
+                int cols0 = panel.Columns;
+                int idx0 = panel.FirstRealizedIndex;
+                double top0 = panel.FirstChildTop;
+
+                vm.PanelCollapsed = false;
+                for (int i = 0; i < 10; i++) await Pulse(window);
+
+                Check(panel.Columns < cols0, "详情栏展开后列数变少", $"{cols0} -> {panel.Columns}");
+                Check(Math.Abs(panel.FirstChildTop - top0) < panel.ItemHeight * 0.7,
+                    "列数变了之后视口锚在原处", $"Y {top0:F0} -> {panel.FirstChildTop:F0}");
+                int idx1 = panel.FirstRealizedIndex;
+                Check(idx0 >= idx1 && idx0 < idx1 + panel.Columns, "锚定那张还在第一行里",
+                    $"索引 {idx0} 落在 [{idx1}, {idx1 + panel.Columns})");
+                panel.SetVerticalOffset(0);
+                for (int i = 0; i < 4; i++) await Pulse(window);
+            }
+            else Ok("详情栏锚定", "网格太小，跳过");
+        }
+
+        // ---------- 19. 缩略图规格 ----------
+        Check(App.Services.Thumbs.GridDir.Length > 0 && Core.Imaging.Thumbnailer.GridSize >= 448,
+            "网格缩略图长边 448", $"{Core.Imaging.Thumbnailer.GridSize}");
+        Check(App.Services.Store.GetSetting("thumb_preset") == Core.Imaging.Thumbnailer.GridSize.ToString(),
+            "缩略图缓存已按新规格重建", App.Services.Store.GetSetting("thumb_preset") ?? "未设置");
+
+        // ---------- 20. 内容判重 ----------
         Check(App.Services.Scanner.DedupeByHash, "判重默认开着",
             App.Services.Store.GetSetting("dedupe") ?? "未设置");
     }
