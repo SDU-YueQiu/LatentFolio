@@ -71,6 +71,10 @@ public partial class MainWindow : Window
         FitToWorkArea();
         Loaded += OnLoaded;
         App.Root.StatsRequested += ShowStats;
+        // 后台导入会整表重建：重建前先把编辑框里没提交的字刷回 VM，重建后再把选中项点回去
+        App.Root.BeforeReload += FlushEditingText;
+        App.Root.GridReloading += CaptureGridSelection;
+        App.Root.GridReloaded += RestoreGridSelection;
         PreviewKeyDown += OnPreviewKey;
         // 鼠标侧键：后退 = 关查看器 / 清搜索 / 清筛选 / 回总览，前进 = 重新打开当前那张
         PreviewMouseDown += OnNavMouseDown;
@@ -1052,11 +1056,53 @@ public partial class MainWindow : Window
         foreach (var o in GridList.SelectedItems) if (o is ImageVm v) Vm.Selection.Add(v);
         Vm.RefreshSelectionStatus();
 
+        // 重建后回填选中项：只同步集合和状态栏，不动 Current，也不顺手把右栏展开
+        if (_restoringGrid) return;
+
         // 单选就把右栏详情换成这张；多选取最后点的那张
         if (GridList.SelectedItems.Count > 0 && GridList.SelectedItems[^1] is ImageVm last)
             Vm.SelectSingle(last);
-        else
+        else if (!(Vm.IsReloading && Vm.Current is { } cur && Vm.Items.Contains(cur)))
             Vm.SelectSingle(null);
+    }
+
+    private HashSet<long> _gridKeepIds = [];
+    private bool _restoringGrid;
+
+    /// <summary>网格重建前记下选中了哪几张（按 id：ReloadFromDb 会换掉 VM 实例）。</summary>
+    private void CaptureGridSelection() =>
+        _gridKeepIds = GridList.SelectedItems.OfType<ImageVm>().Select(v => v.Id).ToHashSet();
+
+    /// <summary>
+    /// 重建后把选中项点回去。不做这一步的话，ListBox 的 Reset 会把选中项清空，
+    /// 界面就会当成「用户取消了选择」，后台导入一张新图就把右栏关掉。
+    /// </summary>
+    private void RestoreGridSelection()
+    {
+        if (_gridKeepIds.Count == 0) return;
+        var keep = _gridKeepIds;
+        _gridKeepIds = [];
+        // 当前图已经不在网格里（切了视图/筛选）：跟以前一样清空，别硬留一个
+        if (Vm.Current is not { } cur || !Vm.Items.Contains(cur)) return;
+
+        _restoringGrid = true;
+        try
+        {
+            GridList.SelectedItems.Clear();
+            foreach (var vm in Vm.Items)
+                if (keep.Contains(vm.Id)) GridList.SelectedItems.Add(vm);
+        }
+        finally
+        {
+            _restoringGrid = false;
+        }
+    }
+
+    /// <summary>备注是 Delay=400 的绑定；整库重建前先把它刷进 VM，否则最后几个字会被旧值覆盖。</summary>
+    private void FlushEditingText()
+    {
+        if (Keyboard.FocusedElement is TextBox tb)
+            tb.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
     }
 
     private void OnGridDoubleClick(object sender, MouseButtonEventArgs e)

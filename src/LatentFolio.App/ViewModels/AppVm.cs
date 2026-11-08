@@ -116,6 +116,17 @@ public sealed partial class AppVm : ObservableObject
     public event Action? GridReloaded;
     public event Action? ViewerClosed;
 
+    /// <summary>整表重建中。界面别把「ListBox 的选中项被清空」当成用户取消选择，
+    /// 否则后台导入一张新图就会把正在写备注的右栏关掉。</summary>
+    public bool IsReloading { get; private set; }
+
+    /// <summary>网格要整体重建了：界面趁机记下当前选中项，建完再点回去。</summary>
+    public event Action? GridReloading;
+
+    /// <summary>重建 ImageVm 之前：界面把编辑框里还没提交的字刷回 VM。
+    /// 备注是 Delay=400 的绑定，不刷的话刷新读到的是 400ms 前的旧值，最后几个字会被吞掉。</summary>
+    public event Action? BeforeReload;
+
     public AppVm(AppServices svc, ThumbService thumbs)
     {
         _svc = svc;
@@ -446,6 +457,7 @@ public sealed partial class AppVm : ObservableObject
 
     public void ReloadFromDb()
     {
+        BeforeReload?.Invoke();
         var sw = Stopwatch.StartNew();
         // 重建 VM 会把 Current / Selection 换成悬空引用（自动导入、重新识别都会走到这里），
         // 按 id 接回来，否则右栏和图边条会突然只剩一张。
@@ -1186,15 +1198,24 @@ public sealed partial class AppVm : ObservableObject
         foreach (var it in list)
             if (VmById.TryGetValue(it.Id, out var vm)) vms.Add(vm);
 
-        Items.ReplaceAll(vms);
+        IsReloading = true;
+        GridReloading?.Invoke();
+        try
+        {
+            Items.ReplaceAll(vms);
 
-        HitCount = Items.Count;
-        IsEmpty = Items.Count == 0;
-        IsLibraryEmpty = TotalCount == 0;
-        EmptyText = IsLibraryEmpty ? "图库还是空的，先把 ComfyUI 的 output 目录指过来" : "这里一张都没有";
-        RebuildFilmstrip();
-        OnPropertyChanged(nameof(Chips));
-        GridReloaded?.Invoke();
+            HitCount = Items.Count;
+            IsEmpty = Items.Count == 0;
+            IsLibraryEmpty = TotalCount == 0;
+            EmptyText = IsLibraryEmpty ? "图库还是空的，先把 ComfyUI 的 output 目录指过来" : "这里一张都没有";
+            RebuildFilmstrip();
+            OnPropertyChanged(nameof(Chips));
+            GridReloaded?.Invoke();
+        }
+        finally
+        {
+            IsReloading = false;
+        }
         RefreshStatus();
         LastRefreshMs = sw.ElapsedMilliseconds;
     }

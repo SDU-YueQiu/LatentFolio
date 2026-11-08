@@ -754,6 +754,41 @@ public static class SelfTest
             else Check(false, "图库滚动条换成 SlimThumb", "没找到 ScrollBar 或滑块");
         }
 
+        // ---------- 21d. 后台导入整表重建，不能把正在写备注的详情栏关掉 ----------
+        if (window is MainWindow mwK && vm.Items.Count > 0)
+        {
+            vm.PanelCollapsed = false;
+            mwK.GridListForTest.SelectedItem = vm.Items[0];
+            await Pulse(window, 2);
+            long keepId = vm.Current?.Id ?? 0;
+            Check(keepId != 0 && vm.IsPanelVisible, "详情栏开着（准备模拟后台导入）",
+                $"{keepId}");
+
+            vm.RefreshGrid();
+            await Pulse(window, 2);
+            Check(vm.Current?.Id == keepId && vm.IsPanelVisible, "刷新网格不会关掉详情栏",
+                $"Current {(vm.Current?.Id ?? 0)} / 可见 {vm.IsPanelVisible}");
+
+            // 目录监视导入走的就是这条：整库重建（VM 实例全换掉）+ 刷网格
+            vm.ReloadFromDb();
+            vm.RefreshGrid();
+            await Pulse(window, 3);
+            Check(vm.Current?.Id == keepId && vm.IsPanelVisible, "整库重建后详情栏还开着",
+                $"Current {(vm.Current?.Id ?? 0)} / 可见 {vm.IsPanelVisible}");
+            Check(mwK.GridListForTest.SelectedItems.Count == 1
+                  && mwK.GridListForTest.SelectedItems[0] is ImageVm rebuilt && rebuilt.Id == keepId,
+                "重建后原来那张还选中着", $"{mwK.GridListForTest.SelectedItems.Count} 张");
+
+            // 用户自己收起来的右栏，不能被后台刷新顶开
+            vm.PanelCollapsed = true;
+            await Pulse(window, 2);
+            vm.RefreshGrid();
+            await Pulse(window, 2);
+            Check(vm.PanelCollapsed && !vm.IsPanelVisible, "收起的右栏不会被刷新顶开");
+            vm.PanelCollapsed = false;
+            await Pulse(window);
+        }
+
         // ---------- 21b. 可拖的分区高度、排序都记进设置 ----------
         double ch0 = vm.LeftColumnsHeight, ph0 = vm.LeftPeopleHeight;
         vm.SetLeftColumnsHeight(300);
