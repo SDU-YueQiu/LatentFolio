@@ -30,12 +30,16 @@ $p = $null
 if ($found.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$p)) {
     $p.Invoke()
 }
+elseif ($found.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$p)) {
+    $p.Toggle()
+}
 elseif ($found.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$p)) {
     $p.Select()
 }
 else {
-    $r = $found.Current.BoundingRectangle
-    & "$PSScriptRoot\click.ps1" -X ([int]($r.X + $r.Width / 2)) -Y ([int]($r.Y + $r.Height / 2)) -Button left -WaitMs 200
+    # 不要退化成模拟鼠标点击：那会把光标挪到用户正在用的别的程序上去。
+    Write-Error "$Type '$Name' 不支持 Invoke/Toggle/Select，拒绝用鼠标模拟"
+    exit 3
 }
 Start-Sleep -Milliseconds $WaitMs
 Write-Output "invoked $Type '$Name'"

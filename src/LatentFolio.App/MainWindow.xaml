@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:LatentFolio.App.Controls"
         xmlns:vm="clr-namespace:LatentFolio.App.ViewModels"
+        xmlns:views="clr-namespace:LatentFolio.App.Views"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="LatentFolio" Height="1000" Width="1600" MinHeight="620" MinWidth="940"
         WindowStartupLocation="CenterScreen"
@@ -17,12 +18,6 @@
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
-        <c:BoolToVis x:Key="B2V" />
-        <c:BoolToVis x:Key="InvB2V" Invert="True" />
-        <c:NotEmptyToVis x:Key="NE2V" />
-        <c:IntToVis x:Key="I2V" />
-        <c:Num x:Key="Num" />
-
         <!-- 一个格子 -->
         <DataTemplate x:Key="TileTpl" DataType="{x:Type vm:ImageVm}">
             <Grid Margin="0,0,0,0" Background="Transparent" AutomationProperties.Name="{Binding FileName}">
@@ -41,8 +36,8 @@
                            Foreground="{StaticResource B.Text2}" TextTrimming="CharacterEllipsis"
                            Margin="1,5,1,0" />
 
-                <c:RatingBar Grid.Row="2" Value="{Binding Rating, Mode=OneWay}" DotSize="7" Gap="4"
-                             VerticalAlignment="Center" Margin="1,3,0,0" RatingChanged="OnTileRating" />
+                <c:RatingBar Grid.Row="2" Value="{Binding Rating, Mode=TwoWay}" StarSize="8" Gap="3"
+                             VerticalAlignment="Center" Margin="1,3,0,0" />
             </Grid>
         </DataTemplate>
 
@@ -69,27 +64,6 @@
                 </Setter.Value>
             </Setter>
         </Style>
-
-        <!-- 人物头像 -->
-        <DataTemplate x:Key="PersonTpl" DataType="{x:Type vm:PersonVm}">
-            <Border Background="{StaticResource B.Tile}" CornerRadius="6" Margin="2" ClipToBounds="True"
-                    ToolTip="{Binding Display}">
-                <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
-            </Border>
-        </DataTemplate>
-
-        <!-- 键值行 -->
-        <DataTemplate x:Key="KV">
-            <Grid Margin="0,0,0,7">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="76" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding Key}" Style="{StaticResource T.Label}" VerticalAlignment="Top" />
-                <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"
-                           FontSize="12.5" Foreground="{StaticResource B.Text}" />
-            </Grid>
-        </DataTemplate>
     </Window.Resources>
 
     <Grid>
@@ -132,16 +106,41 @@
                                VerticalAlignment="Center" />
                     <TextBox Grid.Column="1" BorderThickness="0" Background="Transparent" Padding="0,6,10,6"
                              VerticalContentAlignment="Center" FontSize="12.5"
+                             AutomationProperties.Name="搜索"
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=250}" />
                 </Grid>
             </Border>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnScanClick" ToolTip="重新扫描图库" AutomationProperties.Name="重新扫描"><Button.Content><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
-                <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnMinClick" AutomationProperties.Name="最小化"><Button.Content><TextBlock Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
-                <Button x:Name="MaxBtn" Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnMaxClick" AutomationProperties.Name="最大化"><Button.Content><TextBlock Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
-                <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnCloseClick" AutomationProperties.Name="关闭"><Button.Content><TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
+                <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnScanClick"
+                        ToolTip="重新扫描图库" AutomationProperties.Name="重新扫描">
+                    <Button.Content>
+                        <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                                   Foreground="{StaticResource B.Text2}" />
+                    </Button.Content>
+                </Button>
+                <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnMinClick"
+                        AutomationProperties.Name="最小化">
+                    <Button.Content>
+                        <TextBlock Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                   Foreground="{StaticResource B.Text2}" />
+                    </Button.Content>
+                </Button>
+                <Button x:Name="MaxBtn" Width="40" Height="34" Style="{StaticResource Btn.Ghost}"
+                        Click="OnMaxClick" AutomationProperties.Name="最大化">
+                    <Button.Content>
+                        <TextBlock Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                   Foreground="{StaticResource B.Text2}" />
+                    </Button.Content>
+                </Button>
+                <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnCloseClick"
+                        AutomationProperties.Name="关闭">
+                    <Button.Content>
+                        <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                   Foreground="{StaticResource B.Text2}" />
+                    </Button.Content>
+                </Button>
             </StackPanel>
         </Grid>
 
@@ -161,7 +160,6 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- 总览 / 我的栏 -->
                 <StackPanel Grid.Row="0" Margin="8,8,8,0">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -179,8 +177,8 @@
                                 <TextBlock Grid.Column="0" Text="&#xE8A9;" FontFamily="Segoe MDL2 Assets"
                                            FontSize="13" Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="总览 · 全部图片" Margin="9,0,0,0" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="2" Text="{Binding TotalCount, StringFormat={}{0:N0}}" Style="{StaticResource T.Sub}"
-                                           VerticalAlignment="Center" Margin="14,0,0,0" />
+                                <TextBlock Grid.Column="2" Text="{Binding TotalCount, StringFormat={}{0:N0}}"
+                                           Style="{StaticResource T.Sub}" VerticalAlignment="Center" Margin="14,0,0,0" />
                             </Grid>
                         </Button>
                         <Button Grid.Column="1" Content="统计" FontSize="11.5" Padding="10,3"
@@ -195,32 +193,43 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="我的栏" Style="{StaticResource T.Section}" VerticalAlignment="Center" />
                         <Button Grid.Column="1" Content="+ 新建" Style="{StaticResource Btn.Ghost}"
-                                FontSize="11.5" Padding="7,3" Click="OnNewColumnClick" />
+                                FontSize="11.5" Padding="7,3" Click="OnNewColumnClick"
+                                AutomationProperties.Name="新建栏" />
                     </Grid>
                 </StackPanel>
 
-                <ListBox Grid.Row="1" x:Name="ColList" Background="Transparent" BorderThickness="0"
-                         Margin="8,0,8,0" MaxHeight="260" ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         ItemsSource="{Binding Columns}" SelectionChanged="OnColumnSelected"
-                         ItemContainerStyle="{StaticResource RowItem}">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:ColumnVm}">
-                            <Grid AutomationProperties.Name="{Binding Name}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Ellipse Width="7" Height="7" Fill="{StaticResource B.Text3}" VerticalAlignment="Center"
-                                         Margin="1,0,8,0" />
-                                <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
-                                           VerticalAlignment="Center" FontSize="12.5" />
-                                <TextBlock Grid.Column="2" Text="{Binding CountText}" Style="{StaticResource T.Sub}"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <Grid Grid.Row="1" Margin="8,0,8,0">
+                    <ListBox x:Name="ColList" Background="Transparent" BorderThickness="0"
+                             MaxHeight="260" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ItemsSource="{Binding Columns}" SelectionChanged="OnColumnSelected"
+                             ItemContainerStyle="{StaticResource RowItem}"
+                             AllowDrop="True"
+                             PreviewMouseLeftButtonDown="OnColMouseDown"
+                             PreviewMouseMove="OnColMouseMove"
+                             DragOver="OnColDragOver"
+                             DragLeave="OnColDragLeave"
+                             Drop="OnColDrop">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:ColumnVm}">
+                                <Grid AutomationProperties.Name="{Binding Name}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource B.Text3}" VerticalAlignment="Center"
+                                             Margin="1,0,8,0" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" FontSize="12.5" />
+                                    <TextBlock Grid.Column="2" Text="{Binding CountText}" Style="{StaticResource T.Sub}"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Border x:Name="ColDragLine" Height="2" Background="{StaticResource B.Accent}"
+                            VerticalAlignment="Top" Visibility="Collapsed" IsHitTestVisible="False" />
+                </Grid>
 
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
                     <StackPanel>
@@ -233,7 +242,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="人物" Style="{StaticResource T.Section}" VerticalAlignment="Center" />
                             <Button Grid.Column="1" Style="{StaticResource Btn.Ghost}" FontSize="11.5" Padding="6,2"
-                                    Click="OnPeopleClick">
+                                    Click="OnPeopleClick" AutomationProperties.Name="全部人物">
                                 <TextBlock Text="全部 ›" Foreground="{StaticResource B.Text3}" />
                             </Button>
                         </Grid>
@@ -247,7 +256,7 @@
                                 <DataTemplate>
                                     <Border Height="40" Margin="2" Background="{StaticResource B.Tile}" CornerRadius="6"
                                             ClipToBounds="True" MouseLeftButtonDown="OnPersonClick"
-                                            Cursor="Hand">
+                                            Cursor="Hand" AutomationProperties.Name="{Binding Display}">
                                         <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
                                     </Border>
                                 </DataTemplate>
@@ -293,7 +302,8 @@
                                   IsChecked="{Binding WatchEnabled}" />
 
                         <Button Style="{StaticResource Btn.Ghost}" HorizontalContentAlignment="Stretch"
-                                Margin="8,0,8,10" Padding="10,7" Click="OnDeletedClick" AutomationProperties.Name="已删除">
+                                Margin="8,0,8,10" Padding="10,7" Click="OnDeletedClick"
+                                AutomationProperties.Name="已删除">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -358,6 +368,12 @@
                                        Margin="14,0,6,0" />
                             <Slider x:Name="SizeSlider" Width="100" Minimum="110" Maximum="380" Value="190"
                                     VerticalAlignment="Center" ValueChanged="OnSizeChanged" />
+                            <Button Style="{StaticResource Btn.Ghost}" Width="32" Height="30" Margin="10,0,0,0"
+                                    Click="OnTogglePanel" ToolTip="右侧详情栏" AutomationProperties.Name="详情栏开关">
+                                <Button.Content>
+                                    <TextBlock Text="详情" FontSize="11.5" Foreground="{StaticResource B.Text2}" />
+                                </Button.Content>
+                            </Button>
                         </StackPanel>
 
                         <ItemsControl Grid.Row="1" Grid.ColumnSpan="3" ItemsSource="{Binding Chips}" Margin="0,10,0,0">
@@ -377,32 +393,45 @@
                         </ItemsControl>
                     </Grid>
 
-                    <ListBox Grid.Row="1" x:Name="GridList" Background="Transparent" BorderThickness="0"
-                             ItemsSource="{Binding Items}" SelectionMode="Extended"
-                             ItemContainerStyle="{StaticResource TileBox}"
-                             ItemTemplate="{StaticResource TileTpl}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ScrollViewer.CanContentScroll="True"
-                             VirtualizingPanel.IsVirtualizing="True"
-                             VirtualizingPanel.VirtualizationMode="Standard"
-                             SelectionChanged="OnGridSelectionChanged"
-                             MouseDoubleClick="OnGridDoubleClick"
-                             KeyDown="OnGridKeyDown"
-                             PreviewMouseRightButtonDown="OnGridPreviewRightDown"
-                             PreviewMouseRightButtonUp="OnGridRightUp">
-                        <ListBox.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <c:VirtualizingWrapPanel ItemWidth="{Binding TileSize}"
-                                                         ItemHeight="{Binding TileHeight}"
-                                                         Spacing="8" Pad="16,4,16,24" />
-                            </ItemsPanelTemplate>
-                        </ListBox.ItemsPanel>
-                    </ListBox>
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Row="1" Text="这里一张都没有" HorizontalAlignment="Center"
-                               VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource B.Text3}"
-                               Visibility="{Binding IsEmpty, Converter={StaticResource B2V}}" />
+                        <ListBox x:Name="GridList" Background="Transparent" BorderThickness="0"
+                                 ItemsSource="{Binding Items}" SelectionMode="Extended"
+                                 ItemContainerStyle="{StaticResource TileBox}"
+                                 ItemTemplate="{StaticResource TileTpl}"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.CanContentScroll="True"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Standard"
+                                 SelectionChanged="OnGridSelectionChanged"
+                                 MouseDoubleClick="OnGridDoubleClick"
+                                 KeyDown="OnGridKeyDown"
+                                 PreviewMouseRightButtonDown="OnGridPreviewRightDown"
+                                 PreviewMouseRightButtonUp="OnGridRightUp">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <c:VirtualizingWrapPanel ItemWidth="{Binding TileSize}"
+                                                             ItemHeight="{Binding TileHeight}"
+                                                             Spacing="8" Pad="16,4,16,24" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+
+                        <Border x:Name="LibraryDetailHost" Grid.Column="1" Width="380"
+                                BorderBrush="{StaticResource B.Border}" BorderThickness="1,0,0,0"
+                                Visibility="{Binding IsPanelVisible, Converter={StaticResource B2V}}">
+                            <views:DetailPanel />
+                        </Border>
+
+                        <TextBlock Grid.Column="0" Text="这里一张都没有" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource B.Text3}"
+                                   Visibility="{Binding IsEmpty, Converter={StaticResource B2V}}" />
+                    </Grid>
                 </Grid>
 
                 <!-- 查看器 -->
@@ -419,11 +448,11 @@
 
                     <Grid Grid.Row="0" Grid.ColumnSpan="2" Margin="18,12,14,8">
                         <StackPanel Orientation="Horizontal">
-                            <Button Style="{StaticResource Btn.Ghost}" Click="OnCloseViewer" AutomationProperties.Name="返回" Padding="8,4">
+                            <Button Style="{StaticResource Btn.Ghost}" Click="OnCloseViewer"
+                                    AutomationProperties.Name="返回" Padding="8,4">
                                 <Button.Content>
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="11"
-                                                   Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
+                                        <TextBlock Text="‹" FontSize="16" Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" Margin="0,0,2,2" />
                                         <TextBlock Text="返回" Margin="6,0,0,0" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button.Content>
@@ -440,18 +469,33 @@
                             </Border>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button Content="RTX VSR" AutomationProperties.Name="RTX VSR 按钮" Style="{StaticResource Btn.Outline}" Padding="10,4"
+                            <Button Content="RTX VSR" AutomationProperties.Name="RTX VSR 按钮"
+                                    Style="{StaticResource Btn.Outline}" Padding="10,4"
                                     FontSize="12" Click="OnVsrClick" Margin="0,0,6,0" />
-                            <Button Style="{StaticResource Btn.Ghost}" Padding="10,4" Click="OnToggleOriginal" ToolTip="显示原图" AutomationProperties.Name="显示原图"><Button.Content><TextBlock Text="&#xE890;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
-                            <Button Style="{StaticResource Btn.Ghost}" Click="OnPrev" Padding="10,5" ToolTip="上一张"><Button.Content><TextBlock Text="&#xE7A7;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
-                            <Button Style="{StaticResource Btn.Ghost}" Click="OnNext" Padding="10,5" ToolTip="下一张"><Button.Content><TextBlock Text="&#xE7A8;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
+                            <Button Style="{StaticResource Btn.Ghost}" Padding="10,4" Click="OnToggleOriginal"
+                                    ToolTip="显示原图" AutomationProperties.Name="显示原图">
+                                <Button.Content>
+                                    <TextBlock Text="原图" FontSize="12" Foreground="{StaticResource B.Text2}" />
+                                </Button.Content>
+                            </Button>
+                            <Button Style="{StaticResource Btn.Ghost}" Click="OnPrev" Padding="10,5"
+                                    ToolTip="上一张" AutomationProperties.Name="上一张">
+                                <Button.Content>
+                                    <TextBlock Text="‹" FontSize="16" Foreground="{StaticResource B.Text2}" />
+                                </Button.Content>
+                            </Button>
+                            <Button Style="{StaticResource Btn.Ghost}" Click="OnNext" Padding="10,5"
+                                    ToolTip="下一张" AutomationProperties.Name="下一张">
+                                <Button.Content>
+                                    <TextBlock Text="›" FontSize="16" Foreground="{StaticResource B.Text2}" />
+                                </Button.Content>
+                            </Button>
                             <Button Content="在文件夹中显示" Style="{StaticResource Btn.Ghost}" Padding="10,5"
                                     Click="OnReveal" Margin="6,0,0,0" />
                         </StackPanel>
                     </Grid>
 
-                    <!-- 图片区 -->
-                    <Border Grid.Row="1" Grid.Column="0" Background="#FF17191C" Margin="0,0,0,0" ClipToBounds="True">
+                    <Border Grid.Row="1" Grid.Column="0" Background="#FF17191C" ClipToBounds="True">
                         <Grid>
                             <c:ZoomBox x:Name="BigZoom" Margin="0">
                                 <Image x:Name="BigImage" Source="{Binding ViewerImage.Source}" Stretch="Uniform"
@@ -469,156 +513,7 @@
                         </Grid>
                     </Border>
 
-                    <!-- 右栏 -->
-                    <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto"
-                                  Background="{StaticResource B.Panel}">
-                        <StackPanel Margin="16,4,16,24">
-
-                            <!-- 文件 -->
-                            <TextBlock Text="文件" Style="{StaticResource T.Section}" Margin="0,6,0,8" />
-                            <Grid Margin="0,0,0,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="76" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="文件夹" Style="{StaticResource T.Label}" />
-                                <TextBlock Grid.Column="1" Text="{Binding Current.Folder}" TextWrapping="Wrap"
-                                           FontSize="12.5" />
-                            </Grid>
-                            <Grid Margin="0,0,0,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="76" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="文件名" Style="{StaticResource T.Label}" />
-                                <TextBlock Grid.Column="1" Text="{Binding Current.FileName}" TextWrapping="Wrap"
-                                           FontSize="12.5" />
-                            </Grid>
-                            <Grid Margin="0,0,0,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="76" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="尺寸" Style="{StaticResource T.Label}" />
-                                <TextBlock Grid.Column="1" FontSize="12.5">
-                                    <Run Text="{Binding Current.Resolution, Mode=OneWay}" />
-                                    <Run Text="  ·  " Foreground="{StaticResource B.Text3}" />
-                                    <Run Text="{Binding Current.SizeText, Mode=OneWay}" />
-                                    <Run Text="  ·  " Foreground="{StaticResource B.Text3}" />
-                                    <Run Text="{Binding Current.ExtText, Mode=OneWay}" />
-                                </TextBlock>
-                            </Grid>
-                            <Grid Margin="0,0,0,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="76" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="日期" Style="{StaticResource T.Label}" />
-                                <TextBlock Grid.Column="1" Text="{Binding Current.DateText}" FontSize="12.5" />
-                            </Grid>
-
-                            <Border Style="{StaticResource HLine}" Margin="0,10,0,10" />
-
-                            <!-- 人物 -->
-                            <StackPanel Visibility="{Binding Current.HasPeople, Converter={StaticResource B2V}}">
-                                <TextBlock Text="人物" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
-                                <ItemsControl ItemsSource="{Binding Current.People}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <WrapPanel />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Background="{StaticResource B.AccentSoft}" CornerRadius="12"
-                                                    Padding="9,4" Margin="0,0,6,6">
-                                                <TextBlock Text="{Binding Display}" FontSize="11.5"
-                                                           Foreground="{StaticResource B.Accent}" />
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <Border Style="{StaticResource HLine}" Margin="0,6,0,10" />
-                            </StackPanel>
-
-                            <!-- 评分 + 备注 -->
-                            <TextBlock Text="评分与备注" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
-                            <c:RatingBar x:Name="BigRating" DotSize="16" Gap="7" Height="18"
-                                         Value="{Binding Current.Rating, Mode=OneWay}" Margin="0,2,0,10"
-                                         RatingChanged="OnBigRatingChanged" />
-                            <TextBox x:Name="NoteBox" Height="62" AcceptsReturn="True" TextWrapping="Wrap"
-                                     VerticalContentAlignment="Top" FontSize="12.5"
-                                     Text="{Binding Current.Note, UpdateSourceTrigger=PropertyChanged, Delay=400}"
-                                     TextChanged="OnNoteChanged" />
-
-                            <Border Style="{StaticResource HLine}" Margin="0,14,0,10" />
-
-                            <!-- 提示词 -->
-                            <Grid Margin="0,0,0,6">
-                                <TextBlock Text="正向提示词" Style="{StaticResource T.Section}" />
-                                <Button Content="复制" Style="{StaticResource Btn.Ghost}" FontSize="11"
-                                        Padding="6,2" HorizontalAlignment="Right" Click="OnCopyPrompt" />
-                            </Grid>
-                            <Border Background="White" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
-                                    CornerRadius="8" Padding="10,8" Margin="0,0,0,10">
-                                <TextBox Text="{Binding Current.Prompt, Mode=OneWay}" IsReadOnly="True"
-                                         BorderThickness="0" Background="Transparent" TextWrapping="Wrap"
-                                         FontSize="11.5" MaxHeight="180" VerticalScrollBarVisibility="Auto"
-                                         Foreground="{StaticResource B.Text2}" />
-                            </Border>
-
-                            <Grid Margin="0,0,0,6"
-                                  Visibility="{Binding Current.HasNegative, Converter={StaticResource B2V}}">
-                                <TextBlock Text="负面提示词" Style="{StaticResource T.Section}" />
-                                <Button Content="复制" Style="{StaticResource Btn.Ghost}" FontSize="11"
-                                        Padding="6,2" HorizontalAlignment="Right" Click="OnCopyNegative" />
-                            </Grid>
-                            <TextBlock Text="{Binding Current.NegHint}" TextWrapping="Wrap" FontSize="11"
-                                       Foreground="{StaticResource B.Danger}" Margin="0,0,0,6"
-                                       Visibility="{Binding Current.NegHint, Converter={StaticResource NE2V}}" />
-                            <Border Background="White" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
-                                    CornerRadius="8" Padding="10,8" Margin="0,0,0,10"
-                                    Visibility="{Binding Current.HasNegative, Converter={StaticResource B2V}}">
-                                <TextBox Text="{Binding Current.Negative, Mode=OneWay}" IsReadOnly="True"
-                                         BorderThickness="0" Background="Transparent" TextWrapping="Wrap"
-                                         FontSize="11.5" MaxHeight="110" VerticalScrollBarVisibility="Auto"
-                                         Foreground="{StaticResource B.Text2}" />
-                            </Border>
-
-                            <Border Style="{StaticResource HLine}" Margin="0,4,0,10" />
-
-                            <!-- 采样参数 -->
-                            <TextBlock Text="采样参数" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
-                            <ItemsControl x:Name="ParamsList">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="0,0,0,7">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="76" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding Key}" Style="{StaticResource T.Label}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="12.5"
-                                                       TextWrapping="Wrap" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <Border Style="{StaticResource HLine}" Margin="0,10,0,10" />
-
-                            <!-- 工作流 -->
-                            <Expander Header="工作流" FontSize="12" Foreground="{StaticResource B.Text2}">
-                                <Border Background="White" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
-                                        CornerRadius="8" Padding="8" Margin="0,6,0,0">
-                                    <TextBox Text="{Binding WorkflowText, Mode=OneWay}" IsReadOnly="True"
-                                             BorderThickness="0" Background="Transparent" FontFamily="{StaticResource F.Mono}"
-                                             FontSize="10.5" TextWrapping="NoWrap" MaxHeight="360"
-                                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
-                                </Border>
-                            </Expander>
-                        </StackPanel>
-                    </ScrollViewer>
+                    <views:DetailPanel Grid.Row="1" Grid.Column="1" />
                 </Grid>
 
                 <!-- 统计 -->
@@ -628,11 +523,11 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
                     <StackPanel Orientation="Horizontal" Margin="20,14,20,10">
-                        <Button Style="{StaticResource Btn.Ghost}" Click="OnCloseStats" AutomationProperties.Name="返回图库" Padding="8,4">
+                        <Button Style="{StaticResource Btn.Ghost}" Click="OnCloseStats"
+                                AutomationProperties.Name="返回图库" Padding="8,4">
                             <Button.Content>
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="11"
-                                               Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
+                                    <TextBlock Text="‹" FontSize="16" Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" Margin="0,0,2,2" />
                                     <TextBlock Text="返回图库" Margin="6,0,0,0" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button.Content>
@@ -670,13 +565,5 @@
         </Border>
     </Grid>
 </Window>
-
-
-
-
-
-
-
-
 
 

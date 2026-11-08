@@ -38,6 +38,16 @@ public sealed class ZoomBox : ContentControl
 
     public double Zoom => _scale;
 
+    /// <summary>给自检用：直接设一个缩放倍数。</summary>
+    public void SetScale(double scale)
+    {
+        _scale = Math.Clamp(scale, 1.0, MaxScale);
+        _tx = _ty = 0;
+        Clamp();
+        Apply();
+        Cursor = _scale > 1.01 ? Cursors.Hand : Cursors.Arrow;
+    }
+
     public void Reset()
     {
         _scale = 1;

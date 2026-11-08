@@ -1,0 +1,176 @@
+<UserControl x:Class="LatentFolio.App.Views.DetailPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:LatentFolio.App.Controls"
+             Background="{StaticResource B.Panel}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{StaticResource B.Panel}">
+        <StackPanel Margin="16,4,16,24">
+
+            <!-- 文件 -->
+            <TextBlock Text="文件" Style="{StaticResource T.Section}" Margin="0,6,0,8" />
+            <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="文件夹" Style="{StaticResource T.Label}" />
+                <TextBlock Grid.Column="1" Text="{Binding Current.Folder}" TextWrapping="Wrap" FontSize="12.5" />
+            </Grid>
+            <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="文件名" Style="{StaticResource T.Label}" />
+                <TextBlock Grid.Column="1" Text="{Binding Current.FileName}" TextWrapping="Wrap" FontSize="12.5" />
+            </Grid>
+            <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="尺寸" Style="{StaticResource T.Label}" />
+                <TextBlock Grid.Column="1" FontSize="12.5">
+                    <Run Text="{Binding Current.Resolution, Mode=OneWay}" />
+                    <Run Text="  ·  " Foreground="{StaticResource B.Text3}" />
+                    <Run Text="{Binding Current.SizeText, Mode=OneWay}" />
+                    <Run Text="  ·  " Foreground="{StaticResource B.Text3}" />
+                    <Run Text="{Binding Current.ExtText, Mode=OneWay}" />
+                </TextBlock>
+            </Grid>
+            <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="日期" Style="{StaticResource T.Label}" />
+                <TextBlock Grid.Column="1" Text="{Binding Current.DateText}" FontSize="12.5" />
+            </Grid>
+
+            <Border Style="{StaticResource HLine}" Margin="0,10,0,10" />
+
+            <!-- 人物 -->
+            <StackPanel Visibility="{Binding Current.HasPeople, Converter={StaticResource B2V}}">
+                <TextBlock Text="人物" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
+                <ItemsControl ItemsSource="{Binding Current.People}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{StaticResource B.AccentSoft}" CornerRadius="12" Padding="9,4"
+                                    Margin="0,0,6,6" Cursor="Hand"
+                                    MouseLeftButtonDown="OnPersonChipClick"
+                                    MouseRightButtonDown="OnPersonChipRightDown">
+                                <TextBlock Text="{Binding Display}" FontSize="11.5"
+                                           Foreground="{StaticResource B.Accent}" />
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Visibility="{Binding Current.HasArtists, Converter={StaticResource B2V}}">
+                <TextBlock Text="画师" Style="{StaticResource T.Section}" Margin="0,2,0,8" />
+                <ItemsControl ItemsSource="{Binding Current.Artists}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{StaticResource B.Tile}" CornerRadius="12" Padding="9,4"
+                                    Margin="0,0,6,6">
+                                <TextBlock Text="{Binding}" FontSize="11.5" Foreground="{StaticResource B.Text2}" />
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <Border Style="{StaticResource HLine}" Margin="0,6,0,10" />
+
+            <!-- 评分与备注 -->
+            <Grid Margin="0,0,0,8">
+                <TextBlock Text="评分与备注" Style="{StaticResource T.Section}" />
+                <TextBlock Text="右键清空" FontSize="11" Foreground="{StaticResource B.Text3}"
+                           HorizontalAlignment="Right" VerticalAlignment="Center" />
+            </Grid>
+            <c:RatingBar Value="{Binding Current.Rating, Mode=TwoWay}" StarSize="20" Gap="6" Height="24"
+                         HorizontalAlignment="Left" Margin="0,0,0,10" />
+            <TextBox Height="62" AcceptsReturn="True" TextWrapping="Wrap"
+                     VerticalContentAlignment="Top" FontSize="12.5"
+                     Text="{Binding Current.Note, UpdateSourceTrigger=PropertyChanged, Delay=400}" />
+
+            <Border Style="{StaticResource HLine}" Margin="0,14,0,10" />
+
+            <!-- 提示词 -->
+            <Grid Margin="0,0,0,6">
+                <TextBlock Text="正向提示词" Style="{StaticResource T.Section}" />
+                <Button Content="复制" Style="{StaticResource Btn.Ghost}" FontSize="11" Padding="6,2"
+                        HorizontalAlignment="Right" Click="OnCopyPrompt" />
+            </Grid>
+            <Border Background="White" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
+                    CornerRadius="8" Padding="10,8" Margin="0,0,0,10">
+                <TextBox Text="{Binding Current.Prompt, Mode=OneWay}" IsReadOnly="True"
+                         BorderThickness="0" Background="Transparent" TextWrapping="Wrap"
+                         FontSize="11.5" MaxHeight="200" VerticalScrollBarVisibility="Auto"
+                         Foreground="{StaticResource B.Text2}" />
+            </Border>
+
+            <Grid Margin="0,0,0,6" Visibility="{Binding Current.HasNegative, Converter={StaticResource B2V}}">
+                <TextBlock Text="负面提示词" Style="{StaticResource T.Section}" />
+                <Button Content="复制" Style="{StaticResource Btn.Ghost}" FontSize="11" Padding="6,2"
+                        HorizontalAlignment="Right" Click="OnCopyNegative" />
+            </Grid>
+            <TextBlock Text="{Binding Current.NegHint}" TextWrapping="Wrap" FontSize="11"
+                       Foreground="{StaticResource B.Danger}" Margin="0,0,0,6"
+                       Visibility="{Binding Current.NegHint, Converter={StaticResource NE2V}}" />
+            <Border Background="White" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
+                    CornerRadius="8" Padding="10,8" Margin="0,0,0,10"
+                    Visibility="{Binding Current.HasNegative, Converter={StaticResource B2V}}">
+                <TextBox Text="{Binding Current.Negative, Mode=OneWay}" IsReadOnly="True"
+                         BorderThickness="0" Background="Transparent" TextWrapping="Wrap"
+                         FontSize="11.5" MaxHeight="120" VerticalScrollBarVisibility="Auto"
+                         Foreground="{StaticResource B.Text2}" />
+            </Border>
+
+            <Border Style="{StaticResource HLine}" Margin="0,4,0,10" />
+
+            <!-- 采样参数 -->
+            <TextBlock Text="采样参数" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
+            <ItemsControl ItemsSource="{Binding CurrentParams}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,0,0,7">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="72" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Key}" Style="{StaticResource T.Label}" />
+                            <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="12.5" TextWrapping="Wrap" />
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Border Style="{StaticResource HLine}" Margin="0,10,0,10" />
+
+            <!-- 工作流 -->
+            <Expander x:Name="WorkflowExpander" Header="工作流" FontSize="12" Foreground="{StaticResource B.Text2}"
+                      Expanded="OnWorkflowExpanded">
+                <Border Background="White" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
+                        CornerRadius="8" Padding="8" Margin="0,6,0,0">
+                    <TextBox x:Name="WorkflowBox" Text="{Binding WorkflowText, Mode=OneWay}" IsReadOnly="True"
+                             BorderThickness="0" Background="Transparent"
+                             FontFamily="{StaticResource F.Mono}" FontSize="10.5" TextWrapping="NoWrap"
+                             MaxHeight="420" HorizontalScrollBarVisibility="Auto"
+                             VerticalScrollBarVisibility="Auto" />
+                </Border>
+            </Expander>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -7,7 +8,10 @@ namespace LatentFolio.App.Controls;
 
 /// <summary>
 /// 固定格子尺寸的虚拟化换行面板。只实例化视口内的容器，其余靠索引算位置。
-/// 数万张图滚动不掉帧靠的就是它。
+///
+/// 关键：必须实现 OnItemsChanged。VirtualizingPanel 的容器生成器和 InternalChildren
+/// 是两套账，集合增删时不一起改，下一次 Measure 里 Remove 就会空引用崩掉
+/// （实测「删一张图就报错」正是这个）。
 /// </summary>
 public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
 {
@@ -37,6 +41,41 @@ public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
     private Point _offset;
     private int _columns = 1;
 
+    // ---------------- 集合变化 ----------------
+
+    protected override void OnItemsChanged(object sender, ItemsChangedEventArgs args)
+    {
+        switch (args.Action)
+        {
+            case NotifyCollectionChangedAction.Remove:
+            case NotifyCollectionChangedAction.Replace:
+                {
+                    var index = args.Position.Index;
+                    var count = args.ItemUICount;
+                    if (index >= 0 && count > 0 && index + count <= InternalChildren.Count)
+                        RemoveInternalChildRange(index, count);
+                    break;
+                }
+            case NotifyCollectionChangedAction.Move:
+                {
+                    var index = args.Position.Index;
+                    var count = args.ItemUICount;
+                    if (index >= 0 && count > 0 && index + count <= InternalChildren.Count)
+                    {
+                        RemoveInternalChildRange(index, count);
+                        // 移动的目标位置由下一轮 Realize 重建
+                    }
+                    break;
+                }
+            case NotifyCollectionChangedAction.Reset:
+                if (InternalChildren.Count > 0) RemoveInternalChildRange(0, InternalChildren.Count);
+                break;
+        }
+        InvalidateMeasure();
+    }
+
+    // ---------------- 测量 ----------------
+
     protected override Size MeasureOverride(Size availableSize)
     {
         var owner = ItemsControl.GetItemsOwner(this);
@@ -57,7 +96,7 @@ public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
         UpdateScroll(new Size(extentW, Math.Max(extentH, vh)), new Size(vw, vh));
 
         var (first, last) = Range(count, ih, sp, pad);
-        Realize(first, last, new Size(iw - 0.5, ih - 0.5));
+        Realize(first, last, new Size(Math.Max(1, iw - 0.5), Math.Max(1, ih - 0.5)));
 
         return new Size(vw, vh);
     }
@@ -82,23 +121,30 @@ public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
     private void Realize(int first, int last, Size itemSize)
     {
         var gen = ItemContainerGenerator;
-        int childCount = InternalChildren.Count;
 
         if (last < first)
         {
-            if (childCount > 0) { gen.RemoveAll(); RemoveInternalChildRange(0, childCount); }
+            if (InternalChildren.Count > 0)
+            {
+                gen.RemoveAll();
+                RemoveInternalChildRange(0, InternalChildren.Count);
+            }
             return;
         }
 
-        var startPos = gen.GeneratorPositionFromIndex(first);
-        int childIndex = startPos.Offset == 0 ? startPos.Index : startPos.Index + 1;
+        CleanUpItems(first, last);
 
-        using (gen.StartAt(startPos, GeneratorDirection.Forward, true))
+        var startPos = gen.GeneratorPositionFromIndex(first);
+        if (startPos.Offset != 0) startPos = new GeneratorPosition(startPos.Index, 0);
+
+        int childIndex = startPos.Index;
+        if (childIndex < 0) childIndex = 0;
+
+        using (gen.StartAt(new GeneratorPosition(childIndex - 1, 1), GeneratorDirection.Forward, true))
         {
             for (int i = first; i <= last; i++, childIndex++)
             {
-                var child = gen.GenerateNext(out bool isNew) as UIElement;
-                if (child is null) break;
+                if (gen.GenerateNext(out bool isNew) is not UIElement child) break;
                 if (isNew)
                 {
                     if (childIndex >= InternalChildren.Count) AddInternalChild(child);
@@ -108,18 +154,26 @@ public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
                 child.Measure(itemSize);
             }
         }
+    }
 
-        // 回收视口外的
+    private void CleanUpItems(int minIndex, int maxIndex)
+    {
+        var gen = ItemContainerGenerator;
         for (int i = InternalChildren.Count - 1; i >= 0; i--)
         {
-            var itemIndex = gen.IndexFromGeneratorPosition(new GeneratorPosition(i, 0));
-            if (itemIndex < first || itemIndex > last || itemIndex < 0)
+            int itemIndex;
+            try { itemIndex = gen.IndexFromGeneratorPosition(new GeneratorPosition(i, 0)); }
+            catch { itemIndex = -1; }
+
+            if (itemIndex < minIndex || itemIndex > maxIndex || itemIndex < 0)
             {
-                gen.Remove(new GeneratorPosition(i, 0), 1);
+                try { gen.Remove(new GeneratorPosition(i, 0), 1); } catch { }
                 RemoveInternalChildRange(i, 1);
             }
         }
     }
+
+    // ---------------- 排列 ----------------
 
     protected override Size ArrangeOverride(Size finalSize)
     {
@@ -135,7 +189,9 @@ public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
         for (int i = 0; i < InternalChildren.Count; i++)
         {
             var child = InternalChildren[i];
-            int idx = gen.IndexFromGeneratorPosition(new GeneratorPosition(i, 0));
+            int idx;
+            try { idx = gen.IndexFromGeneratorPosition(new GeneratorPosition(i, 0)); }
+            catch { continue; }
             if (idx < 0) continue;
             int r = idx / cols, c = idx % cols;
             double x = left0 + c * (iw + sp);
@@ -192,11 +248,13 @@ public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
 
     public Rect MakeVisible(Visual visual, Rect rectangle)
     {
-        var child = visual as UIElement;
-        if (child is null) return rectangle;
+        if (visual is not UIElement child) return rectangle;
         int i = InternalChildren.IndexOf(child);
         if (i < 0) return rectangle;
-        int idx = ItemContainerGenerator.IndexFromGeneratorPosition(new GeneratorPosition(i, 0));
+
+        int idx;
+        try { idx = ItemContainerGenerator.IndexFromGeneratorPosition(new GeneratorPosition(i, 0)); }
+        catch { return rectangle; }
         if (idx < 0) return rectangle;
 
         double iw = ItemWidth, ih = ItemHeight, sp = Spacing;

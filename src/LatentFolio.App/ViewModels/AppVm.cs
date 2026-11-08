@@ -184,36 +184,61 @@ public sealed partial class AppVm : ObservableObject
 
     public event Action? CurrentChangedForViewer;
 
-    private ImageVm? _hooked;
+    /// <summary>采样参数列表，详情栏直接绑它（查看器和图库主页共用）。</summary>
+    public ObservableCollection<KeyValuePair<string, string>> CurrentParams { get; } = [];
 
     partial void OnCurrentChanged(ImageVm? value)
     {
-        // 查看器里改的批注/评分也要落库，否则关掉程序就没了
-        if (_hooked is not null) _hooked.PropertyChanged -= OnCurrentItemChanged;
-        _hooked = value;
-        if (_hooked is not null) _hooked.PropertyChanged += OnCurrentItemChanged;
-
         PromptEditorText = value?.Prompt ?? "";
-        CurrentChangedForViewer?.Invoke();
-    }
-
-    private void OnCurrentItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (sender is not ImageVm vm) return;
-        switch (e.PropertyName)
+        WorkflowText = "";
+        _workflowLoadedFor = 0;
+        CurrentParams.Clear();
+        if (value is not null)
         {
-            case nameof(ImageVm.Note):
-                _store.UpdateUser(vm.Item);
-                break;
-            case nameof(ImageVm.Rating):
-                _store.UpdateUser(vm.Item);
-                _ = RunColumnCountsAsync();
-                break;
+            CurrentParams.Add(new("模型", value.ModelText));
+            CurrentParams.Add(new("采样器", value.SamplerText));
+            CurrentParams.Add(new("调度器", value.SchedulerText));
+            CurrentParams.Add(new("步数", value.StepsText));
+            CurrentParams.Add(new("CFG", value.CfgText));
+            CurrentParams.Add(new("种子", value.SeedText));
         }
+        IsPanelVisible = value is not null && !PanelCollapsed;
+        CurrentChangedForViewer?.Invoke();
     }
 
     [ObservableProperty] private string _promptEditorText = "";
     [ObservableProperty] private string _workflowText = "";
+
+    // ================= 右侧详情栏 =================
+
+    [ObservableProperty] private bool _panelCollapsed;
+    [ObservableProperty] private bool _isPanelVisible;
+
+    partial void OnPanelCollapsedChanged(bool value)
+    {
+        IsPanelVisible = Current is not null && !value;
+        _store.SetSetting("panel_collapsed", value ? "1" : "0");
+    }
+
+    /// <summary>
+    /// 图库主页上单选一张图 → 右边栏显示详情（不进放大模式）。
+    /// 放大模式开着的时候不要动 Current，否则刷新网格会把正在看的图清掉。
+    /// </summary>
+    public void SelectSingle(ImageVm? vm)
+    {
+        if (ViewerOpen) return;
+        Current = vm;
+    }
+
+    /// <summary>展开「工作流」时才读库，几十 KB 的 JSON 不跟着每次切图反序列化。</summary>
+    public void EnsureWorkflow(ImageVm vm)
+    {
+        if (Current?.Id != vm.Id) return;
+        if (_workflowLoadedFor == vm.Id) return;
+        _ = LoadWorkflowAsync(vm);
+    }
+
+    private long _workflowLoadedFor;
 
     // ================= 启动 =================
 
@@ -222,6 +247,8 @@ public sealed partial class AppVm : ObservableObject
         LibraryRoot = _svc.LibraryRoot;
         AlwaysVsr = _store.GetSetting("always_vsr") == "1";
         WatchEnabled = _store.GetSetting("watch") != "0";
+        PanelCollapsed = _store.GetSetting("panel_collapsed") == "1";
+        LoadPersonAvatars();
         _ = _svc.Vsr.StartAsync().ContinueWith(_ =>
         {
             OnPropertyChanged(nameof(VsrReady));
@@ -247,11 +274,22 @@ public sealed partial class AppVm : ObservableObject
         foreach (var it in AllImages)
         {
             ById[it.Id] = it;
-            VmById[it.Id] = new ImageVm(it);
+            var vm = new ImageVm(it) { RatingPersist = OnVmRating, NotePersist = OnVmNote };
+            VmById[it.Id] = vm;
         }
         TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
         LoadColumns();
     }
+
+    /// <summary>评分/批注的唯一落库点。界面走哪条路改的都到这里。</summary>
+    private void OnVmRating(ImageVm vm)
+    {
+        _store.UpdateUser(vm.Item);
+        if (ReferenceEquals(vm, Current)) OnPropertyChanged(nameof(Current));
+        _ = RunColumnCountsAsync();
+    }
+
+    private void OnVmNote(ImageVm vm) => _store.UpdateUser(vm.Item);
 
     private async Task EnsureSeed()
     {
@@ -389,6 +427,36 @@ public sealed partial class AppVm : ObservableObject
         LoadColumns();
     }
 
+    /// <summary>拖拽排序：把 from 这一栏挪到 to 之前（to = Count 表示挪到最后）。</summary>
+    public void MoveColumn(int from, int to)
+    {
+        if (from < 0 || from >= Columns.Count) return;
+        if (to < 0) to = 0;
+        if (to > Columns.Count) to = Columns.Count;
+        if (to == from || to == from + 1) return;
+
+        var ordered = Columns.ToList();
+        var moving = ordered[from];
+        ordered.RemoveAt(from);
+        int dest = to > from ? to - 1 : to;
+        if (dest < 0) dest = 0;
+        if (dest > ordered.Count) dest = ordered.Count;
+        ordered.Insert(dest, moving);
+
+        using var tx = _svc.Db.Connection.BeginTransaction();
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            using var c = _svc.Db.Cmd("UPDATE col SET ord=$o WHERE id=$id");
+            c.Parameters.AddWithValue("$o", i);
+            c.Parameters.AddWithValue("$id", ordered[i].Id);
+            c.ExecuteNonQuery();
+        }
+        tx.Commit();
+
+        Columns.Clear();
+        foreach (var c in ordered) Columns.Add(c);
+    }
+
     public async Task RunColumnCountsAsync()
     {
         var ctx = MakeContext();
@@ -474,11 +542,70 @@ public sealed partial class AppVm : ObservableObject
                 Tag = x.Tag,
                 Display = vocab.Display(x.Tag),
                 Count = x.Count,
-                AvatarImageId = x.BestId,
+                AvatarImageId = PersonAvatars.TryGetValue(x.Tag, out var custom) ? custom : x.BestId,
             });
         }
         PeoplePreview.Clear();
         foreach (var p in People.Take(10)) PeoplePreview.Add(p);
+    }
+
+    // ---------------- 人物头像自定义 ----------------
+
+    /// <summary>tag → image_id。没设过的角色用「最高分那张」。</summary>
+    public Dictionary<string, long> PersonAvatars { get; } = new(StringComparer.Ordinal);
+
+    private void LoadPersonAvatars()
+    {
+        PersonAvatars.Clear();
+        try
+        {
+            using var c = _svc.Db.Cmd("SELECT tag,image_id FROM person_avatar");
+            using var r = c.ExecuteReader();
+            while (r.Read()) PersonAvatars[r.GetString(0)] = r.GetInt64(1);
+        }
+        catch { }
+    }
+
+    /// <summary>imageId = 0 表示恢复默认。</summary>
+    public void SetPersonAvatar(string tag, long imageId)
+    {
+        if (string.IsNullOrEmpty(tag)) return;
+        if (imageId <= 0)
+        {
+            using var c = _svc.Db.Cmd("DELETE FROM person_avatar WHERE tag=$t");
+            c.Parameters.AddWithValue("$t", tag);
+            c.ExecuteNonQuery();
+            PersonAvatars.Remove(tag);
+        }
+        else
+        {
+            using var c = _svc.Db.Cmd(
+                "INSERT INTO person_avatar(tag,image_id) VALUES($t,$i) ON CONFLICT(tag) DO UPDATE SET image_id=$i");
+            c.Parameters.AddWithValue("$t", tag);
+            c.Parameters.AddWithValue("$i", imageId);
+            c.ExecuteNonQuery();
+            PersonAvatars[tag] = imageId;
+        }
+
+        // 就地更新，不用整个重建
+        foreach (var p in People.Where(p => p.Tag == tag))
+            p.AvatarImageId = imageId > 0 ? imageId : FallbackAvatar(tag);
+        foreach (var p in PeoplePreview.Where(p => p.Tag == tag))
+            p.AvatarImageId = imageId > 0 ? imageId : FallbackAvatar(tag);
+        StatusLeft = imageId > 0 ? "已设为头像" : "已恢复默认头像";
+    }
+
+    private long FallbackAvatar(string tag)
+    {
+        long best = 0;
+        int bestRating = -1;
+        foreach (var it in AllImages)
+        {
+            if (it.State == FileState.Deleted) continue;
+            if (Array.IndexOf(it.Chars, tag) < 0) continue;
+            if (it.Rating > bestRating) { bestRating = it.Rating; best = it.Id; }
+        }
+        return best;
     }
 
     private void BuildFolders()
@@ -537,9 +664,23 @@ public sealed partial class AppVm : ObservableObject
 
     // ================= 视图 =================
 
+    /// <summary>
+    /// 切视图前先退出放大模式。不这样的话在放大页点左栏只是把后面的网格换了，
+    /// 用户还得再点一次返回。
+    /// </summary>
+    private void LeaveViewer()
+    {
+        if (!ViewerOpen) return;
+        ViewerOpen = false;
+        ViewerImage = null;
+        VsrBadge = "";
+        Current = null;
+    }
+
     [RelayCommand]
     private void ShowOverview()
     {
+        LeaveViewer();
         View = ViewKind.Overview;
         Title = "总览";
         RefreshGrid();
@@ -548,6 +689,7 @@ public sealed partial class AppVm : ObservableObject
     [RelayCommand]
     private void ShowDeleted()
     {
+        LeaveViewer();
         View = ViewKind.Deleted;
         Title = "已删除";
         RefreshGrid();
@@ -557,6 +699,7 @@ public sealed partial class AppVm : ObservableObject
     private void ShowColumn(ColumnVm? col)
     {
         if (col is null) return;
+        LeaveViewer();
         View = ViewKind.Column;
         ViewColumnId = col.Id;
         Title = col.Name;
@@ -566,6 +709,7 @@ public sealed partial class AppVm : ObservableObject
     public void ShowFolder(FolderVm? f)
     {
         if (f is null) return;
+        LeaveViewer();
         View = ViewKind.Folder;
         ViewFolder = f.Path;
         Title = f.Path.Length == 0 ? "根目录" : f.Path;
@@ -575,9 +719,21 @@ public sealed partial class AppVm : ObservableObject
     public void ShowPerson(PersonVm? p)
     {
         if (p is null) return;
+        LeaveViewer();
         View = ViewKind.Person;
         ViewPerson = p.Tag;
         Title = p.Display;
+        RefreshGrid();
+    }
+
+    public void ShowPersonByTag(string tag)
+    {
+        if (string.IsNullOrEmpty(tag)) return;
+        var p = People.FirstOrDefault(x => x.Tag == tag);
+        LeaveViewer();
+        View = ViewKind.Person;
+        ViewPerson = tag;
+        Title = p?.Display ?? Vocabulary.Instance.Display(tag);
         RefreshGrid();
     }
 
@@ -725,23 +881,9 @@ public sealed partial class AppVm : ObservableObject
 
     public void SetRating(IEnumerable<ImageVm> vms, int rating)
     {
-        using var tx = _svc.Db.Connection.BeginTransaction();
-        foreach (var vm in vms)
-        {
-            vm.Rating = rating;
-            _store.UpdateUser(vm.Item);
-        }
-        tx.Commit();
-        var first = vms.FirstOrDefault();
-        if (first is not null) OnPropertyChanged(nameof(Current));
+        // 每个 VM 的 Rating setter 自己会落库（ImageVm.RatingPersist）
+        foreach (var vm in vms) vm.Rating = rating;
         RefreshStatus();
-        _ = RunColumnCountsAsync();
-    }
-
-    public void SetNote(ImageVm vm, string note)
-    {
-        vm.Note = note;
-        _store.UpdateUser(vm.Item);
     }
 
     public void MoveToDeleted(IEnumerable<ImageVm> vms)
@@ -754,11 +896,11 @@ public sealed partial class AppVm : ObservableObject
             _store.UpdateState(vm.Item);
         }
         tx.Commit();
-        foreach (var vm in list) Items.Remove(vm);
         Selection.RemoveAll(x => list.Contains(x));
-        HitCount = Items.Count;
+        // 直接重算列表：删/还原都会改变「当前视图该有哪些图」，
+        // 只 Remove 不移回来的话，还原之后图就从这个视图里消失了。
         TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
-        RefreshStatus();
+        RefreshGrid();
         _ = RunColumnCountsAsync();
     }
 
@@ -772,11 +914,9 @@ public sealed partial class AppVm : ObservableObject
             _store.UpdateState(vm.Item);
         }
         tx.Commit();
-        foreach (var vm in list) Items.Remove(vm);
         Selection.RemoveAll(x => list.Contains(x));
-        HitCount = Items.Count;
         TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
-        RefreshStatus();
+        RefreshGrid();
         _ = RunColumnCountsAsync();
     }
 
@@ -791,8 +931,8 @@ public sealed partial class AppVm : ObservableObject
         ShowOriginal = false;
         VsrBadge = "";
         WorkflowText = "";
+        _workflowLoadedFor = 0;
         await LoadViewerImageAsync(vm);
-        _ = LoadWorkflowAsync(vm);
     }
 
     private ImageSourceHolder? _origSource;
@@ -876,13 +1016,15 @@ public sealed partial class AppVm : ObservableObject
 
     private async Task LoadWorkflowAsync(ImageVm vm)
     {
+        _workflowLoadedFor = vm.Id;
+        WorkflowText = "读取中…";
         var raw = await Task.Run(() =>
         {
             var gz = _store.GetWorkflow(vm.Id);
             return PngReader.Gunzip(gz) ?? "";
         });
         if (Current?.Id != vm.Id) return;
-        WorkflowText = Pretty(raw);
+        WorkflowText = raw.Length == 0 ? "这张图没有内嵌工作流。" : Pretty(raw);
     }
 
     private static string Pretty(string json)

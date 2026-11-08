@@ -15,7 +15,17 @@ public sealed partial class ImageVm : ObservableObject
     public ImageItem Item { get; }
     public long Id => Item.Id;
 
-    public ImageVm(ImageItem item) => Item = item;
+    /// <summary>改了要落库。由 AppVm 在创建时挂上；分开是因为改评分要重算栏命中，
+    /// 改批注不用（批注框每敲一个字都会触发）。</summary>
+    public Action<ImageVm>? RatingPersist;
+    public Action<ImageVm>? NotePersist;
+
+    public ImageVm(ImageItem item)
+    {
+        Item = item;
+        _rating = item.Rating;
+        _note = item.Note;
+    }
 
     public string FileName => Item.FileName;
     public string Folder => string.IsNullOrEmpty(Item.Folder) ? "（根目录）" : Item.Folder;
@@ -43,6 +53,7 @@ public sealed partial class ImageVm : ObservableObject
     {
         Item.Rating = value;
         OnPropertyChanged(nameof(StarText));
+        RatingPersist?.Invoke(this);
     }
 
     public string StarText => Rating > 0 ? new string('★', Rating) : "";
@@ -50,7 +61,11 @@ public sealed partial class ImageVm : ObservableObject
     [ObservableProperty]
     private string _note = "";
 
-    partial void OnNoteChanged(string value) => Item.Note = value;
+    partial void OnNoteChanged(string value)
+    {
+        Item.Note = value;
+        NotePersist?.Invoke(this);
+    }
 
     public string Prompt => Item.Prompt;
     public string Negative => Item.Negative;

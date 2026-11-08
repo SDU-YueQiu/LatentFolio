@@ -8,7 +8,7 @@ public sealed class Db : IDisposable
     public string FilePath { get; }
     private readonly SqliteConnection _conn;
 
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 2;
 
     public Db(string filePath)
     {
@@ -145,6 +145,17 @@ public sealed class Db : IDisposable
                 image_id INTEGER PRIMARY KEY,
                 path     TEXT NOT NULL,
                 at       INTEGER NOT NULL
+            );
+            """);
+        }
+
+        if (v < 2)
+        {
+            // 人物头像自定义：没设过的角色用「最高分那张」
+            Exec("""
+            CREATE TABLE IF NOT EXISTS person_avatar (
+                tag      TEXT PRIMARY KEY,
+                image_id INTEGER NOT NULL
             );
             """);
         }

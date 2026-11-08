@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Media3D;
 using LatentFolio.App.ViewModels;
 using LatentFolio.App.Views;
 using LatentFolio.Core.Models;
@@ -13,6 +12,9 @@ namespace LatentFolio.App;
 public partial class MainWindow : Window
 {
     private AppVm Vm => App.Root;
+
+    /// <summary>自检要用它检查缩放状态。</summary>
+    internal Controls.ZoomBox BigZoomControl => BigZoom;
 
     public MainWindow()
     {
@@ -49,13 +51,16 @@ public partial class MainWindow : Window
     {
         public int cbSize;
         public RECT rcMonitor;
-        public RECT rcWork;
+        public Rect2 rcWork;
         public int dwFlags;
     }
 
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct Rect2 { public int Left, Top, Right, Bottom; }
+
     /// <summary>
     /// 按真实 DPI 算窗口大小。SystemParameters.WorkArea 在窗口还没连到显示器时
-    /// 读到的是未缩放的数值，125% 缩放下会算出一个比屏幕还大的窗口，右边直接被裁掉。
+    /// 读到的是未缩放的数值，125% 缩放下会算出比屏幕还大的窗口。
     /// </summary>
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -73,7 +78,7 @@ public partial class MainWindow : Window
         double s = dpi / 96.0;
 
         var mi = new MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
-        var mon = MonitorFromWindow(hwnd, 2 /* MONITOR_DEFAULTTONEAREST */);
+        var mon = MonitorFromWindow(hwnd, 2);
         int waW = 0, waH = 0, waL = 0, waT = 0;
         if (mon != IntPtr.Zero && GetMonitorInfo(mon, ref mi))
         {
@@ -81,7 +86,11 @@ public partial class MainWindow : Window
             waW = mi.rcWork.Right - mi.rcWork.Left;
             waH = mi.rcWork.Bottom - mi.rcWork.Top;
         }
-        if (waW <= 0) { waW = (int)(SystemParameters.PrimaryScreenWidth * s); waH = (int)(SystemParameters.PrimaryScreenHeight * s); }
+        if (waW <= 0)
+        {
+            waW = (int)(SystemParameters.PrimaryScreenWidth * s);
+            waH = (int)(SystemParameters.PrimaryScreenHeight * s);
+        }
 
         double availW = waW / s - 32;
         double availH = waH / s - 32;
@@ -93,15 +102,26 @@ public partial class MainWindow : Window
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        App.Root.CurrentChangedForViewer += UpdateParams;
-        App.Root.PropertyChanged += (_, e) =>
+        App.Root.PropertyChanged += (_, pe) =>
         {
-            if (e.PropertyName is nameof(AppVm.ViewerImage) or nameof(AppVm.Current)) BigZoom.Reset();
+            // 换图/换源时若只是分辨率变了，缩放保持不动；换图才重置
+            if (pe.PropertyName == nameof(AppVm.Current)) BigZoom.Reset();
         };
         await Vm.InitAsync();
 
-        // 开发用：方便截图/回归，不影响正常启动
         var args = Environment.GetCommandLineArgs();
+        if (args.Contains("--self-test"))
+        {
+            await SelfTest.RunAsync(this, Vm);
+            Close();
+            return;
+        }
+        if (args.Contains("--select-first") && Vm.Items.Count > 0)
+        {
+            GridList.SelectedItem = Vm.Items[0];
+            Vm.SelectSingle(Vm.Items[0]);
+        }
+        if (args.Contains("--expand-workflow")) Vm.EnsureWorkflow(Vm.Items[0]);
         if (args.Contains("--open-first") && Vm.Items.Count > 0)
             Vm.OpenViewerCommand.Execute(Vm.Items[0]);
         if (args.Contains("--show-stats")) ShowStats();
@@ -115,22 +135,6 @@ public partial class MainWindow : Window
             var win = new PeopleWindow(Vm) { Owner = this };
             win.ShowDialog();
         }
-        if (args.Contains("--debug-size"))
-        {
-            var dpi = VisualTreeHelper.GetDpi(this);
-            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            uint sysDpi = GetDpiForWindow(hwnd);
-            var mi = new MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
-            var mon = MonitorFromWindow(hwnd, 2);
-            GetMonitorInfo(mon, ref mi);
-            var txt = $"actual {ActualWidth:F0}x{ActualHeight:F0}\nwin {Width:F0}x{Height:F0}\n"
-                      + $"dpi {dpi.DpiScaleX:F3} sys {sysDpi}\n"
-                      + $"monitor {mi.rcMonitor.Right - mi.rcMonitor.Left}x{mi.rcMonitor.Bottom - mi.rcMonitor.Top} "
-                      + $"work {mi.rcWork.Right - mi.rcWork.Left}x{mi.rcWork.Bottom - mi.rcWork.Top}\n"
-                      + $"left,top {Left:F0},{Top:F0}\n"
-                      + $"transform {PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M11:F3}\n";
-            System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lf-size.txt"), txt);
-        }
     }
 
     // ================= 窗口按钮 =================
@@ -140,7 +144,6 @@ public partial class MainWindow : Window
     private void OnMaxClick(object sender, RoutedEventArgs e)
     {
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-        MaxBtn.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
@@ -189,6 +192,82 @@ public partial class MainWindow : Window
         win.ShowDialog();
     }
 
+    // ================= 我的栏拖拽排序 =================
+
+    private Point _colDragStart;
+    private ColumnVm? _colDragItem;
+
+    private static T? FindAncestor<T>(DependencyObject? d) where T : DependencyObject
+    {
+        while (d is not null and not T) d = VisualTreeHelper.GetParent(d);
+        return d as T;
+    }
+
+    private void OnColMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _colDragStart = e.GetPosition(ColList);
+        _colDragItem = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext as ColumnVm;
+    }
+
+    private void OnColMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _colDragItem is null) return;
+        var p = e.GetPosition(ColList);
+        if (Math.Abs(p.Y - _colDragStart.Y) < 8) return;
+
+        var dragged = _colDragItem;
+        DragDrop.DoDragDrop(ColList, dragged, DragDropEffects.Move);
+        ColDragLine.Visibility = Visibility.Collapsed;
+        _colDragItem = null;
+    }
+
+    private void OnColDragOver(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(typeof(ColumnVm))) { e.Effects = DragDropEffects.None; return; }
+        e.Effects = DragDropEffects.Move;
+        e.Handled = true;
+
+        int idx = ColumnInsertIndex(e.GetPosition(ColList));
+        double y = ColumnInsertY(idx);
+        ColDragLine.Margin = new Thickness(6, Math.Max(0, y - 1), 6, 0);
+        ColDragLine.Visibility = Visibility.Visible;
+    }
+
+    private void OnColDragLeave(object sender, DragEventArgs e) => ColDragLine.Visibility = Visibility.Collapsed;
+
+    private void OnColDrop(object sender, DragEventArgs e)
+    {
+        ColDragLine.Visibility = Visibility.Collapsed;
+        if (e.Data.GetData(typeof(ColumnVm)) is not ColumnVm dragged) return;
+
+        int to = ColumnInsertIndex(e.GetPosition(ColList));
+        int from = Vm.Columns.IndexOf(dragged);
+        if (from < 0) return;
+        Vm.MoveColumn(from, to);
+        e.Handled = true;
+    }
+
+    private int ColumnInsertIndex(Point p)
+    {
+        for (int i = 0; i < Vm.Columns.Count; i++)
+        {
+            if (ColList.ItemContainerGenerator.ContainerFromIndex(i) is not ListBoxItem c) continue;
+            var origin = c.TranslatePoint(new Point(0, 0), ColList);
+            if (p.Y < origin.Y + c.ActualHeight / 2) return i;
+        }
+        return Vm.Columns.Count;
+    }
+
+    private double ColumnInsertY(int index)
+    {
+        if (ColList.ItemContainerGenerator.ContainerFromIndex(Math.Min(index, Vm.Columns.Count - 1)) is ListBoxItem c)
+        {
+            var origin = c.TranslatePoint(new Point(0, 0), ColList);
+            return index >= Vm.Columns.Count ? origin.Y + c.ActualHeight : origin.Y;
+        }
+        return 0;
+    }
+
     // ================= 栏目编辑 =================
 
     private void OnNewColumnClick(object sender, RoutedEventArgs e)
@@ -207,18 +286,17 @@ public partial class MainWindow : Window
             return;
         }
         var win = new ColumnEditorWindow(col) { Owner = this };
-        if (win.ShowDialog() == true)
+        if (win.ShowDialog() != true) return;
+
+        if (win.DeleteRequested)
         {
-            if (win.DeleteRequested)
-            {
-                Vm.DeleteColumn(col.Id);
-                Vm.ShowOverviewCommand.Execute(null);
-                return;
-            }
-            Vm.UpdateColumn(col.Id, win.ColumnName, win.Tree);
-            _ = Vm.RunColumnCountsAsync();
-            Vm.RefreshGrid();
+            Vm.DeleteColumn(col.Id);
+            Vm.ShowOverviewCommand.Execute(null);
+            return;
         }
+        Vm.UpdateColumn(col.Id, win.ColumnName, win.Tree);
+        _ = Vm.RunColumnCountsAsync();
+        Vm.RefreshGrid();
     }
 
     // ================= 图库目录 =================
@@ -290,6 +368,8 @@ public partial class MainWindow : Window
         if (App.Root is not null) App.Root.SetTileSize(e.NewValue);
     }
 
+    private void OnTogglePanel(object sender, RoutedEventArgs e) => Vm.PanelCollapsed = !Vm.PanelCollapsed;
+
     // ================= 网格 =================
 
     private void OnGridSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -297,6 +377,12 @@ public partial class MainWindow : Window
         Vm.Selection.Clear();
         foreach (var o in GridList.SelectedItems) if (o is ImageVm v) Vm.Selection.Add(v);
         Vm.RefreshSelectionStatus();
+
+        // 单选就把右栏详情换成这张；多选取最后点的那张
+        if (GridList.SelectedItems.Count > 0 && GridList.SelectedItems[^1] is ImageVm last)
+            Vm.SelectSingle(last);
+        else
+            Vm.SelectSingle(null);
     }
 
     private void OnGridDoubleClick(object sender, MouseButtonEventArgs e)
@@ -325,22 +411,13 @@ public partial class MainWindow : Window
             else Vm.MoveToDeleted(Vm.Selection);
             e.Handled = true;
         }
-        if (e.Key == Key.OemComma && Vm.Selection.Count > 0) { OnAddTag(); e.Handled = true; }
-    }
-
-    /// <summary>格子上直接点评分。</summary>
-    private void OnTileRating(object sender, int value)
-    {
-        if (sender is FrameworkElement { DataContext: ImageVm vm })
-            Vm.SetRating([vm], value);
     }
 
     /// <summary>右键先把光标下的格子选中，再弹菜单。</summary>
     private void OnGridPreviewRightDown(object sender, MouseButtonEventArgs e)
     {
-        var el = e.OriginalSource as DependencyObject;
-        while (el is not null and not ListBoxItem) el = VisualTreeHelper.GetParent(el);
-        if (el is ListBoxItem item && !item.IsSelected)
+        var item = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
+        if (item is not null && !item.IsSelected)
         {
             GridList.SelectedItems.Clear();
             item.IsSelected = true;
@@ -349,6 +426,9 @@ public partial class MainWindow : Window
 
     private void OnGridRightUp(object sender, MouseButtonEventArgs e)
     {
+        // 点在星星上：交给评分条自己处理（右键清空），不要弹菜单
+        if (FindAncestor<Controls.RatingBar>(e.OriginalSource as DependencyObject) is not null) return;
+
         if (Vm.Selection.Count == 0 && GridList.SelectedItem is ImageVm only)
         {
             Vm.Selection.Clear();
@@ -396,20 +476,17 @@ public partial class MainWindow : Window
 
         if (gallery)
         {
-            Item("打开", () =>
-            {
-                if (targets.Count > 0) Vm.OpenViewerCommand.Execute(targets[0]);
-            }, "Enter");
+            Item("打开", () => { if (targets.Count > 0) Vm.OpenViewerCommand.Execute(targets[0]); }, "Enter");
             menu.Items.Add(new Separator());
         }
 
         bool vsrOk = Vm.VsrReady;
         Item("RTX VSR 处理", () =>
         {
-            if (gallery) Vm.OpenViewerCommand.Execute(targets[0]);
+            if (gallery && targets.Count > 0 && !Vm.ViewerOpen) Vm.OpenViewerCommand.Execute(targets[0]);
             _ = Vm.ApplyVsrAsync();
         }, null, vsrOk);
-        Item("显示原图", () => Vm.ToggleOriginalCommand.Execute(null), null, !gallery);
+        Item("显示原图", () => Vm.ToggleOriginalCommand.Execute(null), null, !gallery && !Vm.ShowOriginal);
         Item("始终使用 RTX VSR", () => Vm.ToggleAlwaysVsrCommand.Execute(null), null, vsrOk, Vm.AlwaysVsr);
 
         menu.Items.Add(new Separator());
@@ -441,9 +518,9 @@ public partial class MainWindow : Window
         if (targets.Count == 0) return;
 
         var dlg = new TagDialog(targets.Count) { Owner = this };
-        var existing = App.Services.Store.LoadTags();
+        var idList = string.Join(',', targets.Select(t => t.Id));
         using (var c = App.Services.Db.Cmd(
-            $"SELECT DISTINCT tag_id FROM image_app_tag WHERE image_id IN ({string.Join(',', targets.Select(t => t.Id))})"))
+            $"SELECT DISTINCT tag_id FROM image_app_tag WHERE image_id IN ({idList})"))
         using (var r = c.ExecuteReader())
         {
             var ids = new List<long>();
@@ -479,18 +556,7 @@ public partial class MainWindow : Window
     private void OnNext(object sender, RoutedEventArgs e) => Vm.NextImageCommand.Execute(null);
     private void OnVsrClick(object sender, RoutedEventArgs e) => _ = Vm.ApplyVsrAsync();
     private void OnToggleOriginal(object sender, RoutedEventArgs e) => Vm.ToggleOriginalCommand.Execute(null);
-
     private void OnReveal(object sender, RoutedEventArgs e) => Vm.RevealInExplorerCommand.Execute(Vm.Current);
-    private void OnCopyPrompt(object sender, RoutedEventArgs e) => Vm.CopyPrompt(Vm.Current);
-    private void OnCopyNegative(object sender, RoutedEventArgs e) => Vm.CopyNegative(Vm.Current);
-
-    private void OnBigRatingChanged(object sender, int value)
-    {
-        if (Vm.Current is null) return;
-        Vm.SetRating([Vm.Current], value);
-    }
-
-    private void OnNoteChanged(object sender, TextChangedEventArgs e) { }
 
     private void OnPreviewKey(object sender, KeyEventArgs e)
     {
@@ -498,21 +564,6 @@ public partial class MainWindow : Window
         if (e.Key == Key.Escape) { Vm.CloseViewerCommand.Execute(null); e.Handled = true; }
         else if (e.Key == Key.Left) { Vm.PrevImageCommand.Execute(null); e.Handled = true; }
         else if (e.Key == Key.Right) { Vm.NextImageCommand.Execute(null); e.Handled = true; }
-    }
-
-    private void UpdateParams()
-    {
-        if (Vm.Current is null) { ParamsList.ItemsSource = null; return; }
-        var c = Vm.Current;
-        ParamsList.ItemsSource = new List<KeyValuePair<string, string>>
-        {
-            new("模型", c.ModelText),
-            new("采样器", c.SamplerText),
-            new("调度器", c.SchedulerText),
-            new("步数", c.StepsText),
-            new("CFG", c.CfgText),
-            new("种子", c.SeedText),
-        };
     }
 
     // ================= 统计 =================
@@ -527,4 +578,3 @@ public partial class MainWindow : Window
 
     private void OnCloseStats(object sender, RoutedEventArgs e) => StatsPane.Visibility = Visibility.Collapsed;
 }
-

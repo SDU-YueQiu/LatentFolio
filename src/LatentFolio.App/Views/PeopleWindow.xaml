@@ -26,7 +26,9 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Margin="4" Cursor="Hand" MouseLeftButtonDown="OnPick">
+                        <StackPanel Margin="4" Cursor="Hand" MouseLeftButtonDown="OnPick"
+                                    MouseRightButtonUp="OnPickAvatar"
+                                    ToolTip="左键看这个角色的图 · 右键换头像">
                             <Border Height="96" Background="{StaticResource B.Tile}" CornerRadius="8" ClipToBounds="True">
                                 <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
                             </Border>

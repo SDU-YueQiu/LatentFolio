@@ -1,10 +1,10 @@
 """生成 LatentFolio 需要的紧凑词表 + 旧库评分迁移表。
 
-输入（旧逆向工作区）:
-  data/vocab/characters.csv   tag,name,post_count,copyright,...
-  data/vocab/artists.csv      tag,post_count,...
-  data/zh_names.json          tag -> 中文名
-  D:\\Recreation\\ComfyUI-aki-v3\\ComfyUI\\whale_library_export.json
+输入（仓库内 _data/，从旧鲸鱼图库的逆向工作区拷出来的原始资料）:
+  _data/characters.csv               tag,name,post_count,copyright,...
+  _data/artists.csv                     tag,post_count,...
+  _data/zh_names.json                       tag -> 中文名
+  _data/whale_library_export.json
 
 输出:
   src/LatentFolio.App/Assets/characters.tsv   tag<TAB>name
@@ -17,14 +17,14 @@ import json
 import sys
 from pathlib import Path
 
-WORK = Path(r'C:\Users\iop18\AppData\Local\Programs\whale-library\_work')
 REPO = Path(r'D:\Projects\LatentFolio')
+DATA = REPO / '_data'
 ASSETS = REPO / 'src' / 'LatentFolio.App' / 'Assets'
 ASSETS.mkdir(parents=True, exist_ok=True)
 
 # ---- characters
 rows = []
-with (WORK / 'data' / 'vocab' / 'characters.csv').open(encoding='utf-8-sig', newline='') as f:
+with (DATA / 'characters.csv').open(encoding='utf-8-sig', newline='') as f:
     for r in csv.DictReader(f):
         pc = r.get('post_count') or '0'
         try:
@@ -44,7 +44,7 @@ print(f'characters.tsv  {len(rows)} 行  {(ASSETS / "characters.tsv").stat().st_
 
 # ---- artists
 arts = []
-with (WORK / 'data' / 'vocab' / 'artists.csv').open(encoding='utf-8-sig', newline='') as f:
+with (DATA / 'artists.csv').open(encoding='utf-8-sig', newline='') as f:
     for r in csv.DictReader(f):
         pc = r.get('post_count') or '0'
         try:
@@ -62,7 +62,7 @@ with (ASSETS / 'artists.txt').open('w', encoding='utf-8', newline='\n') as f:
 print(f'artists.txt     {len(arts)} 行  {(ASSETS / "artists.txt").stat().st_size / 1e6:.2f} MB')
 
 # ---- zh names
-zh = json.loads((WORK / 'data' / 'zh_names.json').read_text(encoding='utf-8'))
+zh = json.loads((DATA / 'zh_names.json').read_text(encoding='utf-8'))
 items = []
 for k, v in zh.items():
     if isinstance(v, dict):
@@ -77,7 +77,7 @@ with (ASSETS / 'zh_names.tsv').open('w', encoding='utf-8', newline='\n') as f:
 print(f'zh_names.tsv    {len(items)} 行')
 
 # ---- legacy ratings
-exp = Path(r'D:\Recreation\ComfyUI-aki-v3\ComfyUI\whale_library_export.json')
+exp = DATA / 'whale_library_export.json'
 if exp.exists():
     recs = json.loads(exp.read_text(encoding='utf-8'))
     out = []
@@ -106,4 +106,6 @@ if exp.exists():
     print(f'legacy_ratings.tsv  {len(out)} 行（{sum(1 for x in out if x[1] > 0)} 条评分）')
 else:
     print('!! 没有 whale_library_export.json，跳过评分迁移')
+
+
 
