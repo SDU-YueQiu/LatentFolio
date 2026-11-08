@@ -1050,14 +1050,24 @@
 
                                 <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center"
                                             Margin="16,0,0,0">
-                                    <Button Content="RTX VSR" Style="{StaticResource Btn.Outline}" Height="30"
-                                            Padding="12,0" FontSize="12" Click="OnVsrClick"
-                                            AutomationProperties.Name="RTX VSR 按钮" />
-                                    <Button Style="{StaticResource Btn.Ghost}" Height="30" Padding="10,0"
-                                            Margin="6,0,0,0" Click="OnToggleOriginal" ToolTip="显示原图"
-                                            AutomationProperties.Name="显示原图">
-                                        <TextBlock Text="原图" Style="{StaticResource P.Viewer.Caption}" />
+                                    <!-- 缩放：当前比例 + 快捷操作（VSR / 原图 只在右键菜单里，见 BuildMenu） -->
+                                    <TextBlock x:Name="ZoomText" Text="100%" Style="{StaticResource P.Viewer.Caption}"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"
+                                               AutomationProperties.Name="缩放比例" />
+                                    <Button Style="{StaticResource Btn.Ghost}" Height="28" Padding="8,0" Click="OnZoomOut"
+                                            ToolTip="缩小" AutomationProperties.Name="缩小">
+                                        <TextBlock Text="-" FontSize="15" FontFamily="{StaticResource F.UI}" Foreground="{StaticResource B.Text2}" />
                                     </Button>
+                                    <Button Style="{StaticResource Btn.Ghost}" Height="28" Padding="8,0" Margin="2,0,0,0"
+                                            Click="OnZoomIn" ToolTip="放大" AutomationProperties.Name="放大">
+                                        <TextBlock Text="+" FontSize="15" FontFamily="{StaticResource F.UI}" Foreground="{StaticResource B.Text2}" />
+                                    </Button>
+                                    <Button Content="适应" Style="{StaticResource Btn.Ghost}" Height="28" Padding="8,0"
+                                            Margin="6,0,0,0" Click="OnZoomFit" ToolTip="适应窗口"
+                                            AutomationProperties.Name="适应窗口" />
+                                    <Button Content="1:1" Style="{StaticResource Btn.Ghost}" Height="28" Padding="8,0"
+                                            Margin="2,0,0,0" Click="OnZoomActual" ToolTip="原始大小"
+                                            AutomationProperties.Name="原始大小" />
                                     <Button Style="{StaticResource Btn.Icon}" Margin="6,0,0,0" Click="OnPrev"
                                             ToolTip="上一张" AutomationProperties.Name="上一张">
                                         <TextBlock Text="&#xE76B;" Style="{StaticResource P.Viewer.Glyph}" />

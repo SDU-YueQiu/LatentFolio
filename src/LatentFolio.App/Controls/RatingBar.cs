@@ -102,7 +102,8 @@ public sealed class RatingBar : FrameworkElement
     {
         double d = StarSize, g = Gap;
         double top = Math.Max(0, (RenderSize.Height - d) / 2);
-        int shown = _hover >= 0 ? _hover : Value;
+        // _hover 是「鼠标压在第几颗」的下标（0 基），点亮数量要 +1，否则指着第 3 颗只亮 2 颗
+        int shown = _hover >= 0 ? _hover + 1 : Value;
 
         for (int i = 0; i < 5; i++)
         {
@@ -143,7 +144,12 @@ public sealed class RatingBar : FrameworkElement
     {
         if (IsReadOnly) return;
         e.Handled = true;
-        Set(0);
+        // 右键不直接清分：弹一个菜单，点「清除评分」才清（误触右键太容易了）
+        var menu = new System.Windows.Controls.ContextMenu { PlacementTarget = this };
+        var mi = new System.Windows.Controls.MenuItem { Header = "清除评分" };
+        mi.Click += (_, _) => Set(0);
+        menu.Items.Add(mi);
+        menu.IsOpen = true;
     }
 
     private void Set(int v)

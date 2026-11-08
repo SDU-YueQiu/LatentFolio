@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     internal void NavBackForTest() => GoBack();
     internal void NavForwardForTest() => GoForward();
     internal Panel StatsHostForTest => StatsHost;
+    internal Border DetailHostForTest => LibraryDetailHost;
 
     public MainWindow()
     {
@@ -35,6 +36,7 @@ public partial class MainWindow : Window
         PreviewKeyDown += OnPreviewKey;
         // 鼠标侧键：后退 = 关查看器 / 清搜索 / 清筛选 / 回总览，前进 = 重新打开当前那张
         PreviewMouseDown += OnNavMouseDown;
+        BigZoom.ZoomChanged += UpdateZoomLabel;
     }
 
     private void OnNavMouseDown(object sender, MouseButtonEventArgs e)
@@ -1057,6 +1059,7 @@ public partial class MainWindow : Window
             _ = Vm.ApplyVsrAsync();
         }, null, vsrOk);
         Item("显示原图", () => Vm.ToggleOriginalCommand.Execute(null), null, !gallery && !Vm.ShowOriginal);
+            Item("用 RTX VSR 处理", () => _ = Vm.ApplyVsrAsync(), null, !gallery && Vm.VsrReady);
         Item("始终使用 RTX VSR", () => Vm.ToggleAlwaysVsrCommand.Execute(null), null, vsrOk, Vm.AlwaysVsr);
 
         menu.Items.Add(new Separator());
@@ -1126,6 +1129,22 @@ public partial class MainWindow : Window
     private void OnNext(object sender, RoutedEventArgs e) => Vm.NextImageCommand.Execute(null);
     private void OnVsrClick(object sender, RoutedEventArgs e) => _ = Vm.ApplyVsrAsync();
     private void OnToggleOriginal(object sender, RoutedEventArgs e) => Vm.ToggleOriginalCommand.Execute(null);
+
+    // ================= 查看器缩放 =================
+
+    private void OnZoomOut(object sender, RoutedEventArgs e) => BigZoom.SetScale(BigZoom.Zoom / 1.25);
+
+    private void OnZoomIn(object sender, RoutedEventArgs e) => BigZoom.SetScale(BigZoom.Zoom * 1.25);
+
+    private void OnZoomFit(object sender, RoutedEventArgs e) => BigZoom.Reset();
+
+    private void OnZoomActual(object sender, RoutedEventArgs e) => BigZoom.ToggleActualSize();
+
+    private void UpdateZoomLabel()
+    {
+        if (ZoomText is null) return;
+        ZoomText.Text = $"{BigZoom.ActualScale * 100:F0}%";
+    }
     private void OnReveal(object sender, RoutedEventArgs e) => Vm.RevealInExplorerCommand.Execute(Vm.Current);
 
     private void OnPreviewKey(object sender, KeyEventArgs e)

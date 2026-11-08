@@ -38,6 +38,20 @@ public sealed class ZoomBox : ContentControl
 
     public double Zoom => _scale;
 
+    /// <summary>缩放变了就喊一声：外面那个百分比标签跟着刷新。</summary>
+    public event Action? ZoomChanged;
+
+    /// <summary>相对原图像素的比例：1.0 = 100%（1 个图像像素对 1 个设备像素）。</summary>
+    public double ActualScale
+    {
+        get
+        {
+            if (Content is not Image { Source: { } src } || src.Width <= 0.5) return _scale;
+            var (cw, _) = ContentSize;
+            return _scale * (cw / src.Width);
+        }
+    }
+
     /// <summary>给自检用：直接设一个缩放倍数。</summary>
     public void SetScale(double scale)
     {
@@ -46,6 +60,7 @@ public sealed class ZoomBox : ContentControl
         Clamp();
         Apply();
         Cursor = _scale > 1.01 ? Cursors.Hand : Cursors.Arrow;
+        ZoomChanged?.Invoke();
     }
 
     public void Reset()
@@ -162,6 +177,7 @@ public sealed class ZoomBox : ContentControl
         Clamp();
         Apply();
         Cursor = _scale > 1.01 ? Cursors.Hand : Cursors.Arrow;
+        ZoomChanged?.Invoke();
     }
 
     private void Clamp()

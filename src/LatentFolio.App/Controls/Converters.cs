@@ -96,3 +96,21 @@ public sealed class FilmWidth : IMultiValueConverter
     }
     public object[] ConvertBack(object value, Type[] t, object p, CultureInfo c) => throw new NotSupportedException();
 }
+
+/// <summary>
+/// 滚动条滑块的最小长度：Track 会按比例把滑块压得很短（几千张图时只剩十几像素），
+/// 这里把实际长度抬到 Min 以上，画出来就有个能抓住的把手。
+/// </summary>
+public sealed class MinLen : IValueConverter
+{
+    public double Min { get; set; } = 44;
+
+    public object Convert(object value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        double v = value is double d ? d : 0;
+        if (parameter is string s && double.TryParse(s, out var p)) return Math.Max(v, p);
+        return Math.Max(v, Min);
+    }
+
+    public object ConvertBack(object value, Type t, object? p, CultureInfo c) => Binding.DoNothing;
+}

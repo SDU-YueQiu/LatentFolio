@@ -13,6 +13,7 @@
     <c:DoubleToGridLength x:Key="D2G" />
     <c:HexToBrush x:Key="HexB" />
     <c:FilmWidth x:Key="FilmW" />
+    <c:MinLen x:Key="MinLen" />
 
     <!-- ================================================================
          设计语言「Quiet Studio」
@@ -202,7 +203,9 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
-                    <Border x:Name="b" Background="#FFC7CCD8" CornerRadius="4" Margin="2" />
+                    <Border x:Name="b" Background="#FFC7CCD8" CornerRadius="4" Margin="2"
+                            Height="{Binding ActualHeight, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource MinLen}}"
+                            VerticalAlignment="Center" />
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="b" Property="Background" Value="#FFA7AEBE" />
@@ -221,7 +224,9 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
-                    <Border x:Name="b" Background="#FFC7CCD8" CornerRadius="4" Margin="0,2" />
+                    <Border x:Name="b" Background="#FFC7CCD8" CornerRadius="4" Margin="0,2"
+                            Width="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource MinLen}}"
+                            HorizontalAlignment="Center" />
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="b" Property="Background" Value="#FFA7AEBE" />

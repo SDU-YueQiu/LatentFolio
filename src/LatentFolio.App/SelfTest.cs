@@ -45,6 +45,25 @@ public static class SelfTest
         }
     }
 
+    private static IEnumerable<T> AllDescendants<T>(DependencyObject? root) where T : DependencyObject
+    {
+        if (root is null) yield break;
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            if (c is T t) yield return t;
+            foreach (var d in AllDescendants<T>(c)) yield return d;
+        }
+    }
+
+    /// <summary>a 是不是 b 自己或 b 的后代。</summary>
+    private static bool IsUnder(DependencyObject a, DependencyObject b)
+    {
+        for (DependencyObject? d = a; d is not null; d = VisualTreeHelper.GetParent(d))
+            if (ReferenceEquals(d, b)) return true;
+        return false;
+    }
     private static T? FindChild<T>(DependencyObject? root) where T : DependencyObject
     {
         if (root is null) return null;
@@ -314,6 +333,29 @@ public static class SelfTest
             mwNav.NavBackForTest();
             await Pulse(window);
             Check(vm.SearchText.Length == 0, "鼠标后退清掉搜索", $"“{vm.SearchText}”");
+        }
+
+        // 右栏里每个按钮：屏幕中心点命中的元素必须是它自己（或它的子/父），
+        // 用来抓「画出来的位置和能点的位置不重合」——被别的层盖住、或者布局偏了都会失败
+        if (window is MainWindow mwHit)
+        {
+            int bad = 0;
+            string firstBad = "";
+            foreach (var b in AllDescendants<System.Windows.Controls.Button>(mwHit.DetailHostForTest))
+            {
+                if (!b.IsVisible || b.ActualWidth < 4 || b.ActualHeight < 4) continue;
+                var pt = b.TranslatePoint(new Point(b.ActualWidth / 2, b.ActualHeight / 2), mwHit);
+                if (pt.X < 0 || pt.Y < 0 || pt.X > mwHit.ActualWidth || pt.Y > mwHit.ActualHeight) continue;
+                var hit = mwHit.InputHitTest(pt) as DependencyObject;
+                bool ok = hit is not null && (hit == b || IsUnder(hit, b) || IsUnder(b, hit));
+                if (!ok)
+                {
+                    bad++;
+                    if (firstBad.Length == 0)
+                        firstBad = $"{b.Content ?? b.Name} 命中 {hit?.GetType().Name ?? "null"} @{pt.X:F0},{pt.Y:F0}";
+                }
+            }
+            Check(bad == 0, "右栏按钮的点击区域没被遮住", bad == 0 ? "" : $"{bad} 个异常（{firstBad}）");
         }
 
         // 统计页点词条跳搜索结果（走的是 StatsBuilder 里那条真实路径）
