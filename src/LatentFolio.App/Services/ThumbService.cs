@@ -1,0 +1,177 @@
+using System.Collections.Concurrent;
+using System.IO;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using LatentFolio.Core.Imaging;
+using SkiaSharp;
+
+namespace LatentFolio.App.Services;
+
+/// <summary>
+/// 缩略图加载：磁盘 WebP → BitmapSource。带 LRU 和并发闸门。
+/// 缓存只留最近用过的，滚多远都不会把内存吃穿。
+/// </summary>
+public sealed class ThumbService : IDisposable
+{
+    private readonly ThumbCache _disk;
+    private readonly SemaphoreSlim _gate = new(Math.Max(4, Environment.ProcessorCount));
+    private readonly ConcurrentDictionary<string, Task<BitmapSource?>> _inflight = new();
+    private readonly Dictionary<long, LinkedListNode<CacheEntry>> _map = new();
+    private readonly LinkedList<CacheEntry> _lru = new();
+    private readonly object _lock = new();
+    private const int Capacity = 900;
+
+    private sealed record CacheEntry(long Id, BitmapSource Bitmap);
+
+    public ThumbService(ThumbCache disk) => _disk = disk;
+
+    public BitmapSource? Peek(long id)
+    {
+        lock (_lock)
+        {
+            if (_map.TryGetValue(id, out var n))
+            {
+                _lru.Remove(n);
+                _lru.AddFirst(n);
+                return n.Value.Bitmap;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>把渲染好的位图放回缓存（调用方自己解码时用）。</summary>
+    public void Put(long id, BitmapSource bmp)
+    {
+        lock (_lock)
+        {
+            if (_map.TryGetValue(id, out var old)) { _lru.Remove(old); _map.Remove(id); }
+            var node = _lru.AddFirst(new CacheEntry(id, bmp));
+            _map[id] = node;
+            while (_map.Count > Capacity && _lru.Last is { } last)
+            {
+                _lru.RemoveLast();
+                _map.Remove(last.Value.Id);
+            }
+        }
+    }
+
+    public Task<BitmapSource?> LoadAsync(long id, string path, long mtime, long size, int maxSide = 0)
+    {
+        if (Peek(id) is { } hit) return Task.FromResult<BitmapSource?>(hit);
+
+        var key = ThumbCache.Key(path, mtime, size);
+        return _inflight.GetOrAdd(key, k => Task.Run(async () =>
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (Peek(id) is { } again) return again;
+
+                var bytes = _disk.ReadGrid(key);
+                if (bytes is null)
+                {
+                    var r = Thumbnailer.Make(path, Thumbnailer.GridSize);
+                    if (r.Webp is null) return null;
+                    _disk.SaveGrid(key, r.Webp);
+                    bytes = r.Webp;
+                }
+
+                var bmp = Decode(bytes);
+                if (bmp is not null) Put(id, bmp);
+                return bmp;
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                _gate.Release();
+                _inflight.TryRemove(k, out var _gone);
+            }
+        }));
+    }
+
+    /// <summary>全尺寸原图（查看器用）。</summary>
+    public static BitmapSource? DecodeFile(string path, int maxSide = 0)
+    {
+        try
+        {
+            using var bmp = SKBitmap.Decode(path);
+            if (bmp is null) return null;
+            SKBitmap use = bmp;
+            SKBitmap? scaled = null;
+            if (maxSide > 0 && Math.Max(bmp.Width, bmp.Height) > maxSide)
+            {
+                scaled = Thumbnailer.Fit(bmp, maxSide);
+                use = scaled;
+            }
+            try
+            {
+                return ToSource(use);
+            }
+            finally
+            {
+                scaled?.Dispose();
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static BitmapSource? Decode(byte[] data)
+    {
+        try
+        {
+            using var sk = SKBitmap.Decode(data);
+            if (sk is null) return null;
+            return ToSource(sk);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static BitmapSource ToSource(SKBitmap sk)
+    {
+        var info = new SKImageInfo(sk.Width, sk.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        SKBitmap src = sk;
+        SKBitmap? converted = null;
+        if (sk.ColorType != SKColorType.Bgra8888 || sk.AlphaType != SKAlphaType.Premul)
+        {
+            converted = new SKBitmap(info);
+            if (!sk.CopyTo(converted, SKColorType.Bgra8888)) { converted.Dispose(); converted = null; }
+            else src = converted;
+        }
+        try
+        {
+            int stride = src.RowBytes;
+            int len = stride * src.Height;
+            var buf = new byte[len];
+            System.Runtime.InteropServices.Marshal.Copy(src.GetPixels(), buf, 0, len);
+            var bmp = BitmapSource.Create(src.Width, src.Height, 96, 96,
+                PixelFormats.Bgra32, null, buf, stride);
+            bmp.Freeze();
+            return bmp;
+        }
+        finally
+        {
+            converted?.Dispose();
+        }
+    }
+
+    public string DiskStats()
+    {
+        var (bytes, files) = _disk.Stat();
+        return $"{bytes / 1024.0 / 1024.0:F0} MB / {files} 张";
+    }
+
+    public void Dispose()
+    {
+        _gate.Dispose();
+        lock (_lock) { _map.Clear(); _lru.Clear(); }
+    }
+}

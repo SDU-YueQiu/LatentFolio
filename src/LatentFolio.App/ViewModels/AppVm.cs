@@ -1,0 +1,870 @@
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
+using System.Windows;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using LatentFolio.App.Services;
+using LatentFolio.Core.Comfy;
+using LatentFolio.Core.Db;
+using LatentFolio.Core.Filtering;
+using LatentFolio.Core.Models;
+using LatentFolio.Core.Scan;
+using LatentFolio.Core.Text;
+
+namespace LatentFolio.App.ViewModels;
+
+public enum ViewKind { Overview, Column, Folder, Deleted, Person }
+
+public sealed partial class ColumnVm : ObservableObject
+{
+    public long Id;
+    [ObservableProperty] private string _name = "";
+    [ObservableProperty] private string _color = "";
+    [ObservableProperty] private int _count;
+    [ObservableProperty] private bool _countDirty;
+    public FilterNode Tree = new FilterGroup();
+    public string TreeJson = "{}";
+    public int Ord;
+
+    public string CountText => Count < 0 ? "…" : Count.ToString("N0");
+
+    partial void OnCountChanged(int value) => OnPropertyChanged(nameof(CountText));
+}
+
+public sealed partial class PersonVm : ObservableObject
+{
+    public string Tag = "";
+    [ObservableProperty] private string _display = "";
+    [ObservableProperty] private int _count;
+    [ObservableProperty] private System.Windows.Media.ImageSource? _avatar;
+    public long AvatarImageId;
+}
+
+public sealed partial class FolderVm : ObservableObject
+{
+    public string Path = "";
+    [ObservableProperty] private string _display = "";
+    public int Depth;
+    [ObservableProperty] private int _count;
+    [ObservableProperty] private bool _expanded = true;
+    public string CountText => Count.ToString();
+    public Thickness DepthText => new(Depth * 14, 0, 0, 0);
+}
+
+public sealed partial class AppVm : ObservableObject
+{
+    private readonly AppServices _svc;
+    private readonly ThumbService _thumbs;
+    private readonly ImageStore _store;
+    private readonly ColumnEngine _engine = new();
+
+    public List<ImageItem> AllImages { get; private set; } = [];
+    public Dictionary<long, ImageItem> ById { get; } = [];
+    public Dictionary<long, ImageVm> VmById { get; } = [];
+    public ObservableCollection<ImageVm> Items { get; } = [];
+
+    public ObservableCollection<ColumnVm> Columns { get; } = [];
+    public ObservableCollection<PersonVm> People { get; } = [];
+    public ObservableCollection<PersonVm> PeoplePreview { get; } = [];
+    public ObservableCollection<FolderVm> Folders { get; } = [];
+
+    public List<ImageVm> Selection { get; } = [];
+
+    public event Action? GridReloaded;
+    public event Action? ViewerClosed;
+
+    public AppVm(AppServices svc, ThumbService thumbs)
+    {
+        _svc = svc;
+        _thumbs = thumbs;
+        _store = svc.Store;
+    }
+
+    // ================= 状态 =================
+
+    [ObservableProperty] private string _libraryRoot = "";
+    [ObservableProperty] private string _searchText = "";
+    [ObservableProperty] private string _title = "总览";
+    [ObservableProperty] private string _statusLeft = "";
+    [ObservableProperty] private string _statusRight = "";
+    [ObservableProperty] private int _hitCount;
+    [ObservableProperty] private int _totalCount;
+    [ObservableProperty] private double _tileSize = 190;    [ObservableProperty] private ViewKind _view = ViewKind.Overview;
+    [ObservableProperty] private long _viewColumnId;
+    [ObservableProperty] private string _viewFolder = "";
+    [ObservableProperty] private string _viewPerson = "";
+    [ObservableProperty] private bool _isBusy;
+    [ObservableProperty] private string _busyText = "";
+    [ObservableProperty] private double _busyFraction;
+    [ObservableProperty] private string _sortLabel = "添加时间 · 新在前";
+
+    public SortSpec Sort { get; private set; } = new(SortKey.Date, true);
+
+    public double TileHeight => TileSize + 46;
+
+    partial void OnTileSizeChanged(double value) => OnPropertyChanged(nameof(TileHeight));
+
+    public string LibrarySummary
+    {
+        get
+        {
+            int folders = Folders.Count(f => f.Depth > 0 && f.Path.Length > 0);
+            int n = AllImages.Count(x => x.State != FileState.Deleted);
+            return $"{n:N0} 张 · {folders:N0} 个文件夹";
+        }
+    }
+
+    // 查看器
+    [ObservableProperty] private bool _viewerOpen;
+    [ObservableProperty] private bool _viewerLoading;
+    [ObservableProperty] private ImageSourceHolder? _viewerImage;
+    [ObservableProperty] private bool _showOriginal;
+    [ObservableProperty] private string _vsrBadge = "";
+    [ObservableProperty] private bool _vsrAvailable;
+    [ObservableProperty] private string _vsrStatus = "";
+
+    public sealed class ImageSourceHolder(System.Windows.Media.ImageSource src)
+    {
+        public System.Windows.Media.ImageSource Source { get; } = src;
+    }
+
+    [ObservableProperty] private ImageVm? _current;
+
+    public event Action? CurrentChangedForViewer;
+
+    partial void OnCurrentChanged(ImageVm? value)
+    {
+        PromptEditorText = value?.Prompt ?? "";
+        CurrentChangedForViewer?.Invoke();
+    }
+
+    [ObservableProperty] private string _promptEditorText = "";
+    [ObservableProperty] private string _workflowText = "";
+
+    // ================= 启动 =================
+
+    public async Task InitAsync()
+    {
+        LibraryRoot = _svc.LibraryRoot;
+        AlwaysVsr = _store.GetSetting("always_vsr") == "1";
+        _ = _svc.Vsr.StartAsync().ContinueWith(_ =>
+        {
+            OnPropertyChanged(nameof(VsrReady));
+            OnPropertyChanged(nameof(VsrStatus));
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+
+        ReloadFromDb();
+        await EnsureSeed();
+        await RunColumnCountsAsync();
+        BuildPeople();
+        BuildFolders();
+        await ScanAsync(initial: true);
+        RefreshGrid();
+    }
+
+    public void ReloadFromDb()
+    {
+        AllImages = _store.LoadAll();
+        ById.Clear();
+        VmById.Clear();
+        foreach (var it in AllImages)
+        {
+            ById[it.Id] = it;
+            VmById[it.Id] = new ImageVm(it);
+        }
+        TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
+        LoadColumns();
+    }
+
+    private async Task EnsureSeed()
+    {
+        if (Columns.Count > 0) return;
+        if (_store.GetSetting("seeded") == "1") return;
+        await AddColumnAsync("高评分 ★4+", new FilterGroup
+        {
+            Op = BoolOp.And,
+            Children = { new FilterCond { Field = FieldType.Rating, Op = CondOp.Gte, Value = "4" } },
+        });
+        await AddColumnAsync("未评分", new FilterGroup
+        {
+            Op = BoolOp.And,
+            Children = { new FilterCond { Field = FieldType.Rating, Op = CondOp.Eq, Value = "0" } },
+        });
+        _store.SetSetting("seeded", "1");
+    }
+
+    // ================= 扫描 =================
+
+    [RelayCommand]
+    private async Task ScanAsync() => await ScanAsyncCore(false);
+
+    private async Task ScanAsync(bool initial) => await ScanAsyncCore(initial);
+
+    private async Task ScanAsyncCore(bool initial)
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        BusyText = "扫描图库…";
+        try
+        {
+            var prog = new Progress<ScanProgress>(p =>
+            {
+                BusyText = string.IsNullOrEmpty(p.Current) ? p.Phase : $"{p.Phase} · {p.Current}";
+                BusyFraction = p.Fraction * 100;
+            });
+
+            var result = await Task.Run(() => _svc.Scanner.ScanAsync(LibraryRoot, prog));
+
+            // 词表是后台加载的；扫描时可能还没好，这里补一次打标
+            var vocab = Vocabulary.Instance;
+            if (!vocab.Ready) await Task.Run(() => vocab.WaitReady(TimeSpan.FromMinutes(2)));
+            int tagged = await Task.Run(() => RetagMissing(vocab));
+
+            var legacy = Path.Combine(_svc.AssetsDir, "legacy_ratings.tsv");
+            ReloadFromDb();
+            int imported = 0;
+            if (_store.GetSetting("legacy_imported") != "1")
+            {
+                imported = _svc.Scanner.ImportLegacy(legacy, AllImages);
+                _store.SetSetting("legacy_imported", "1");
+                if (imported > 0) ReloadFromDb();
+            }
+
+            foreach (var vm in VmById.Values) vm.RefreshTags();
+            _engine.Invalidate();
+            await RunColumnCountsAsync();
+            BuildPeople();
+            BuildFolders();
+            RefreshGrid();
+
+            StatusLeft = $"新增 {result.Added} · 更新 {result.Updated} · 未变 {result.Skipped}"
+                         + (result.Removed > 0 ? $" · 丢失 {result.Removed}" : "")
+                         + (imported > 0 ? $" · 导入旧评分 {imported}" : "");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"扫描失败：{ex.Message}", "LatentFolio", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            IsBusy = false;
+            BusyText = "";
+            BusyFraction = 0;
+        }
+    }
+
+    // ================= 栏目 =================
+
+    private void LoadColumns()
+    {
+        Columns.Clear();
+        using var c = _svc.Db.Cmd("SELECT id,name,color,ord,tree_json,count FROM col ORDER BY ord,id");
+        using var r = c.ExecuteReader();
+        while (r.Read())
+        {
+            var vm = new ColumnVm
+            {
+                Id = r.GetInt64(0),
+                Name = r.GetString(1),
+                Color = r.GetString(2),
+                Ord = r.GetInt32(3),
+                TreeJson = r.GetString(4),
+                Count = r.GetInt32(5),
+            };
+            vm.Tree = FilterNodeExtensions.FromJson(vm.TreeJson);
+            Columns.Add(vm);
+        }
+    }
+
+    public async Task AddColumnAsync(string name, FilterNode tree)
+    {
+        var json = tree.ToJson();
+        using var c = _svc.Db.Cmd("INSERT INTO col(name,color,ord,tree_json,count) VALUES($n,'',$o,$t,-1); SELECT last_insert_rowid();");
+        c.Parameters.AddWithValue("$n", name);
+        c.Parameters.AddWithValue("$o", Columns.Count);
+        c.Parameters.AddWithValue("$t", json);
+        var id = (long)c.ExecuteScalar()!;
+        LoadColumns();
+        await RunColumnCountsAsync();
+    }
+
+    public void UpdateColumn(long id, string name, FilterNode tree)
+    {
+        using var c = _svc.Db.Cmd("UPDATE col SET name=$n, tree_json=$t, count=-1 WHERE id=$id");
+        c.Parameters.AddWithValue("$n", name);
+        c.Parameters.AddWithValue("$t", tree.ToJson());
+        c.Parameters.AddWithValue("$id", id);
+        c.ExecuteNonQuery();
+        LoadColumns();
+    }
+
+    public void DeleteColumn(long id)
+    {
+        using var c = _svc.Db.Cmd("DELETE FROM col WHERE id=$id");
+        c.Parameters.AddWithValue("$id", id);
+        c.ExecuteNonQuery();
+        LoadColumns();
+    }
+
+    public async Task RunColumnCountsAsync()
+    {
+        var ctx = new FilterContext();
+        long ver = DataVersion();
+        using var tx = _svc.Db.Connection.BeginTransaction();
+        foreach (var col in Columns.ToList())
+        {
+            var hash = ColumnEngine.HashTree(col.TreeJson);
+            var cached = _engine.TryGet(col.Id, hash, ver);
+            if (cached is null)
+            {
+                cached = ColumnEngine.Evaluate(col.Tree, AllImages, ctx, hash, ver);
+                _engine.Put(col.Id, cached);
+            }
+            col.Count = cached.Count;
+            using var c = _svc.Db.Cmd("UPDATE col SET count=$c, count_ver=$v WHERE id=$id");
+            c.Parameters.AddWithValue("$c", col.Count);
+            c.Parameters.AddWithValue("$v", ver);
+            c.Parameters.AddWithValue("$id", col.Id);
+            c.ExecuteNonQuery();
+        }
+        tx.Commit();
+        await Task.CompletedTask;
+    }
+
+    public long DataVersion()
+    {
+        long h = AllImages.Count;
+        foreach (var it in AllImages) { unchecked { h = h * 31 + it.Id + it.Rating * 7; } }
+        return h;
+    }
+
+    // ================= 人物 / 文件夹 =================
+
+    /// <summary>给「有提示词但还没打过角色/画师标」的图补打标并落库。</summary>
+    private int RetagMissing(Vocabulary vocab)
+    {
+        if (!vocab.Ready) return 0;
+        int n = 0;
+        var all = _store.LoadAll();
+        using var tx = _svc.Db.Connection.BeginTransaction();
+        foreach (var it in all)
+        {
+            if (it.Prompt.Length == 0) continue;
+            if (it.Chars.Length > 0 || it.Artists.Length > 0) continue;
+            var (chars, artists) = vocab.Tag(it.Prompt);
+            if (chars.Length == 0 && artists.Length == 0) continue;
+            it.Chars = chars;
+            it.Artists = artists;
+            _store.Update(it);
+            n++;
+        }
+        tx.Commit();
+        return n;
+    }
+
+    private void BuildPeople()
+    {
+        var map = new Dictionary<string, (int Count, long BestId, int BestRating)>(StringComparer.Ordinal);
+        foreach (var it in AllImages)
+        {
+            if (it.State == FileState.Deleted) continue;
+            foreach (var c in it.Chars)
+            {
+                if (map.TryGetValue(c, out var cur))
+                {
+                    map[c] = (cur.Count + 1, cur.BestRating >= it.Rating ? cur.BestId : it.Id,
+                        Math.Max(cur.BestRating, it.Rating));
+                }
+                else map[c] = (1, it.Id, it.Rating);
+            }
+        }
+
+        var list = map.Select(kv => (Tag: kv.Key, kv.Value.Count, kv.Value.BestId, kv.Value.BestRating))
+            .OrderByDescending(x => x.Count).Take(400).ToList();
+
+        People.Clear();
+        var vocab = Vocabulary.Instance;
+        foreach (var x in list)
+        {
+            People.Add(new PersonVm
+            {
+                Tag = x.Tag,
+                Display = vocab.Display(x.Tag),
+                Count = x.Count,
+                AvatarImageId = x.BestId,
+            });
+        }
+        PeoplePreview.Clear();
+        foreach (var p in People.Take(10)) PeoplePreview.Add(p);
+    }
+
+    private void BuildFolders()
+    {
+        // 先只统计「自己直接装着几张」，再往上滚加给父目录。
+        // 根目录（""）不参与展示成总计，否则一行 4820 会误导。
+        var exact = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var it in AllImages)
+        {
+            if (it.State == FileState.Deleted) continue;
+            exact[it.Folder] = exact.GetValueOrDefault(it.Folder) + 1;
+        }
+
+        var total = new Dictionary<string, int>(exact, StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in exact)
+        {
+            var f = kv.Key;
+            while (f.Length > 0)
+            {
+                var i = f.LastIndexOf('/');
+                f = i < 0 ? "" : f[..i];
+                if (f.Length == 0) break;
+                total[f] = total.GetValueOrDefault(f) + kv.Value;
+            }
+        }
+
+        var nodes = new List<FolderVm>();
+        foreach (var kv in total)
+        {
+            if (kv.Key.Length == 0) continue;
+            var name = kv.Key[(kv.Key.LastIndexOf('/') + 1)..];
+            nodes.Add(new FolderVm
+            {
+                Path = kv.Key,
+                Display = name,
+                Depth = kv.Key.Count(ch => ch == '/'),
+                Count = kv.Value,
+            });
+        }
+
+        // 根目录单独一行，只放真正躺在根上的图
+        if (exact.TryGetValue("", out var rootCount) && rootCount > 0)
+        {
+            nodes.Add(new FolderVm { Path = "", Display = "（根目录）", Depth = 0, Count = rootCount });
+        }
+
+        nodes.Sort((a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase));
+
+        Folders.Clear();
+        foreach (var n in nodes) Folders.Add(n);
+        OnPropertyChanged(nameof(LibrarySummary));
+        OnPropertyChanged(nameof(DeletedCount));
+    }
+
+    public int DeletedCount => AllImages.Count(x => x.State == FileState.Deleted);
+
+    // ================= 视图 =================
+
+    [RelayCommand]
+    private void ShowOverview()
+    {
+        View = ViewKind.Overview;
+        Title = "总览";
+        RefreshGrid();
+    }
+
+    [RelayCommand]
+    private void ShowDeleted()
+    {
+        View = ViewKind.Deleted;
+        Title = "已删除";
+        RefreshGrid();
+    }
+
+    [RelayCommand]
+    private void ShowColumn(ColumnVm? col)
+    {
+        if (col is null) return;
+        View = ViewKind.Column;
+        ViewColumnId = col.Id;
+        Title = col.Name;
+        RefreshGrid();
+    }
+
+    public void ShowFolder(FolderVm? f)
+    {
+        if (f is null) return;
+        View = ViewKind.Folder;
+        ViewFolder = f.Path;
+        Title = f.Path.Length == 0 ? "根目录" : f.Path;
+        RefreshGrid();
+    }
+
+    public void ShowPerson(PersonVm? p)
+    {
+        if (p is null) return;
+        View = ViewKind.Person;
+        ViewPerson = p.Tag;
+        Title = p.Display;
+        RefreshGrid();
+    }
+
+    partial void OnSearchTextChanged(string value) => RefreshGrid();
+
+    public IEnumerable<FilterNode> ActiveChips()
+    {
+        if (View == ViewKind.Column)
+        {
+            var col = Columns.FirstOrDefault(c => c.Id == ViewColumnId);
+            if (col?.Tree is FilterGroup g)
+                foreach (var c in g.Children) yield return c;
+            else if (col is not null) yield return col.Tree;
+        }
+    }
+
+    public FilterNode? CurrentTree()
+    {
+        FilterGroup root = new() { Op = BoolOp.And };
+
+        switch (View)
+        {
+            case ViewKind.Column:
+                {
+                    var col = Columns.FirstOrDefault(c => c.Id == ViewColumnId);
+                    if (col is not null) root.Children.Add(col.Tree);
+                    break;
+                }
+            case ViewKind.Folder:
+                root.Children.Add(new FilterCond { Field = FieldType.Folder, Op = CondOp.Eq, Value = ViewFolder });
+                break;
+            case ViewKind.Person:
+                root.Children.Add(new FilterCond { Field = FieldType.Character, Op = CondOp.Eq, Value = ViewPerson });
+                break;
+            case ViewKind.Deleted:
+                root.Children.Add(new FilterCond { Field = FieldType.Deleted, Op = CondOp.IsTrue });
+                break;
+        }
+
+        if (!string.IsNullOrWhiteSpace(SearchText))
+        {
+            var s = SearchText.Trim();
+            root.Children.Add(new FilterGroup
+            {
+                Op = BoolOp.Or,
+                Children =
+                {
+                    new FilterCond { Field = FieldType.Prompt, Op = CondOp.Contains, Value = s },
+                    new FilterCond { Field = FieldType.Negative, Op = CondOp.Contains, Value = s },
+                    new FilterCond { Field = FieldType.FileName, Op = CondOp.Contains, Value = s },
+                    new FilterCond { Field = FieldType.Model, Op = CondOp.Contains, Value = s },
+                    new FilterCond { Field = FieldType.Note, Op = CondOp.Contains, Value = s },
+                },
+            });
+        }
+
+        return root.Children.Count == 0 ? null : root;
+    }
+
+    public void RefreshGrid()
+    {
+        var tree = CurrentTree();
+        var ctx = new FilterContext();
+        var list = tree is null ? [.. AllImages] : ColumnEngine.Filter(AllImages, tree, ctx);
+
+        if (View == ViewKind.Deleted)
+            list = list.Where(x => x.State == FileState.Deleted).ToList();
+        else
+            list = list.Where(x => x.State != FileState.Deleted).ToList();
+
+        ColumnEngine.Sort(list, Sort);
+
+        var vms = new List<ImageVm>(list.Count);
+        foreach (var it in list)
+            if (VmById.TryGetValue(it.Id, out var vm)) vms.Add(vm);
+
+        Items.Clear();
+        foreach (var v in vms) Items.Add(v);
+
+        HitCount = Items.Count;
+        OnPropertyChanged(nameof(Chips));
+        GridReloaded?.Invoke();
+        RefreshStatus();
+    }
+
+    public List<string> Chips
+    {
+        get
+        {
+            var l = new List<string>();
+            foreach (var n in ActiveChips()) l.Add(n is FilterCond c ? c.Describe() : n.ToExpression());
+            if (!string.IsNullOrWhiteSpace(SearchText)) l.Add($"搜索 “{SearchText.Trim()}”");
+            return l;
+        }
+    }
+
+    private void RefreshStatus()
+    {
+        StatusRight = $"命中 {HitCount} / {TotalCount}";
+        StatusLeft = Selection.Count == 0 ? "" : $"已选 {Selection.Count} 张";
+        if (View == ViewKind.Deleted) StatusRight = $"已删除 {HitCount} 张";
+    }
+
+    public void RefreshSelectionStatus()
+        => StatusLeft = Selection.Count == 0 ? "" : $"已选 {Selection.Count} 张";
+
+    [RelayCommand]
+    private void SetSort(string key)
+    {
+        var parts = key.Split('|');
+        if (!Enum.TryParse<SortKey>(parts[0], out var k)) return;
+        bool desc = parts.Length < 2 || parts[1] == "1";
+        Sort = new SortSpec(k, desc);
+        SortLabel = $"{ColumnEngine.SortLabel(k)} · {(desc ? "新/大在前" : "旧/小在前")}";
+        RefreshGrid();
+    }
+
+    // ================= 评分 / 删除 =================
+
+    public void SetRating(IEnumerable<ImageVm> vms, int rating)
+    {
+        using var tx = _svc.Db.Connection.BeginTransaction();
+        foreach (var vm in vms)
+        {
+            vm.Rating = rating;
+            _store.UpdateUser(vm.Item);
+        }
+        tx.Commit();
+        var first = vms.FirstOrDefault();
+        if (first is not null) OnPropertyChanged(nameof(Current));
+        RefreshStatus();
+        _ = RunColumnCountsAsync();
+    }
+
+    public void SetNote(ImageVm vm, string note)
+    {
+        vm.Note = note;
+        _store.UpdateUser(vm.Item);
+    }
+
+    public void MoveToDeleted(IEnumerable<ImageVm> vms)
+    {
+        var list = vms.ToList();
+        using var tx = _svc.Db.Connection.BeginTransaction();
+        foreach (var vm in list)
+        {
+            vm.Item.State = FileState.Deleted;
+            _store.UpdateState(vm.Item);
+        }
+        tx.Commit();
+        foreach (var vm in list) Items.Remove(vm);
+        HitCount = Items.Count;
+        TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
+        RefreshStatus();
+        _ = RunColumnCountsAsync();
+    }
+
+    public void RestoreFromDeleted(IEnumerable<ImageVm> vms)
+    {
+        var list = vms.ToList();
+        using var tx = _svc.Db.Connection.BeginTransaction();
+        foreach (var vm in list)
+        {
+            vm.Item.State = FileState.Present;
+            _store.UpdateState(vm.Item);
+        }
+        tx.Commit();
+        foreach (var vm in list) Items.Remove(vm);
+        HitCount = Items.Count;
+        TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
+        RefreshStatus();
+        _ = RunColumnCountsAsync();
+    }
+
+    // ================= 查看器 =================
+
+    [RelayCommand]
+    private async Task OpenViewer(ImageVm? vm)
+    {
+        if (vm is null) return;
+        Current = vm;
+        ViewerOpen = true;
+        ShowOriginal = false;
+        VsrBadge = "";
+        WorkflowText = "";
+        await LoadViewerImageAsync(vm);
+        _ = LoadWorkflowAsync(vm);
+    }
+
+    private ImageSourceHolder? _origSource;
+
+    public async Task LoadViewerImageAsync(ImageVm vm)
+    {
+        ViewerLoading = true;
+        try
+        {
+            var path = vm.Item.Path;
+            var bmp = await Task.Run(() => ThumbService.DecodeFile(path));
+            _origSource = bmp is null ? null : new ImageSourceHolder(bmp);
+            ViewerImage = _origSource;
+            ShowOriginal = true;
+            VsrBadge = "";
+            if (AlwaysVsr && _svc.Vsr.Ready) await ApplyVsrAsync();
+        }
+        finally { ViewerLoading = false; }
+    }
+
+    [ObservableProperty] private bool _alwaysVsr;
+    [ObservableProperty] private bool _vsrBusy;
+
+    partial void OnAlwaysVsrChanged(bool value) => _svc.Store.SetSetting("always_vsr", value ? "1" : "0");
+
+    public bool VsrReady => _svc.Vsr.Ready;
+
+    /// <summary>当前图跑一遍 RTX VSR。结果只留内存。</summary>
+    public async Task ApplyVsrAsync()
+    {
+        if (Current is null) return;
+        if (!_svc.Vsr.Ready)
+        {
+            VsrBadge = _svc.Vsr.Status;
+            return;
+        }
+
+        var cached = _svc.Vsr.Peek(Current.Id);
+        if (cached is not null)
+        {
+            ViewerImage = new ImageSourceHolder(cached);
+            ShowOriginal = false;
+            VsrBadge = $"RTX VSR · 2× · {cached.PixelWidth}×{cached.PixelHeight}";
+            return;
+        }
+
+        VsrBusy = true;
+        VsrBadge = "RTX VSR 处理中…";
+        try
+        {
+            var vm = Current;
+            var bmp = await _svc.Vsr.ProcessAsync(vm.Item);
+            if (Current?.Id != vm.Id) return;
+            if (bmp is null)
+            {
+                VsrBadge = "RTX VSR 没成功（图太大或显存不够）";
+                return;
+            }
+            ViewerImage = new ImageSourceHolder(bmp);
+            ShowOriginal = false;
+            VsrBadge = $"RTX VSR · 2× · {bmp.PixelWidth}×{bmp.PixelHeight} · {_svc.Vsr.Engine.LastRunMs:F0} ms";
+        }
+        finally
+        {
+            VsrBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task VsrProcess()
+    {
+        await ApplyVsrAsync();
+    }
+
+    [RelayCommand]
+    private void ToggleAlwaysVsr()
+    {
+        AlwaysVsr = !AlwaysVsr;
+        if (AlwaysVsr) _ = ApplyVsrAsync();
+    }
+
+    private async Task LoadWorkflowAsync(ImageVm vm)
+    {
+        var raw = await Task.Run(() =>
+        {
+            var gz = _store.GetWorkflow(vm.Id);
+            return PngReader.Gunzip(gz) ?? "";
+        });
+        if (Current?.Id != vm.Id) return;
+        WorkflowText = Pretty(raw);
+    }
+
+    private static string Pretty(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return "";
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(doc.RootElement,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        }
+        catch { return json; }
+    }
+
+    [RelayCommand]
+    private void CloseViewer()
+    {
+        ViewerOpen = false;
+        Current = null;
+        ViewerImage = null;
+        ViewerClosed?.Invoke();
+    }
+
+    [RelayCommand]
+    private async Task NextImage()
+    {
+        var i = Items.IndexOf(Current!);
+        if (i < 0 || i + 1 >= Items.Count) return;
+        await OpenViewer(Items[i + 1]);
+    }
+
+    [RelayCommand]
+    private async Task PrevImage()
+    {
+        var i = Items.IndexOf(Current!);
+        if (i <= 0) return;
+        await OpenViewer(Items[i - 1]);
+    }
+
+    [RelayCommand]
+    private void ToggleOriginal()
+    {
+        if (ShowOriginal) { _ = ApplyVsrAsync(); return; }
+        ViewerImage = _origSource;
+        ShowOriginal = true;
+    }
+
+    // ================= 杂项 =================
+
+    [RelayCommand]
+    private void RevealInExplorer(ImageVm? vm)
+    {
+        if (vm is null) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{vm.Item.Path}\"") { UseShellExecute = true });
+        }
+        catch { }
+    }
+
+    [RelayCommand]
+    private void CopyText(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        try { Clipboard.SetText(text); } catch { }
+    }
+
+    public void CopyPrompt(ImageVm? vm) => CopyText(vm?.Prompt);
+    public void CopyNegative(ImageVm? vm) => CopyText(vm?.Negative);
+    public void CopyParams(ImageVm? vm)
+    {
+        if (vm is null) return;
+        var it = vm.Item;
+        CopyText($"模型 {it.Model ?? "—"}\n采样器 {it.Sampler ?? "—"} / {it.Scheduler ?? "—"}\n步数 {it.Steps?.ToString() ?? "—"}  CFG {it.Cfg?.ToString("0.##") ?? "—"}  种子 {it.Seed?.ToString() ?? "—"}\n{it.Resolution}");
+    }
+
+    [RelayCommand]
+    private void ShowStats() => StatsRequested?.Invoke();
+
+    public event Action? StatsRequested;
+
+    public void SetTileSize(double v) => TileSize = Math.Clamp(v, 100, 420);
+
+    [RelayCommand]
+    private void OpenColumnEditor(ColumnVm? col) => ColumnEditorRequested?.Invoke(col);
+
+    public event Action<ColumnVm?>? ColumnEditorRequested;
+
+    public void SaveColumnFromEditor(ColumnVm? existing, string name, FilterNode tree)
+    {
+        if (existing is null) _ = AddColumnAsync(name, tree);
+        else { UpdateColumn(existing.Id, name, tree); _ = RunColumnCountsAsync(); RefreshGrid(); }
+    }
+}
+
