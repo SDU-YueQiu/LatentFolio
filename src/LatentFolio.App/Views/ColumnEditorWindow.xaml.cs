@@ -11,6 +11,9 @@ public partial class ColumnEditorWindow : Window
 {
     public string ColumnName { get; private set; } = "";
     public FilterNode Tree { get; private set; }
+    public bool DeleteRequested { get; private set; }
+
+    private readonly ColumnVm? _existing;
 
     /// <summary>下拉项。必须用公开类型 + 公开属性，不然 DisplayMemberPath 绑不上，
     /// 界面上会直接显示 "Opt { Value = ... }"。</summary>
@@ -26,6 +29,7 @@ public partial class ColumnEditorWindow : Window
     public ColumnEditorWindow(ColumnVm? existing)
     {
         InitializeComponent();
+        _existing = existing;
         Tree = existing?.Tree.Clone() ?? new FilterGroup
         {
             Op = BoolOp.And,
@@ -36,6 +40,7 @@ public partial class ColumnEditorWindow : Window
         {
             HeaderText.Text = "编辑自定义栏";
             NameBox.Text = existing.Name;
+            DeleteBtn.Visibility = Visibility.Visible;
         }
         else
         {
@@ -43,6 +48,16 @@ public partial class ColumnEditorWindow : Window
             NameBox.Text = "新栏";
         }
         Rebuild();
+    }
+
+    private void OnDelete(object sender, RoutedEventArgs e)
+    {
+        if (_existing is null) return;
+        var r = MessageBox.Show($"删除「{_existing.Name}」这一栏？图片不会动。", "LatentFolio",
+            MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+        if (r != MessageBoxResult.OK) return;
+        DeleteRequested = true;
+        DialogResult = true;
     }
 
     private void Rebuild()

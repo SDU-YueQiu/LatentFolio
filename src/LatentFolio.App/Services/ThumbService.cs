@@ -169,6 +169,13 @@ public sealed class ThumbService : IDisposable
         return $"{bytes / 1024.0 / 1024.0:F0} MB / {files} 张";
     }
 
+    /// <summary>换图库时把内存里的解码结果全丢掉。</summary>
+    public void ClearMemory()
+    {
+        lock (_lock) { _map.Clear(); _lru.Clear(); }
+        _inflight.Clear();
+    }
+
     public void Dispose()
     {
         _gate.Dispose();

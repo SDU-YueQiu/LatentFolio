@@ -261,7 +261,15 @@
                         <Border Style="{StaticResource HLine}" Margin="14,8,14,10" />
 
                         <Grid Margin="18,0,16,6">
-                            <TextBlock Text="资源库" Style="{StaticResource T.Section}" />
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="资源库" Style="{StaticResource T.Section}" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Content="…"
+                                    Style="{StaticResource Btn.Ghost}" FontSize="13" Padding="8,2"
+                                    VerticalAlignment="Center" Click="OnLibraryMenu"
+                                    AutomationProperties.Name="图库目录菜单" ToolTip="{Binding LibraryRoot}" />
                         </Grid>
                         <ListBox x:Name="FolderList" Background="Transparent" BorderThickness="0" Margin="8,0,8,0"
                                  MaxHeight="320" ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -655,6 +663,7 @@
         </Border>
     </Grid>
 </Window>
+
 
 
 

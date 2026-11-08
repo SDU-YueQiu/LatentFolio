@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -208,10 +209,61 @@ public partial class MainWindow : Window
         var win = new ColumnEditorWindow(col) { Owner = this };
         if (win.ShowDialog() == true)
         {
+            if (win.DeleteRequested)
+            {
+                Vm.DeleteColumn(col.Id);
+                Vm.ShowOverviewCommand.Execute(null);
+                return;
+            }
             Vm.UpdateColumn(col.Id, win.ColumnName, win.Tree);
             _ = Vm.RunColumnCountsAsync();
             Vm.RefreshGrid();
         }
+    }
+
+    // ================= 图库目录 =================
+
+    private void OnLibraryMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        void Item(string header, Action action)
+        {
+            var mi = new MenuItem { Header = header };
+            mi.Click += (_, _) => action();
+            menu.Items.Add(mi);
+        }
+
+        Item("打开图库目录", () =>
+        {
+            try
+            {
+                if (Directory.Exists(Vm.LibraryRoot))
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Vm.LibraryRoot)
+                    { UseShellExecute = true });
+            }
+            catch { }
+        });
+        Item("更换图库目录…", async () =>
+        {
+            var dlg = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "选择 ComfyUI 的 output 目录",
+                InitialDirectory = Directory.Exists(Vm.LibraryRoot) ? Vm.LibraryRoot : "",
+            };
+            if (dlg.ShowDialog() != true) return;
+            App.Services.LibraryRoot = dlg.FolderName;
+            App.Services.ThumbService.ClearMemory();
+            var r = MessageBox.Show("换了目录要重新扫一遍。现在扫？", "LatentFolio",
+                MessageBoxButton.OKCancel, MessageBoxImage.Question);
+            if (r != MessageBoxResult.OK) return;
+            Vm.LibraryRoot = dlg.FolderName;
+            await Vm.ScanCommand.ExecuteAsync(null);
+            Vm.StartWatcher();
+        });
+        Item("重新扫描", async () => await Vm.ScanCommand.ExecuteAsync(null));
+
+        menu.PlacementTarget = (UIElement)sender;
+        menu.IsOpen = true;
     }
 
     // ================= 排序 / 尺寸 =================
@@ -468,3 +520,4 @@ public partial class MainWindow : Window
 
     private void OnCloseStats(object sender, RoutedEventArgs e) => StatsPane.Visibility = Visibility.Collapsed;
 }
+
