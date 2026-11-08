@@ -7,6 +7,9 @@ public sealed class Vocabulary
 {
     public HashSet<string> CharTags { get; private set; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> CharByName { get; private set; } = new(StringComparer.Ordinal);
+
+    /// <summary>tag → 词表里的英文名（用来发现「同一个人、不同写法」）。</summary>
+    public Dictionary<string, string> NameOf { get; private set; } = new(StringComparer.Ordinal);
     public HashSet<string> Artists { get; private set; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> ZhNames { get; private set; } = new(StringComparer.Ordinal);
 
@@ -48,6 +51,10 @@ public sealed class Vocabulary
                     }
                     CharTags = tags;
                     CharByName = byName;
+                    var nameOf = new Dictionary<string, string>(chars.Count, StringComparer.Ordinal);
+                    foreach (var (tag, name) in chars)
+                        if (name.Length > 0) nameOf[tag] = name.ToLowerInvariant();
+                    NameOf = nameOf;
 
                     var artists = ReadTags(Path.Combine(assetsDir, "artists.txt"));
                     Artists = new HashSet<string>(artists, StringComparer.Ordinal);

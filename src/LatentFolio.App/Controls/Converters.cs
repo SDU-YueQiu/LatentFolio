@@ -80,3 +80,19 @@ public sealed class HexToBrush : IValueConverter
     }
     public object ConvertBack(object value, Type t, object p, CultureInfo c) => throw new NotSupportedException();
 }
+
+/// <summary>胶片条每张的宽度：按原图宽高比算，不裁切。(宽, 高, 条高) → 宽。</summary>
+public sealed class FilmWidth : IMultiValueConverter
+{
+    public object Convert(object[] v, Type t, object p, CultureInfo c)
+    {
+        if (v.Length < 3) return 60.0;
+        double w = v[0] is int iw ? iw : 1;
+        double h = v[1] is int ih ? ih : 1;
+        double strip = v[2] is double sh ? sh : 96;
+        if (w <= 0 || h <= 0 || double.IsNaN(strip)) return 60.0;
+        double width = strip * w / h;
+        return Math.Clamp(width, 18, 520);
+    }
+    public object[] ConvertBack(object value, Type[] t, object p, CultureInfo c) => throw new NotSupportedException();
+}

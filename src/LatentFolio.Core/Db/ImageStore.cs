@@ -312,6 +312,13 @@ public sealed class ImageStore(Db db)
         c.ExecuteNonQuery();
     }
 
+    /// <summary>清掉自动合并出来的别名（手工的不动），合并规则改了就重来一遍。</summary>
+    public int DeleteAutoAliases()
+    {
+        using var c = db.Cmd("DELETE FROM alias WHERE source='auto'");
+        return c.ExecuteNonQuery();
+    }
+
     public sealed class CandRow
     {
         public string Key = "";

@@ -76,18 +76,32 @@
 
         <!-- 人物墙一格 -->
         <DataTemplate x:Key="PersonTpl" DataType="{x:Type vm:PersonVm}">
-            <StackPanel Margin="5" Cursor="Hand" MouseLeftButtonDown="OnPersonClick"
-                        MouseRightButtonUp="OnPersonAvatar"
-                        AutomationProperties.Name="{Binding Display}">
-                <Border Height="104" Background="{StaticResource B.Tile}" CornerRadius="9" ClipToBounds="True">
-                    <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill"
-                           RenderOptions.BitmapScalingMode="Linear" />
-                </Border>
-                <TextBlock Text="{Binding Display}" FontSize="11.5" TextTrimming="CharacterEllipsis"
-                           Margin="2,5,2,0" />
-                <TextBlock Text="{Binding Count}" FontSize="10.5" Foreground="{StaticResource B.Text3}"
-                           Margin="2,1,2,0" />
-            </StackPanel>
+            <Border x:Name="card" Margin="5" Background="Transparent" CornerRadius="10" Padding="4"
+                    Cursor="Hand" MouseLeftButtonDown="OnPersonClick" MouseRightButtonUp="OnPersonAvatar"
+                    AutomationProperties.Name="{Binding Display}">
+                <StackPanel>
+                    <Grid>
+                        <Border Height="118" Background="{StaticResource B.Tile}" CornerRadius="8" ClipToBounds="True">
+                            <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill"
+                                   RenderOptions.BitmapScalingMode="HighQuality" />
+                        </Border>
+                        <Border Background="#B0000000" CornerRadius="8" Padding="6,1" Margin="6"
+                                HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                            <TextBlock Text="{Binding Count}" FontSize="10.5" Foreground="White" />
+                        </Border>
+                    </Grid>
+                    <TextBlock Text="{Binding Display}" FontSize="12" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" Margin="3,7,3,0" />
+                    <TextBlock Text="{Binding TagSub}" FontSize="10" Foreground="{StaticResource B.Text3}"
+                               TextTrimming="CharacterEllipsis" Margin="3,1,3,2"
+                               Visibility="{Binding TagSub, Converter={StaticResource NE2V}}" />
+                </StackPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <Trigger SourceName="card" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="card" Property="Background" Value="{StaticResource B.Hover}" />
+                </Trigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
     </Window.Resources>
 
@@ -186,9 +200,9 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="1" />
-                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" MinHeight="88" />
+                        <RowDefinition Height="7" />
+                        <RowDefinition Height="*" MinHeight="120" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
@@ -235,7 +249,7 @@
                     </Grid>
 
                     <Grid Grid.Row="2" Margin="8,0,8,0">
-                        <ListBox x:Name="ColList" Background="Transparent" BorderThickness="0" MaxHeight="280"
+                        <ListBox x:Name="ColList" Background="Transparent" BorderThickness="0"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                  ItemsSource="{Binding Columns}"
                                  ItemContainerStyle="{StaticResource RowItem}"
@@ -268,7 +282,11 @@
                                 VerticalAlignment="Top" Visibility="Collapsed" IsHitTestVisible="False" />
                     </Grid>
 
-                    <Border Grid.Row="3" Background="{StaticResource B.Border}" Margin="12,4,12,0" />
+                    <GridSplitter Grid.Row="3" Height="7" HorizontalAlignment="Stretch"
+                                  Background="Transparent" ResizeBehavior="PreviousAndNext"
+                                  ResizeDirection="Rows" Cursor="SizeNS" />
+                    <Border Grid.Row="3" Height="1" Background="{StaticResource B.Border}"
+                            VerticalAlignment="Center" Margin="12,0" IsHitTestVisible="False" />
 
                     <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
                         <StackPanel>
@@ -474,10 +492,19 @@
                             </StackPanel>
 
                             <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                <!-- 简易筛选 -->
-                                <Button x:Name="FilterBtn" Content="筛选" Style="{StaticResource Btn.Outline}"
-                                        Height="30" Padding="11,0" FontSize="12" Click="OnFilterMenu"
-                                        AutomationProperties.Name="筛选" />
+                                <!-- 简易筛选：星级 / 角色 / 模型，三个都从当前结果里出 -->
+                                <Button x:Name="StarFilterBtn" Content="星级" Style="{StaticResource Btn.Outline}"
+                                        Height="30" Padding="11,0" FontSize="12" Click="OnStarFilter"
+                                        AutomationProperties.Name="按星级筛选" />
+                                <Button x:Name="CharFilterBtn" Content="角色" Style="{StaticResource Btn.Outline}"
+                                        Height="30" Padding="11,0" FontSize="12" Margin="6,0,0,0"
+                                        Click="OnCharFilter" AutomationProperties.Name="按角色筛选" />
+                                <Button x:Name="ModelFilterBtn" Content="模型" Style="{StaticResource Btn.Outline}"
+                                        Height="30" Padding="11,0" FontSize="12" Margin="6,0,0,0"
+                                        Click="OnModelFilter" AutomationProperties.Name="按模型筛选" />
+                                <Button Content="⋯" Style="{StaticResource Btn.Outline}" Height="30" Width="30"
+                                        Padding="0" FontSize="13" Margin="6,0,0,0" Click="OnAdvancedFilter"
+                                        ToolTip="高级筛选（条件树）" AutomationProperties.Name="高级筛选" />
                                 <Button x:Name="FilterClearBtn" Content="✕" Style="{StaticResource Btn.Ghost}"
                                         Height="26" Width="26" Padding="0" FontSize="11" Margin="2,0,0,0"
                                         Click="OnFilterClear" ToolTip="清除筛选" AutomationProperties.Name="清除筛选"
@@ -664,6 +691,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
+                            <RowDefinition Height="7" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
@@ -744,36 +772,56 @@
                                 Click="OnTogglePanel" AutomationProperties.Name="展开详情栏"
                                 Visibility="{Binding IsPanelVisible, Converter={StaticResource InvB2V}}" />
 
-                        <!-- 底部胶片条 -->
-                        <Border Grid.Row="2" Grid.Column="0" Padding="10,8,10,10"
-                                Background="{StaticResource B.Window}">
-                            <ItemsControl ItemsSource="{Binding Filmstrip}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <UniformGrid Rows="1" />
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate DataType="{x:Type vm:ImageVm}">
-                                        <Border x:Name="fs" Height="54" Margin="3,0" CornerRadius="6" ClipToBounds="True"
-                                                Background="{StaticResource B.Tile}" BorderThickness="2"
-                                                BorderBrush="Transparent" Cursor="Hand"
-                                                MouseLeftButtonDown="OnFilmClick"
-                                                AutomationProperties.Name="{Binding FileName}">
-                                            <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
-                                        </Border>
-                                        <DataTemplate.Triggers>
-                                            <DataTrigger Binding="{Binding IsCurrent}" Value="True">
-                                                <Setter TargetName="fs" Property="BorderBrush"
-                                                        Value="{StaticResource B.Accent}" />
-                                            </DataTrigger>
-                                        </DataTemplate.Triggers>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                        <!-- 胶片条：高度可拖，每张按原图比例铺开（不裁切），横向滚 -->
+                        <Border Grid.Row="2" Grid.Column="0" Height="7" Background="{StaticResource B.Window}"
+                                Cursor="SizeNS" MouseLeftButtonDown="OnFilmDragStart"
+                                MouseMove="OnFilmDragMove" MouseLeftButtonUp="OnFilmDragEnd"
+                                AutomationProperties.Name="胶片条高度">
+                            <Border Height="1" VerticalAlignment="Center" Background="{StaticResource B.Border}" />
+                        </Border>
+                        <Border Grid.Row="3" Grid.Column="0" Height="{Binding FilmHeight}"
+                                Background="{StaticResource B.Window}" ClipToBounds="True">
+                            <ScrollViewer x:Name="FilmScroll" HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Disabled" Padding="10,6,10,2"
+                                          PreviewMouseWheel="OnFilmWheel">
+                                <ItemsControl x:Name="FilmList" ItemsSource="{Binding Filmstrip}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:ImageVm}">
+                                            <Border x:Name="fs" Height="{Binding DataContext.FilmImageHeight,
+                                                        RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CornerRadius="5" ClipToBounds="True" Margin="2,0"
+                                                    Background="{StaticResource B.Tile}" BorderThickness="2"
+                                                    BorderBrush="Transparent" Cursor="Hand"
+                                                    MouseLeftButtonDown="OnFilmClick"
+                                                    AutomationProperties.Name="{Binding FileName}">
+                                                <Border.Width>
+                                                    <MultiBinding Converter="{StaticResource FilmW}">
+                                                        <Binding Path="Width" />
+                                                        <Binding Path="Height" />
+                                                        <Binding Path="DataContext.FilmImageHeight"
+                                                                 RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                    </MultiBinding>
+                                                </Border.Width>
+                                                <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="Uniform" />
+                                            </Border>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                    <Setter TargetName="fs" Property="BorderBrush"
+                                                            Value="{StaticResource B.Accent}" />
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
                         </Border>
 
-                        <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="1" Background="{StaticResource B.Panel}"
+                        <Border Grid.Row="1" Grid.RowSpan="3" Grid.Column="1" Background="{StaticResource B.Panel}"
                                 BorderBrush="{StaticResource B.Border}" BorderThickness="1,0,0,0"
                                 Visibility="{Binding IsPanelVisible, Converter={StaticResource B2V}}">
                             <views:DetailPanel />

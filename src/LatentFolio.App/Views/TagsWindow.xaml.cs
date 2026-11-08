@@ -303,6 +303,23 @@ public partial class TagsWindow : Window
         FillPerson();
     }
 
+    /// <summary>把这个 tag 合并到另一个（写别名，之后重打标）。</summary>
+    private void OnMergePerson(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not TagRowVm row) return;
+        var dlg = new PromptWindow("合并到哪个 tag", row.Tag) { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+        var target = dlg.Value.Trim();
+        if (target.Length == 0 || target == row.Tag) return;
+
+        var cursor = Mouse.OverrideCursor;
+        Mouse.OverrideCursor = Cursors.Wait;
+        try { _vm.MergePerson(row.Tag, target); }
+        finally { Mouse.OverrideCursor = cursor; }
+        RefreshAll();
+        StatusText.Text = $"{row.Tag} → {target}";
+    }
+
     private void OnRowSelected(object sender, SelectionChangedEventArgs e)
     {
         UpdateBatchButtons();

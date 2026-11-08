@@ -175,10 +175,21 @@ public sealed class ZoomBox : ContentControl
 
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
-        if (_scale <= 1.01 && e.Delta <= 0) return;
-        ZoomAt(e.GetPosition(Space), e.Delta > 0 ? 1.15 : 1 / 1.15);
+        // 普通滚轮换图，Ctrl+滚轮缩放
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            if (_scale > 1.01 || e.Delta > 0)
+                ZoomAt(e.GetPosition(Space), e.Delta > 0 ? 1.15 : 1 / 1.15);
+            e.Handled = true;
+            return;
+        }
+
+        WheelNavigate?.Invoke(e.Delta > 0 ? -1 : 1);
         e.Handled = true;
     }
+
+    /// <summary>滚轮换图：-1 上一张 / +1 下一张。</summary>
+    public event Action<int>? WheelNavigate;
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {

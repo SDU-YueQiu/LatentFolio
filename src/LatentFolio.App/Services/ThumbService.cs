@@ -16,24 +16,35 @@ public sealed class ThumbService : IDisposable
     private readonly ThumbCache _disk;
     private readonly SemaphoreSlim _gate = new(Math.Max(4, Environment.ProcessorCount));
     private readonly ConcurrentDictionary<string, Task<BitmapSource?>> _inflight = new();
-    private readonly Dictionary<long, LinkedListNode<CacheEntry>> _map = new();
+    private readonly Dictionary<(long Id, int Bucket), LinkedListNode<CacheEntry>> _map = new();
     private readonly LinkedList<CacheEntry> _lru = new();
     private readonly object _lock = new();
     private long _bytes;
 
-    /// <summary>解码后的位图很占地方（448 缩略图约 1 MB 一张），按字节数封顶，
-    /// 而不是按条数——换过缩略图规格之后条数上限就完全不准了。</summary>
+    /// <summary>解码后的位图很占地方，按字节数封顶，而不是按条数。</summary>
     private const long MemoryBudget = 288L * 1024 * 1024;
 
-    private sealed record CacheEntry(long Id, BitmapSource Bitmap, long Bytes);
+    private sealed record CacheEntry((long Id, int Bucket) Key, BitmapSource Bitmap, long Bytes);
+
+    /// <summary>
+    /// 解码尺寸分桶。按「实际要显示的物理像素」解码，等于把缩放交给 Skia 的
+    /// CatmullRom 去做；交给 WPF 在绘制时缩会明显发糊（之前就是这个毛病）。
+    /// </summary>
+    public static int Bucket(int px)
+    {
+        if (px <= 0) return 480;
+        int b = (int)(Math.Ceiling(px / 32.0) * 32);
+        return Math.Clamp(b, 96, 512);
+    }
 
     public ThumbService(ThumbCache disk) => _disk = disk;
 
-    public BitmapSource? Peek(long id)
+    public BitmapSource? Peek(long id, int px = 0)
     {
+        var key = (id, Bucket(px));
         lock (_lock)
         {
-            if (_map.TryGetValue(id, out var n))
+            if (_map.TryGetValue(key, out var n))
             {
                 _lru.Remove(n);
                 _lru.AddFirst(n);
@@ -44,52 +55,54 @@ public sealed class ThumbService : IDisposable
     }
 
     /// <summary>把渲染好的位图放回缓存（调用方自己解码时用）。</summary>
-    public void Put(long id, BitmapSource bmp)
+    public void Put(long id, int px, BitmapSource bmp)
     {
+        var key = (id, Bucket(px));
         long bytes = (long)bmp.PixelWidth * bmp.PixelHeight * 4;
         lock (_lock)
         {
-            if (_map.TryGetValue(id, out var old))
+            if (_map.TryGetValue(key, out var old))
             {
                 _bytes -= old.Value.Bytes;
                 _lru.Remove(old);
-                _map.Remove(id);
+                _map.Remove(key);
             }
-            var node = _lru.AddFirst(new CacheEntry(id, bmp, bytes));
-            _map[id] = node;
+            var node = _lru.AddFirst(new CacheEntry(key, bmp, bytes));
+            _map[key] = node;
             _bytes += bytes;
             while (_bytes > MemoryBudget && _lru.Last is { } last)
             {
                 _lru.RemoveLast();
-                _map.Remove(last.Value.Id);
+                _map.Remove(last.Value.Key);
                 _bytes -= last.Value.Bytes;
             }
         }
     }
 
-    public Task<BitmapSource?> LoadAsync(long id, string path, long mtime, long size, int maxSide = 0)
+    public Task<BitmapSource?> LoadAsync(long id, string path, long mtime, long size, int px = 0)
     {
-        if (Peek(id) is { } hit) return Task.FromResult<BitmapSource?>(hit);
+        int bucket = Bucket(px);
+        if (Peek(id, bucket) is { } hit) return Task.FromResult<BitmapSource?>(hit);
 
-        var key = ThumbCache.Key(path, mtime, size);
+        var key = ThumbCache.Key(path, mtime, size) + "@" + bucket;
         return _inflight.GetOrAdd(key, k => Task.Run(async () =>
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                if (Peek(id) is { } again) return again;
+                if (Peek(id, bucket) is { } again) return again;
 
-                var bytes = _disk.ReadGrid(key);
+                var bytes = _disk.ReadGrid(ThumbCache.Key(path, mtime, size));
                 if (bytes is null)
                 {
-                    var r = Thumbnailer.Make(path, Thumbnailer.GridSize);
+                    var r = Thumbnailer.Make(path, Thumbnailer.GridSize, Thumbnailer.GridQuality);
                     if (r.Webp is null) return null;
-                    _disk.SaveGrid(key, r.Webp);
+                    _disk.SaveGrid(ThumbCache.Key(path, mtime, size), r.Webp);
                     bytes = r.Webp;
                 }
 
-                var bmp = Decode(bytes);
-                if (bmp is not null) Put(id, bmp);
+                var bmp = DecodeScaled(bytes, bucket);
+                if (bmp is not null) Put(id, bucket, bmp);
                 return bmp;
             }
             catch
@@ -102,6 +115,23 @@ public sealed class ThumbService : IDisposable
                 _inflight.TryRemove(k, out var _gone);
             }
         }));
+    }
+
+    /// <summary>解码到指定长边。缩在图库缓存里的时候本来就有损，再让 WPF 缩一次只会更糊。</summary>
+    private static BitmapSource? DecodeScaled(byte[] data, int maxSide)
+    {
+        try
+        {
+            using var sk = SKBitmap.Decode(data);
+            if (sk is null) return null;
+            if (Math.Max(sk.Width, sk.Height) <= maxSide) return ToSource(sk);
+            using var small = Thumbnailer.Fit(sk, maxSide);
+            return ToSource(small);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>全尺寸原图（查看器用）。</summary>

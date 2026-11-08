@@ -356,9 +356,17 @@ public static class SelfTest
         Check(!vm.LeftCollapsed && Math.Abs(vm.DetailWidth - 380) < 0.1, "两栏都能再展开",
             $"{vm.LeftWidth:F0} / {vm.DetailWidth:F0}");
 
-        Check(vm.Filmstrip.Count is > 0 and <= 12, "底部胶片条 12 张以内", $"{vm.Filmstrip.Count}");
-        Check(vm.Items.Count < 12 || vm.Filmstrip.Count == 12, "胶片条填满 12 张", $"{vm.Filmstrip.Count}");
+        Check(vm.Filmstrip.Count is > 0 and <= 81, "胶片条覆盖前后各 40 张", $"{vm.Filmstrip.Count}");
+        Check(vm.Filmstrip.Count >= Math.Min(vm.Items.Count, 41), "胶片条至少覆盖到窗口一侧",
+            $"{vm.Filmstrip.Count} / 共 {vm.Items.Count}");
         Check(vm.Filmstrip.Any(x => x.IsCurrent), "胶片条标出当前那张");
+        Check(vm.FilmstripIndex >= 0, "能定位当前图在胶片条里的位置", $"{vm.FilmstripIndex}");
+        double fh0 = vm.FilmImageHeight;
+        vm.FilmHeight = 160;
+        await Pulse(window);
+        Check(vm.FilmImageHeight > fh0, "胶片条高度可调", $"{fh0:F0} -> {vm.FilmImageHeight:F0}");
+        vm.FilmHeight = 96;
+        await Pulse(window);
 
         // ---------- 17. 放大后能拖到图片边缘 ----------
         if (window is MainWindow mw3)
@@ -482,6 +490,46 @@ public static class SelfTest
         }
 
         Check(vm.WatchEnabled, "目录监视一直开着（没有手动开关了）");
+
+        // ---------- 23. 星级筛选 / 角色筛选 / 资源库倒序 ----------
+        vm.SetTempFilter(new FilterGroup
+        {
+            Op = BoolOp.And,
+            Children = { new FilterCond { Field = FieldType.Rating, Op = CondOp.Gte, Value = "3" } },
+        }, "3 星 及以上");
+        await Pulse(window);
+        Check(vm.TempFilterName == "3 星 及以上" && vm.Items.Count > 0, "星级筛选生效",
+            $"{vm.Items.Count} 张");
+        vm.SetTempFilter(new FilterGroup
+        {
+            Op = BoolOp.And,
+            Children = { new FilterCond { Field = FieldType.Rating, Op = CondOp.Lte, Value = "2" } },
+        }, "2 星 及以下");
+        await Pulse(window);
+        Check(vm.Items.All(x => x.Rating <= 2), "「及以下」真的只留低分", $"{vm.Items.Count} 张");
+        vm.ClearFilterCommand.Execute(null);
+        await Pulse(window);
+
+        var charsInView = vm.CharsInView();
+        Check(charsInView.Count > 0, "角色筛选能列出当前结果里的角色", $"{charsInView.Count} 个");
+        var models = vm.ModelsInView();
+        Check(models.Count > 0, "模型筛选能列出当前结果里的模型", $"{models.Count} 个");
+
+        if (vm.Folders.Count > 3)
+        {
+            vm.FolderSort = AppVm.FolderSortKind.Name;
+            vm.FolderDesc = false;
+            await Pulse(window);
+            var asc = vm.Folders[0].Path;
+            vm.FolderDesc = true;
+            await Pulse(window);
+            var desc = vm.Folders[0].Path;
+            Check(string.Compare(asc, desc, StringComparison.OrdinalIgnoreCase) != 0
+                  && string.Compare(asc, desc, StringComparison.OrdinalIgnoreCase) < 0,
+                "资源库排序可以倒过来", $"{asc} / {desc}");
+            vm.FolderDesc = false;
+            await Pulse(window);
+        }
 
         // ---------- 性能 / 内存 ----------
         var proc = System.Diagnostics.Process.GetCurrentProcess();

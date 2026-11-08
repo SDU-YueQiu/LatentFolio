@@ -39,7 +39,13 @@ public sealed partial class ColumnVm : ObservableObject
 public sealed partial class PersonVm : ObservableObject
 {
     public override string ToString() => Display;
-    public string Tag = "";
+
+    // 这两个必须是属性：WPF 绑定不认 public 字段，写成字段界面上就是空的
+    public string Tag { get; set; } = "";
+
+    /// <summary>卡片副标题：中文名和 tag 不一样时显示原始 tag，一样时留空。</summary>
+    public string TagSub { get; set; } = "";
+
     [ObservableProperty] private string _display = "";
     [ObservableProperty] private int _count;
     [ObservableProperty] private System.Windows.Media.ImageSource? _avatar;
@@ -86,8 +92,19 @@ public sealed partial class AppVm : ObservableObject
     public ObservableCollection<PersonVm> PeoplePreview { get; } = [];
     public ObservableCollection<FolderVm> Folders { get; } = [];
 
-    /// <summary>胶片条：查看器底部那 12 张。</summary>
+    /// <summary>胶片条：当前这张前后的一批图。高度可调，每张宽度按原图比例。</summary>
     public ObservableCollection<ImageVm> Filmstrip { get; } = [];
+
+    [ObservableProperty] private double _filmHeight = 96;
+
+    partial void OnFilmHeightChanged(double value)
+    {
+        _store.SetSetting("film_height", ((int)Math.Round(value)).ToString());
+        OnPropertyChanged(nameof(FilmImageHeight));
+    }
+
+    /// <summary>去掉内边距和横向滚动条之后，胶片条里一张图实际的高度。</summary>
+    public double FilmImageHeight => Math.Max(24, FilmHeight - 32);
 
     /// <summary>角色/画师全量计数（人物墙只显示前 400，标签体系要全的）。</summary>
     public Dictionary<string, int> CharCounts { get; } = new(StringComparer.Ordinal);
@@ -308,6 +325,9 @@ public sealed partial class AppVm : ObservableObject
         LeftCollapsed = _store.GetSetting("left_collapsed") == "1";
         if (double.TryParse(_store.GetSetting("left_width"), out var lw) && lw >= 180)
             _leftExpanded = Math.Clamp(lw, 180, 460);
+        if (double.TryParse(_store.GetSetting("film_height"), out var fh) && fh >= 40)
+            FilmHeight = Math.Clamp(fh, 48, 300);
+        FolderDesc = _store.GetSetting("folder_desc") == "1";
         StatsThreshold = int.TryParse(_store.GetSetting("stats_threshold"), out var st) ? st : 5;
         VsrScale = int.TryParse(_store.GetSetting("vsr_scale"), out var vs) && vs == 4 ? 4 : 2;
         _svc.Vsr.Scale = VsrScale;
@@ -336,10 +356,22 @@ public sealed partial class AppVm : ObservableObject
         foreach (var vm in VmById.Values) vm.RefreshTags(AvatarFor);
         BuildFolders();
         await ScanAsync(initial: true);
+
+        // 一次性把「同一个人、不同写法」合并掉（写自动别名 + 重打标）
+        if (_store.GetSetting("merge_version") != MergeVersion.ToString())
+        {
+            int merged = MergeDuplicateCharacters();
+            if (merged > 0) RetagAll();
+            _store.SetSetting("merge_version", MergeVersion.ToString());
+        }
+
         RefreshGrid();
         StartWatcher();
         LastInitMs = swInit.ElapsedMilliseconds;
     }
+
+    /// <summary>角色合并规则升过级就重跑一次。</summary>
+    public const int MergeVersion = 3;
 
     public void ReloadFromDb()
     {
@@ -661,10 +693,12 @@ public sealed partial class AppVm : ObservableObject
         foreach (var x in list)
         {
             var meta = PersonMeta.GetValueOrDefault(x.Tag);
+            var display = meta is { NameZh.Length: > 0 } ? meta.NameZh : vocab.Display(x.Tag);
             People.Add(new PersonVm
             {
                 Tag = x.Tag,
-                Display = meta is { NameZh.Length: > 0 } ? meta.NameZh : vocab.Display(x.Tag),
+                Display = display,
+                TagSub = display != x.Tag ? x.Tag : "",
                 Count = x.Count,
                 AvatarImageId = PersonAvatars.TryGetValue(x.Tag, out var custom) ? custom
                     : meta is { AvatarId: > 0 } ? meta.AvatarId : x.BestId,
@@ -802,16 +836,19 @@ public sealed partial class AppVm : ObservableObject
         }
         foreach (var n in nodes) n.HasChildren = parents.Contains(n.Path);
 
-        switch (FolderSort)
+        // 名称/张数/日期 × 正倒序；同值再按路径排，保证稳定
+        Comparison<FolderVm> cmp = FolderSort switch
         {
-            case FolderSortKind.Count:
-                nodes.Sort((a, b) => b.Count != a.Count ? b.Count.CompareTo(a.Count)
-                    : string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase));
-                break;
-            case FolderSortKind.Date:
-                nodes.Sort((a, b) => string.Compare(b.Path, a.Path, StringComparison.OrdinalIgnoreCase));
-                break;
-        }
+            FolderSortKind.Count => (a, b) => a.Count.CompareTo(b.Count),
+            FolderSortKind.Date => (a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase),
+            _ => (a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase),
+        };
+        nodes.Sort((a, b) =>
+        {
+            int r = cmp(a, b);
+            if (FolderDesc) r = -r;
+            return r != 0 ? r : string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase);
+        });
 
         Folders.Clear();
         foreach (var n in nodes) Folders.Add(n);
@@ -822,12 +859,12 @@ public sealed partial class AppVm : ObservableObject
         LastFoldersMs = sw.ElapsedMilliseconds;
     }
 
-    public string FolderSortLabel => FolderSort switch
+    public string FolderSortLabel => (FolderSort switch
     {
-        FolderSortKind.Count => "张数 ▾",
-        FolderSortKind.Date => "日期 ▾",
-        _ => "名称 ▾",
-    };
+        FolderSortKind.Count => "张数",
+        FolderSortKind.Date => "日期",
+        _ => "名称",
+    }) + (FolderDesc ? " ▾" : " ▴");
 
     public int DeletedCount => AllImages.Count(x => x.State == FileState.Deleted);
 
@@ -1395,6 +1432,36 @@ public sealed partial class AppVm : ObservableObject
         TempFilter = tree;
     }
 
+    /// <summary>当前网格里出现的角色，按张数排序（简易筛选用）。</summary>
+    public List<(string Tag, string Display, int Count)> CharsInView(int limit = 200)
+    {
+        var map = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var vm in Items)
+            foreach (var c in vm.Item.Chars)
+                map[c] = map.GetValueOrDefault(c) + 1;
+        var v = Vocabulary.Instance;
+        return map.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
+            .Take(limit)
+            .Select(kv => (kv.Key, v.Display(kv.Key), kv.Value))
+            .ToList();
+    }
+
+    /// <summary>当前网格里出现的模型。</summary>
+    public List<(string Model, int Count)> ModelsInView(int limit = 60)
+    {
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var vm in Items)
+        {
+            var m = vm.Item.Model;
+            if (string.IsNullOrWhiteSpace(m)) continue;
+            map[m] = map.GetValueOrDefault(m) + 1;
+        }
+        return map.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
+            .Select(kv => (kv.Key, kv.Value))
+            .ToList();
+    }
+
     [RelayCommand]
     private void ClearFilter()
     {
@@ -1482,8 +1549,16 @@ public sealed partial class AppVm : ObservableObject
         if (row.NameZh.Length > 0) v.NameOverride[row.Tag] = row.NameZh;
         else v.NameOverride.Remove(row.Tag);
 
-        foreach (var p in People.Where(p => p.Tag == row.Tag)) p.Display = v.Display(row.Tag);
-        foreach (var p in PeoplePreview.Where(p => p.Tag == row.Tag)) p.Display = v.Display(row.Tag);
+        foreach (var p in People.Where(p => p.Tag == row.Tag))
+        {
+            p.Display = v.Display(row.Tag);
+            p.TagSub = p.Display != p.Tag ? p.Tag : "";
+        }
+        foreach (var p in PeoplePreview.Where(p => p.Tag == row.Tag))
+        {
+            p.Display = v.Display(row.Tag);
+            p.TagSub = p.Display != p.Tag ? p.Tag : "";
+        }
         foreach (var vm in VmById.Values) vm.RefreshTags(AvatarFor);
     }
 
@@ -1513,6 +1588,98 @@ public sealed partial class AppVm : ObservableObject
         if (key.Length == 0) return;
         _store.SetCandidateState(key, 2);
         Vocabulary.Instance.Ignored.Add(key);
+        RetagAll();
+    }
+
+    /// <summary>
+    /// 「同一个人被认成不同关键词」：按 base 名（括号前那段）和词表英文名分组，
+    /// 每组取张数最多的那个当正式 tag，其余写成自动别名，然后重打一遍标。
+    /// 已有别名（手工确认过的）不动。
+    /// </summary>
+    private int MergeDuplicateCharacters()
+    {
+        var v = Vocabulary.Instance;
+        if (!v.Ready || AllImages.Count == 0) return 0;
+
+        // 用「没有别名时的原始识别结果」来算分组：库里存的 chars 可能已经被上一轮
+        // 合并过了，直接拿它统计会看到一片干净、永远算不出重复
+        var saved = new Dictionary<string, string>(v.Alias, StringComparer.Ordinal);
+        v.Alias.Clear();
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        try
+        {
+            foreach (var it in AllImages)
+            {
+                if (it.Prompt.Length == 0) continue;
+                var (chars, _) = v.Tag(it.Prompt);
+                foreach (var c in chars) counts[c] = counts.GetValueOrDefault(c) + 1;
+            }
+        }
+        finally
+        {
+            v.Alias.Clear();
+            foreach (var kv in saved) v.Alias[kv.Key] = kv.Value;
+        }
+        if (counts.Count == 0) return 0;
+
+        _store.DeleteAutoAliases();
+        LoadAliases();
+
+        var parent = new Dictionary<string, string>(StringComparer.Ordinal);
+        string Find(string x)
+        {
+            while (parent.TryGetValue(x, out var p) && p != x) x = p;
+            return x;
+        }
+        void Union(string a, string b)
+        {
+            var ra = Find(a);
+            var rb = Find(b);
+            if (ra == rb) return;
+            int ca = counts.GetValueOrDefault(ra), cb = counts.GetValueOrDefault(rb);
+            bool aWins = ca > cb || (ca == cb && ra.Length <= rb.Length);
+            parent[aWins ? rb : ra] = aWins ? ra : rb;
+        }
+
+        foreach (var t in counts.Keys) parent[t] = t;
+
+        var byBase = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var byName = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var t in counts.Keys)
+        {
+            var b = Vocabulary.BaseName(t);
+            if (!byBase.TryGetValue(b, out var l)) byBase[b] = l = [];
+            l.Add(t);
+            if (v.NameOf.TryGetValue(t, out var en) && en.Length > 0)
+            {
+                if (!byName.TryGetValue(en, out var l2)) byName[en] = l2 = [];
+                l2.Add(t);
+            }
+        }
+
+        foreach (var list in byBase.Values) for (int i = 1; i < list.Count; i++) Union(list[0], list[i]);
+        foreach (var list in byName.Values) for (int i = 1; i < list.Count; i++) Union(list[0], list[i]);
+
+        var existing = _store.LoadAliases();
+        int n = 0;
+        foreach (var t in counts.Keys)
+        {
+            var root = Find(t);
+            if (root == t) continue;
+            if (existing.ContainsKey(t)) continue;   // 手工别名优先
+            _store.UpsertAlias(t, root, "auto");
+            v.Alias[t] = root;
+            n++;
+        }
+        return n;
+    }
+
+    /// <summary>手工把一个角色 tag 合并到另一个（写别名 + 重打标）。</summary>
+    public void MergePerson(string from, string to)
+    {
+        if (from.Length == 0 || to.Length == 0 || from == to) return;
+        _store.UpsertAlias(from, to, "manual");
+        Vocabulary.Instance.Alias[from] = to;
         RetagAll();
     }
 
@@ -1590,7 +1757,7 @@ public sealed partial class AppVm : ObservableObject
 
     public List<(long Id, string Name, string Json)> LoadTemplates() => _store.LoadTemplates();
 
-    /// <summary>缩略图 12 张：以当前这张为中心取前后各 6 张。</summary>
+    /// <summary>胶片条内容：以当前这张为中心取前后各 40 张（多了靠横向滚）。</summary>
     private void RebuildFilmstrip()
     {
         foreach (var vm in Filmstrip) vm.IsCurrent = false;
@@ -1598,10 +1765,15 @@ public sealed partial class AppVm : ObservableObject
         if (Current is null) return;
         int i = Items.IndexOf(Current);
         if (i < 0) { Current.IsCurrent = true; Filmstrip.Add(Current); return; }
-        int start = Math.Max(0, Math.Min(i - 6, Items.Count - 12));
-        for (int k = start; k < Math.Min(start + 12, Items.Count); k++) Filmstrip.Add(Items[k]);
+        const int span = 40;
+        int start = Math.Max(0, i - span);
+        int end = Math.Min(Items.Count, i + span + 1);
+        for (int k = start; k < end; k++) Filmstrip.Add(Items[k]);
         Current.IsCurrent = true;
     }
+
+    /// <summary>当前图在胶片条里的位置，用来把它滚进视野。</summary>
+    public int FilmstripIndex => Current is null ? -1 : Filmstrip.IndexOf(Current);
 
     // ================= 资源库：排序 / 折叠 =================
 
@@ -1609,9 +1781,18 @@ public sealed partial class AppVm : ObservableObject
 
     [ObservableProperty] private FolderSortKind _folderSort = FolderSortKind.Name;
 
+    /// <summary>排序方向。名称默认正序，张数/日期默认倒序。</summary>
+    [ObservableProperty] private bool _folderDesc;
+
     partial void OnFolderSortChanged(FolderSortKind value)
     {
         _store.SetSetting("folder_sort", ((int)value).ToString());
+        BuildFolders();
+    }
+
+    partial void OnFolderDescChanged(bool value)
+    {
+        _store.SetSetting("folder_desc", value ? "1" : "0");
         BuildFolders();
     }
 
@@ -1654,6 +1835,8 @@ public sealed partial class AppVm : ObservableObject
         else { UpdateColumn(existing.Id, name, tree, color); _ = RunColumnCountsAsync(); RefreshGrid(); }
     }
 }
+
+
 
 
 

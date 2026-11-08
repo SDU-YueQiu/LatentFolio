@@ -164,7 +164,17 @@ public partial class MainWindow : Window
         App.Root.PropertyChanged += (_, pe) =>
         {
             // 换图/换源时若只是分辨率变了，缩放保持不动；换图才重置
-            if (pe.PropertyName == nameof(AppVm.Current)) BigZoom.Reset();
+            if (pe.PropertyName == nameof(AppVm.Current))
+            {
+                BigZoom.Reset();
+                Dispatcher.BeginInvoke(new Action(ScrollFilmToCurrent),
+                    System.Windows.Threading.DispatcherPriority.Background);
+            }
+        };
+        BigZoom.WheelNavigate += dir =>
+        {
+            if (dir < 0) Vm.PrevImageCommand.Execute(null);
+            else Vm.NextImageCommand.Execute(null);
         };
         await Vm.InitAsync();
         SyncSizeButtons();
@@ -592,56 +602,149 @@ public partial class MainWindow : Window
         Children = { new FilterCond { Field = f, Op = op, Value = v } },
     };
 
-    /// <summary>简易筛选：一个条件，点一下就是一张图钉。条件树收在「高级筛选…」里。</summary>
-    private void OnFilterMenu(object sender, RoutedEventArgs e)
+    private static MenuItem Mi(string header, bool check, Action act)
     {
-        var menu = new ContextMenu();
+        var mi = new MenuItem { Header = header, IsChecked = check, IsCheckable = true };
+        mi.Click += (_, _) => act();
+        return mi;
+    }
 
-        void Item(string name, Func<FilterNode> make)
-        {
-            var mi = new MenuItem { Header = name, IsChecked = Vm.TempFilterName == name };
-            mi.Click += (_, _) =>
-            {
-                Vm.SetTempFilter(make(), name);
-            };
-            menu.Items.Add(mi);
-        }
-
-        Item("未评分", () => One(FieldType.Rating, CondOp.Eq, "0"));
-        Item("评分 ≥ 3", () => One(FieldType.Rating, CondOp.Gte, "3"));
-        Item("评分 ≥ 4", () => One(FieldType.Rating, CondOp.Gte, "4"));
-        Item("满分 5 星", () => One(FieldType.Rating, CondOp.Eq, "5"));
-        menu.Items.Add(new Separator());
-        Item("有角色", () => One(FieldType.Character, CondOp.Contains, ""));
-        Item("有画师", () => One(FieldType.Artist, CondOp.Contains, ""));
-        Item("有 LoRA", () => One(FieldType.Lora, CondOp.Contains, ""));
-        Item("竖图", () => One(FieldType.Aspect, CondOp.Contains, "竖"));
-        Item("横图", () => One(FieldType.Aspect, CondOp.Contains, "横"));
-        menu.Items.Add(new Separator());
-        Item("相似堆叠 ≥ 2", () => One(FieldType.SimilarGroup, CondOp.Gte, "2"));
-        Item("相似堆叠 ≥ 3", () => One(FieldType.SimilarGroup, CondOp.Gte, "3"));
-        Item("近 7 天", () => One(FieldType.Date, CondOp.Gte, DateTime.Now.AddDays(-7).ToString("yyyy-MM-dd")));
-        Item("近 30 天", () => One(FieldType.Date, CondOp.Gte, DateTime.Now.AddDays(-30).ToString("yyyy-MM-dd")));
-        menu.Items.Add(new Separator());
-
-        var adv = new MenuItem { Header = "高级筛选…" };
-        adv.Click += (_, _) =>
-        {
-            var win = new ColumnEditorWindow(null, filterMode: true) { Owner = this };
-            if (win.ShowDialog() == true) Vm.SetTempFilter(win.Tree, "高级筛选");
-        };
-        menu.Items.Add(adv);
-
-        var clear = new MenuItem { Header = "清除筛选", IsEnabled = Vm.HasTempFilter };
-        clear.Click += (_, _) => Vm.ClearFilterCommand.Execute(null);
-        menu.Items.Add(clear);
-
-        menu.PlacementTarget = (UIElement)sender;
+    private void OpenMenu(UIElement anchor, ContextMenu menu)
+    {
+        menu.PlacementTarget = anchor;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         menu.IsOpen = true;
     }
 
+    /// <summary>星级：仅 / 及以上 / 及以下 × 1-5 星。</summary>
+    private void OnStarFilter(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        void Mode(string title, CondOp op, string suffix)
+        {
+            var sub = new MenuItem { Header = title };
+            for (int n = 1; n <= 5; n++)
+            {
+                int v = n;
+                var name = $"{v} 星 {suffix}";
+                sub.Items.Add(Mi(new string('★', v), Vm.TempFilterName == name, () =>
+                {
+                    Vm.SetTempFilter(One(FieldType.Rating, op, v.ToString()), name);
+                }));
+            }
+            menu.Items.Add(sub);
+        }
+
+        Mode("仅", CondOp.Eq, "仅");
+        Mode("及以上", CondOp.Gte, "及以上");
+        Mode("及以下", CondOp.Lte, "及以下");
+        menu.Items.Add(new Separator());
+        var clear = new MenuItem { Header = "不限星级", IsEnabled = Vm.HasTempFilter };
+        clear.Click += (_, _) => Vm.ClearFilterCommand.Execute(null);
+        menu.Items.Add(clear);
+
+        OpenMenu((UIElement)sender, menu);
+    }
+
+    /// <summary>角色：从当前结果里出现的角色中选。</summary>
+    private void OnCharFilter(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        var list = Vm.CharsInView();
+        if (list.Count == 0)
+            menu.Items.Add(new MenuItem { Header = "当前没有识别到角色", IsEnabled = false });
+        foreach (var (tag, display, count) in list)
+        {
+            var name = "角色 · " + tag;
+            menu.Items.Add(Mi($"{display}   {count}", Vm.TempFilterName == name,
+                () => Vm.SetTempFilter(One(FieldType.Character, CondOp.Eq, tag), name)));
+        }
+        if (Vm.HasTempFilter)
+        {
+            menu.Items.Add(new Separator());
+            var clear = new MenuItem { Header = "清除筛选" };
+            clear.Click += (_, _) => Vm.ClearFilterCommand.Execute(null);
+            menu.Items.Add(clear);
+        }
+        OpenMenu((UIElement)sender, menu);
+    }
+
+    /// <summary>模型：从当前结果里出现的模型里选。</summary>
+    private void OnModelFilter(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        var list = Vm.ModelsInView();
+        if (list.Count == 0)
+            menu.Items.Add(new MenuItem { Header = "当前结果里没有模型信息", IsEnabled = false });
+        foreach (var (model, count) in list)
+        {
+            var name = "模型 · " + model;
+            menu.Items.Add(Mi($"{model}   {count}", Vm.TempFilterName == name,
+                () => Vm.SetTempFilter(One(FieldType.Model, CondOp.Eq, model), name)));
+        }
+        if (Vm.HasTempFilter)
+        {
+            menu.Items.Add(new Separator());
+            var clear = new MenuItem { Header = "清除筛选" };
+            clear.Click += (_, _) => Vm.ClearFilterCommand.Execute(null);
+            menu.Items.Add(clear);
+        }
+        OpenMenu((UIElement)sender, menu);
+    }
+
     private void OnFilterClear(object sender, RoutedEventArgs e) => Vm.ClearFilterCommand.Execute(null);
+
+    /// <summary>条件树：真正的复杂组合还是走它，只是不摆在台面上。</summary>
+    private void OnAdvancedFilter(object sender, RoutedEventArgs e)
+    {
+        var win = new ColumnEditorWindow(null, filterMode: true) { Owner = this };
+        if (win.ShowDialog() == true) Vm.SetTempFilter(win.Tree, "高级筛选");
+    }
+
+    // ================= 胶片条：滚轮横滚 / 拖高度 =================
+
+    private void OnFilmWheel(object sender, MouseWheelEventArgs e)
+    {
+        FilmScroll.ScrollToHorizontalOffset(FilmScroll.HorizontalOffset - e.Delta);
+        e.Handled = true;
+    }
+
+    private Point _filmDragStart;
+    private double _filmDragFrom;
+    private bool _filmDragging;
+
+    private void OnFilmDragStart(object sender, MouseButtonEventArgs e)
+    {
+        _filmDragStart = e.GetPosition(this);
+        _filmDragFrom = Vm.FilmHeight;
+        _filmDragging = true;
+        (sender as UIElement)?.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnFilmDragMove(object sender, MouseEventArgs e)
+    {
+        if (!_filmDragging || e.LeftButton != MouseButtonState.Pressed) return;
+        var p = e.GetPosition(this);
+        Vm.FilmHeight = Math.Clamp(_filmDragFrom - (p.Y - _filmDragStart.Y), 48, 300);
+    }
+
+    private void OnFilmDragEnd(object sender, MouseButtonEventArgs e)
+    {
+        if (!_filmDragging) return;
+        _filmDragging = false;
+        (sender as UIElement)?.ReleaseMouseCapture();
+        e.Handled = true;
+    }
+
+    private void ScrollFilmToCurrent()
+    {
+        int i = Vm.FilmstripIndex;
+        if (i < 0) return;
+        if (FilmList.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement c)
+            c.BringIntoView();
+    }
+
 
     private void OnTogglePanel(object sender, RoutedEventArgs e) => Vm.PanelCollapsed = !Vm.PanelCollapsed;
 

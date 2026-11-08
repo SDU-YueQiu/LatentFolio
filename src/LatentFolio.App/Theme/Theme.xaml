@@ -12,6 +12,7 @@
     <c:Num x:Key="Num" />
     <c:DoubleToGridLength x:Key="D2G" />
     <c:HexToBrush x:Key="HexB" />
+    <c:FilmWidth x:Key="FilmW" />
 
     <!-- ================= 颜色 ================= -->
     <Color x:Key="C.Window">#FFFFFFFF</Color>
@@ -418,21 +419,22 @@
 
     <!-- ================= 边栏折叠手柄（贴在栏的内边缘，垂直居中） ================= -->
     <Style x:Key="Btn.Tab" TargetType="Button">
-        <Setter Property="Width" Value="16" />
-        <Setter Property="Height" Value="64" />
+        <Setter Property="Width" Value="22" />
+        <Setter Property="Height" Value="88" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="FontSize" Value="12" />
-        <Setter Property="Foreground" Value="{StaticResource B.Text3}" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="bd" Background="#E8EAEE" CornerRadius="8" BorderThickness="1"
+                    <Border x:Name="bd" Background="#ECEEF2" CornerRadius="10" BorderThickness="1"
                             BorderBrush="{StaticResource B.Border}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{StaticResource B.AccentSoft}" />
+                            <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource B.Accent}" />
                             <Setter Property="Foreground" Value="{StaticResource B.Accent}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -518,18 +520,41 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
+                            <!-- 勾选标记：勾了就把底色和勾一起显示 -->
+                            <TextBlock x:Name="check" Grid.Column="0" Text="✓" FontSize="11" Margin="0,0,7,0"
+                                       VerticalAlignment="Center" Foreground="{StaticResource B.Accent}"
+                                       Visibility="Collapsed" />
                             <ContentPresenter Grid.Column="0" ContentSource="Icon" VerticalAlignment="Center"
                                               Margin="0,0,8,0" />
                             <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
                                               VerticalAlignment="Center" />
                             <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}"
                                        Foreground="{StaticResource B.Text3}" Margin="20,0,0,0" />
+                            <TextBlock x:Name="arrow" Grid.Column="3" Text="›" FontSize="13" Margin="14,0,0,0"
+                                       VerticalAlignment="Center" Foreground="{StaticResource B.Text3}"
+                                       Visibility="Collapsed" />
+                            <!-- 子菜单：之前这个 Popup 是空的，二级菜单根本弹不出内容 -->
                             <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Right"
-                                   IsOpen="{TemplateBinding IsSubmenuOpen}" Focusable="False" />
+                                   IsOpen="{TemplateBinding IsSubmenuOpen}" Focusable="False"
+                                   HorizontalOffset="2" VerticalOffset="-6">
+                                <Border Background="White" BorderBrush="{StaticResource B.Border}"
+                                        BorderThickness="1" CornerRadius="9" Padding="4" Margin="0,0,4,0">
+                                    <StackPanel IsItemsHost="True"
+                                                KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                </Border>
+                            </Popup>
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="Role" Value="SubmenuHeader">
+                            <Setter TargetName="arrow" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="check" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Sel}" />
+                        </Trigger>
                         <Trigger Property="IsHighlighted" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Hover}" />
                         </Trigger>
