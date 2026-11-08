@@ -1043,8 +1043,10 @@ public sealed partial class AppVm : ObservableObject
     private void CloseViewer()
     {
         ViewerOpen = false;
-        Current = null;
         ViewerImage = null;
+        VsrBadge = "";
+        // 退出放大回到网格：把右栏还给「当前选中的那张」，不然面板会莫名其妙空着
+        Current = Selection.Count > 0 ? Selection[^1] : null;
         ViewerClosed?.Invoke();
     }
 
