@@ -139,9 +139,9 @@
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True">
                 <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnScanClick" ToolTip="重新扫描图库" AutomationProperties.Name="重新扫描"><Button.Content><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
-                <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnMinClick"><Button.Content><TextBlock Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
-                <Button x:Name="MaxBtn" Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnMaxClick"><Button.Content><TextBlock Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
-                <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnCloseClick"><Button.Content><TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
+                <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnMinClick" AutomationProperties.Name="最小化"><Button.Content><TextBlock Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
+                <Button x:Name="MaxBtn" Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnMaxClick" AutomationProperties.Name="最大化"><Button.Content><TextBlock Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
+                <Button Width="40" Height="34" Style="{StaticResource Btn.Ghost}" Click="OnCloseClick" AutomationProperties.Name="关闭"><Button.Content><TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
             </StackPanel>
         </Grid>
 
@@ -419,8 +419,7 @@
 
                     <Grid Grid.Row="0" Grid.ColumnSpan="2" Margin="18,12,14,8">
                         <StackPanel Orientation="Horizontal">
-                            <Button Style="{StaticResource Btn.Ghost}" Click="OnCloseViewer"
-                                    Padding="8,4">
+                            <Button Style="{StaticResource Btn.Ghost}" Click="OnCloseViewer" AutomationProperties.Name="返回" Padding="8,4">
                                 <Button.Content>
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="11"
@@ -443,7 +442,7 @@
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                             <Button Content="RTX VSR" AutomationProperties.Name="RTX VSR 按钮" Style="{StaticResource Btn.Outline}" Padding="10,4"
                                     FontSize="12" Click="OnVsrClick" Margin="0,0,6,0" />
-                            <Button Style="{StaticResource Btn.Ghost}" Padding="10,4" Click="OnToggleOriginal" ToolTip="显示原图"><Button.Content><TextBlock Text="&#xE890;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
+                            <Button Style="{StaticResource Btn.Ghost}" Padding="10,4" Click="OnToggleOriginal" ToolTip="显示原图" AutomationProperties.Name="显示原图"><Button.Content><TextBlock Text="&#xE890;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
                             <Button Style="{StaticResource Btn.Ghost}" Click="OnPrev" Padding="10,5" ToolTip="上一张"><Button.Content><TextBlock Text="&#xE7A7;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
                             <Button Style="{StaticResource Btn.Ghost}" Click="OnNext" Padding="10,5" ToolTip="下一张"><Button.Content><TextBlock Text="&#xE7A8;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource B.Text2}" /></Button.Content></Button>
                             <Button Content="在文件夹中显示" Style="{StaticResource Btn.Ghost}" Padding="10,5"
@@ -629,8 +628,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
                     <StackPanel Orientation="Horizontal" Margin="20,14,20,10">
-                        <Button Style="{StaticResource Btn.Ghost}" Click="OnCloseStats"
-                                Padding="8,4">
+                        <Button Style="{StaticResource Btn.Ghost}" Click="OnCloseStats" AutomationProperties.Name="返回图库" Padding="8,4">
                             <Button.Content>
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="11"
@@ -672,6 +670,7 @@
         </Border>
     </Grid>
 </Window>
+
 
 
 
