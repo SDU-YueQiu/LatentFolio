@@ -18,7 +18,9 @@
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
-        <!-- 一个格子：图按原比例铺满自己的宽度（不裁剪），下面文件名 + 星级 -->
+        <!-- ── 图库格子 ───────────────────────────────────────────────
+             图按原比例铺满自己的宽度（不裁剪）；选中态靠两层 1px 精度描边，
+             不挤压内容：外层 2px 主色 + 内层 2px 白，正好落在 4px 内边距上。 -->
         <DataTemplate x:Key="TileTpl" DataType="{x:Type vm:ImageVm}">
             <Grid Background="Transparent" AutomationProperties.Name="{Binding FileName}">
                 <Grid.RowDefinitions>
@@ -28,13 +30,13 @@
                 </Grid.RowDefinitions>
 
                 <Grid Grid.Row="0">
-                    <Border Background="{StaticResource B.Tile}" CornerRadius="7" ClipToBounds="True">
+                    <Border Background="{StaticResource B.Inset}" CornerRadius="10" ClipToBounds="True">
                         <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="Uniform"
                                RenderOptions.BitmapScalingMode="Linear"
                                c:ThumbLoader.PixelWidth="{Binding DataContext.TileSize,
                                            RelativeSource={RelativeSource AncestorType=Window}}" />
                     </Border>
-                    <Border Background="#E5484D" CornerRadius="5" Padding="7,2"
+                    <Border Background="{StaticResource B.Danger}" CornerRadius="999" Padding="8,2"
                             HorizontalAlignment="Center" VerticalAlignment="Center"
                             Visibility="{Binding IsMissing, Converter={StaticResource B2V}}">
                         <TextBlock Text="源文件丢失" Foreground="White" FontSize="11" />
@@ -45,7 +47,7 @@
                            Foreground="{StaticResource B.Text2}" TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center" Margin="2,0" />
 
-                <c:RatingBar Grid.Row="2" Value="{Binding Rating, Mode=TwoWay}" StarSize="9" Gap="3"
+                <c:RatingBar Grid.Row="2" Value="{Binding Rating, Mode=TwoWay}" StarSize="8.5" Gap="3"
                              VerticalAlignment="Center" Margin="2,0,0,0" />
             </Grid>
         </DataTemplate>
@@ -56,17 +58,22 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="sel" Background="Transparent" CornerRadius="9"
-                                BorderThickness="2" BorderBrush="Transparent" Padding="4">
-                            <ContentPresenter />
-                        </Border>
+                        <Grid Background="Transparent">
+                            <Border x:Name="bd" Background="Transparent" CornerRadius="12" Padding="4">
+                                <ContentPresenter />
+                            </Border>
+                            <Border x:Name="ring" CornerRadius="12" BorderThickness="2"
+                                    BorderBrush="Transparent" IsHitTestVisible="False" />
+                            <Border x:Name="inner" Margin="2" CornerRadius="10" BorderThickness="2"
+                                    BorderBrush="Transparent" IsHitTestVisible="False" />
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="sel" Property="Background" Value="{StaticResource B.Hover}" />
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Hover}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="sel" Property="BorderBrush" Value="{StaticResource B.Accent}" />
-                                <Setter TargetName="sel" Property="Background" Value="{StaticResource B.Sel}" />
+                                <Setter TargetName="ring" Property="BorderBrush" Value="{StaticResource B.Accent}" />
+                                <Setter TargetName="inner" Property="BorderBrush" Value="White" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -74,8 +81,42 @@
             </Setter>
         </Style>
 
+        <!-- ── 左栏导航行：32 / 30 高，选中行 = 淡主色底 + 左 3px 主色杆 ── -->
+        <Style x:Key="P.Shell.NavRow" TargetType="ListBoxItem" BasedOn="{StaticResource RowItem}">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Grid>
+                            <Border x:Name="bd" Background="Transparent" CornerRadius="9"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </Border>
+                            <Border x:Name="bar" Width="3" Height="16" CornerRadius="2" Margin="1,0,0,0"
+                                    Background="{StaticResource B.Accent}" HorizontalAlignment="Left"
+                                    VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Hover}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.AccentSoft}" />
+                                <Setter TargetName="bar" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="P.Shell.TreeRow" TargetType="ListBoxItem" BasedOn="{StaticResource P.Shell.NavRow}">
+            <Setter Property="Height" Value="30" />
+        </Style>
+
         <!-- 资源库行：折叠后整行隐藏 -->
-        <Style x:Key="FolderRow" TargetType="ListBoxItem" BasedOn="{StaticResource RowItem}">
+        <Style x:Key="FolderRow" TargetType="ListBoxItem" BasedOn="{StaticResource P.Shell.TreeRow}">
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Visible}" Value="False">
                     <Setter Property="Visibility" Value="Collapsed" />
@@ -83,36 +124,107 @@
             </Style.Triggers>
         </Style>
 
-        <!-- 人物墙一格 -->
+        <!-- ── 人物墙一格 ── -->
         <DataTemplate x:Key="PersonTpl" DataType="{x:Type vm:PersonVm}">
-            <Border x:Name="card" Width="204" Margin="6" Background="Transparent" CornerRadius="10" Padding="5"
+            <Border x:Name="card" Width="200" Margin="6" Background="Transparent" CornerRadius="12"
+                    BorderThickness="1" BorderBrush="Transparent" Padding="0"
                     Cursor="Hand" MouseLeftButtonDown="OnPersonClick" MouseRightButtonUp="OnPersonAvatar"
                     AutomationProperties.Name="{Binding Display}">
                 <StackPanel>
-                    <Grid>
-                        <Border Height="184" Background="{StaticResource B.Tile}" CornerRadius="9" ClipToBounds="True">
+                    <Border Height="198" Background="{StaticResource B.Inset}" CornerRadius="12"
+                            ClipToBounds="True">
+                        <Grid>
                             <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill"
                                    RenderOptions.BitmapScalingMode="HighQuality"
                                    c:ThumbLoader.PixelWidth="204" />
-                        </Border>
-                        <Border Background="#B0000000" CornerRadius="8" Padding="6,1" Margin="6"
-                                HorizontalAlignment="Right" VerticalAlignment="Bottom">
-                            <TextBlock Text="{Binding Count}" FontSize="10.5" Foreground="White" />
-                        </Border>
-                    </Grid>
+                            <Border Background="{StaticResource B.GlassDark}" CornerRadius="999"
+                                    Padding="6,2" Margin="8" HorizontalAlignment="Right"
+                                    VerticalAlignment="Top">
+                                <TextBlock Text="{Binding Count}" FontSize="10" Foreground="White" />
+                            </Border>
+                        </Grid>
+                    </Border>
                     <TextBlock Text="{Binding Display}" FontSize="13" FontWeight="SemiBold"
-                               TextTrimming="CharacterEllipsis" Margin="3,8,3,0" />
-                    <TextBlock Text="{Binding TagSub}" FontSize="10" Foreground="{StaticResource B.Text3}"
-                               TextTrimming="CharacterEllipsis" Margin="3,1,3,2"
-                               Visibility="{Binding TagSub, Converter={StaticResource NE2V}}" />
+                               TextTrimming="CharacterEllipsis" Margin="10,8,10,0" />
+                    <Grid Height="16" Margin="10,2,10,10">
+                        <TextBlock Text="{Binding TagSub}" FontSize="10.5" Foreground="{StaticResource B.Text3}"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                   Visibility="{Binding TagSub, Converter={StaticResource NE2V}}" />
+                    </Grid>
                 </StackPanel>
             </Border>
             <DataTemplate.Triggers>
                 <Trigger SourceName="card" Property="IsMouseOver" Value="True">
-                    <Setter TargetName="card" Property="Background" Value="{StaticResource B.Hover}" />
+                    <Setter TargetName="card" Property="BorderBrush" Value="{StaticResource B.BorderStrong}" />
                 </Trigger>
             </DataTemplate.Triggers>
         </DataTemplate>
+
+        <!-- ── 已生效的筛选条件钉（悬停加深一档） ── -->
+        <Style x:Key="P.Shell.Chip" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource B.AccentSoft}" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="Margin" Value="0,0,6,6" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource B.AccentSoft2}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 56px 图标轨上的方形按钮 -->
+        <Style x:Key="P.Shell.RailBtn" TargetType="Button" BasedOn="{StaticResource Btn.Ghost}">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Margin" Value="0,2" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <!-- ── 关闭键：悬停红底白字（只覆盖这一个按钮） ── -->
+        <Style x:Key="P.Shell.CloseWin" TargetType="Button" BasedOn="{StaticResource Btn.Win}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Danger}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Danger}" />
+                                <Setter TargetName="bd" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ── 忙碌进度条：4px 圆角细条，主色填充 / 凹槽底 ── -->
+        <Style x:Key="P.Shell.BusyBar" TargetType="ProgressBar">
+            <Setter Property="Height" Value="4" />
+            <Setter Property="Background" Value="{StaticResource B.Inset}" />
+            <Setter Property="Foreground" Value="{StaticResource B.Accent}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="2" ClipToBounds="True">
+                            <Grid>
+                                <Border x:Name="PART_Track" Background="Transparent" />
+                                <Border x:Name="PART_Indicator" HorizontalAlignment="Left" CornerRadius="2"
+                                        Background="{TemplateBinding Foreground}" />
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <!-- 整窗一圈描边 -->
@@ -132,32 +244,44 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Orientation="Horizontal" Margin="14,0,0,0" VerticalAlignment="Center">
-                    <Border Width="26" Height="26" CornerRadius="8" Background="{StaticResource B.Accent}">
-                        <TextBlock Text="L" Foreground="White" FontWeight="Bold" FontSize="14"
+                <StackPanel Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
+                    <Border Width="24" Height="24" CornerRadius="7" Background="{StaticResource B.Logo}">
+                        <TextBlock Text="L" Foreground="White" FontWeight="SemiBold" FontSize="13"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <TextBlock Text="LatentFolio" Style="{StaticResource T.Title}" Margin="10,0,0,0"
                                VerticalAlignment="Center" />
-                    <Border Style="{StaticResource VLine}" Height="14" Margin="12,0,12,0"
+                    <Border Style="{StaticResource VLine}" Height="14" Margin="12,0"
                             VerticalAlignment="Center" />
                     <TextBlock Text="{Binding LibrarySummary}" Style="{StaticResource T.Sub}"
-                               VerticalAlignment="Center" />
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="240" />
                 </StackPanel>
 
-                <Border Grid.Column="1" Height="30" MaxWidth="560" Margin="24,0"
-                        Background="{StaticResource B.Panel}" CornerRadius="15"
-                        BorderBrush="{StaticResource B.Border}" BorderThickness="1"
-                        VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <Border Grid.Column="1" MaxWidth="520" Height="32" CornerRadius="999"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{StaticResource B.Inset}" />
+                            <Setter Property="BorderBrush" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="1" />
+                            <Style.Triggers>
+                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource B.Window}" />
+                                    <Setter Property="BorderBrush" Value="{StaticResource B.Accent}" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="12"
-                                   Foreground="{StaticResource B.Text3}" Margin="12,0,7,0"
+                        <TextBlock Grid.Column="0" Text="&#xE721;" FontFamily="{StaticResource F.Icon}" FontSize="13"
+                                   Foreground="{StaticResource B.Text3}" Margin="12,0,8,0"
                                    VerticalAlignment="Center" />
-                        <TextBox Grid.Column="1" BorderThickness="0" Background="Transparent" Padding="0,0,10,0"
+                        <TextBox Grid.Column="1" BorderThickness="0" Background="Transparent" Padding="0,0,12,0"
                                  FontSize="12.5" VerticalContentAlignment="Center"
                                  AutomationProperties.Name="搜索"
                                  Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=250}" />
@@ -166,33 +290,47 @@
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Button Width="38" Height="32" Style="{StaticResource Btn.Ghost}" Click="OnSettingsClick"
-                            ToolTip="设置" AutomationProperties.Name="设置">
-                        <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                    <Button Style="{StaticResource Btn.Icon}" HorizontalContentAlignment="Center"
+                            Click="OnSettingsClick" ToolTip="设置" AutomationProperties.Name="设置">
+                        <TextBlock Text="&#xE713;" FontFamily="{StaticResource F.Icon}" FontSize="13"
                                    Foreground="{StaticResource B.Text2}" />
                     </Button>
-                    <Button Width="38" Height="32" Style="{StaticResource Btn.Ghost}" Click="OnScanClick"
-                            ToolTip="重新扫描图库" AutomationProperties.Name="重新扫描">
-                        <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                    <Button Style="{StaticResource Btn.Icon}" HorizontalContentAlignment="Center"
+                            Click="OnScanClick" ToolTip="重新扫描图库" AutomationProperties.Name="重新扫描">
+                        <TextBlock Text="&#xE72C;" FontFamily="{StaticResource F.Icon}" FontSize="13"
                                    Foreground="{StaticResource B.Text2}" />
                     </Button>
-                    <Border Style="{StaticResource VLine}" Height="14" Margin="6,0" VerticalAlignment="Center" />
-                    <Button Width="38" Height="32" Style="{StaticResource Btn.Ghost}" Click="OnMinClick"
-                            AutomationProperties.Name="最小化">
-                        <TextBlock Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                    <Border Style="{StaticResource VLine}" Height="14" Margin="8,0" VerticalAlignment="Center" />
+                    <Button Style="{StaticResource Btn.Win}" HorizontalContentAlignment="Center"
+                            Click="OnMinClick" AutomationProperties.Name="最小化">
+                        <TextBlock Text="&#xE921;" FontFamily="{StaticResource F.Icon}" FontSize="12"
                                    Foreground="{StaticResource B.Text2}" />
                     </Button>
-                    <Button x:Name="MaxBtn" Width="38" Height="32" Style="{StaticResource Btn.Ghost}"
+                    <Button x:Name="MaxBtn" Style="{StaticResource Btn.Win}" HorizontalContentAlignment="Center"
                             Click="OnMaxClick" AutomationProperties.Name="最大化">
-                        <TextBlock Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                        <TextBlock Text="&#xE922;" FontFamily="{StaticResource F.Icon}" FontSize="12"
                                    Foreground="{StaticResource B.Text2}" />
                     </Button>
-                    <Button Width="38" Height="32" Style="{StaticResource Btn.Ghost}" Click="OnCloseClick"
+                    <Button Style="{StaticResource P.Shell.CloseWin}" Click="OnCloseClick"
                             AutomationProperties.Name="关闭">
-                        <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="12"
-                                   Foreground="{StaticResource B.Text2}" />
+                        <TextBlock Text="&#xE8BB;" FontFamily="{StaticResource F.Icon}" FontSize="12">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMouseOver,
+                                                    RelativeSource={RelativeSource AncestorType=Button}}"
+                                                     Value="True">
+                                            <Setter Property="Foreground" Value="White" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </Button>
                 </StackPanel>
+
+                <Border Grid.ColumnSpan="3" Style="{StaticResource HLine}" VerticalAlignment="Bottom" />
             </Grid>
 
             <!-- ── 主体 ── -->
@@ -220,53 +358,66 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0" Margin="8,8,8,0">
-                        <Button Style="{StaticResource Btn.Ghost}" HorizontalContentAlignment="Stretch"
-                                Click="OnOverviewClick" Padding="10,7" AutomationProperties.Name="总览">
-                            <Grid>
+                    <!-- 总览 / 统计 / 标签 -->
+                    <Grid Grid.Row="0" Margin="8,10,8,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel>
+                            <Button Style="{StaticResource Btn.Ghost}" HorizontalContentAlignment="Stretch"
+                                    Height="32" Padding="8,0" Click="OnOverviewClick"
+                                    AutomationProperties.Name="总览">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE80F;" FontFamily="{StaticResource F.Icon}"
+                                               FontSize="13" Foreground="{StaticResource B.Text2}"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="总览 · 全部图片" Margin="8,0,0,0"
+                                               VerticalAlignment="Center" FontSize="12.5" />
+                                    <TextBlock Grid.Column="2" Text="{Binding TotalCount, StringFormat={}{0:N0}}"
+                                               Style="{StaticResource T.Sub}" VerticalAlignment="Center"
+                                               Margin="8,0,0,0" />
+                                </Grid>
+                            </Button>
+                            <Grid Margin="0,6,0,0">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="6" />
+                                    <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="&#xE8A9;" FontFamily="Segoe MDL2 Assets"
-                                           FontSize="13" Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="总览 · 全部图片" Margin="9,0,0,0" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="2" Text="{Binding TotalCount, StringFormat={}{0:N0}}"
-                                           Style="{StaticResource T.Sub}" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                <Button Content="统计" FontSize="11.5" Height="28"
+                                        Style="{StaticResource Btn.Outline}" Click="OnStatsClick"
+                                        AutomationProperties.Name="统计" />
+                                <Button Grid.Column="2" Content="标签" FontSize="11.5" Height="28"
+                                        Style="{StaticResource Btn.Outline}" Click="OnTagsClick"
+                                        AutomationProperties.Name="标签体系" />
                             </Grid>
-                        </Button>
-                        <Grid Margin="0,6,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="6" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Button Content="统计" FontSize="11.5" Height="28"
-                                    Style="{StaticResource Btn.Outline}" Click="OnStatsClick"
-                                    AutomationProperties.Name="统计" />
-                            <Button Grid.Column="2" Content="标签" FontSize="11.5" Height="28"
-                                    Style="{StaticResource Btn.Outline}" Click="OnTagsClick"
-                                    AutomationProperties.Name="标签体系" />
-                        </Grid>
-                    </StackPanel>
+                        </StackPanel>
+                        <Border Grid.Row="1" Style="{StaticResource HLine}" Margin="0,10,0,0" />
+                    </Grid>
 
-                    <Grid Grid.Row="1" Margin="10,14,6,4">
+                    <!-- 我的栏 -->
+                    <Grid Grid.Row="1" Margin="14,10,14,10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="我的栏" Style="{StaticResource T.Section}" VerticalAlignment="Center" />
                         <Button Grid.Column="1" Content="+ 新建" Style="{StaticResource Btn.Ghost}"
-                                FontSize="11.5" Padding="7,3" Click="OnNewColumnClick"
-                                AutomationProperties.Name="新建栏" />
+                                FontSize="11.5" Padding="6,2" Foreground="{StaticResource B.Text3}"
+                                Click="OnNewColumnClick" AutomationProperties.Name="新建栏" />
                     </Grid>
 
-                    <Grid Grid.Row="2" Margin="8,0,8,0">
+                    <Grid Grid.Row="2" Margin="6,0,6,0">
                         <ListBox x:Name="ColList" Background="Transparent" BorderThickness="0"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                  ItemsSource="{Binding Columns}"
-                                 ItemContainerStyle="{StaticResource RowItem}"
+                                 ItemContainerStyle="{StaticResource P.Shell.NavRow}"
                                  AllowDrop="True"
                                  PreviewMouseLeftButtonDown="OnColMouseDown"
                                  PreviewMouseRightButtonUp="OnColRightUp"
@@ -282,7 +433,7 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <Ellipse Width="7" Height="7" VerticalAlignment="Center" Margin="1,0,8,0"
+                                        <Ellipse Width="6" Height="6" VerticalAlignment="Center" Margin="1,0,8,0"
                                                  Fill="{Binding Color, Converter={StaticResource HexB}}" />
                                         <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
                                                    VerticalAlignment="Center" FontSize="12.5" />
@@ -299,8 +450,7 @@
                     <Border Grid.Row="3" Height="7" Background="Transparent" Cursor="SizeNS" Tag="cols"
                             MouseLeftButtonDown="OnLeftRowDragStart" MouseMove="OnLeftRowDragMove"
                             MouseLeftButtonUp="OnLeftRowDragEnd" AutomationProperties.Name="调整我的栏高度">
-                        <Border Height="1" VerticalAlignment="Center" Margin="12,0"
-                                Background="{StaticResource B.Border}" IsHitTestVisible="False" />
+                        <Border Style="{StaticResource HLine}" VerticalAlignment="Center" IsHitTestVisible="False" />
                     </Border>
 
                     <!-- 人物：10 个一直铺满栏宽，卡片随宽度变正方形 -->
@@ -309,20 +459,26 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
-                        <Grid Margin="18,6,16,6">
+                        <Grid Margin="14,10,14,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="人物" Style="{StaticResource T.Section}" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Style="{StaticResource Btn.Ghost}" FontSize="11.5" Padding="6,2"
+                            <Button Grid.Column="1" Style="{StaticResource Btn.Ghost}" Padding="6,2"
                                     Click="OnPeopleClick" AutomationProperties.Name="全部人物">
-                                <TextBlock Text="全部 ›" Foreground="{StaticResource B.Text3}" />
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="全部" Style="{StaticResource T.Sub}"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="&#xE76C;" FontFamily="{StaticResource F.Icon}" FontSize="10"
+                                               Foreground="{StaticResource B.Text3}" Margin="4,0,0,0"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
                             </Button>
                         </Grid>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
-                            <ItemsControl ItemsSource="{Binding PeoplePreview}" Margin="12,0,8,6"
+                            <ItemsControl ItemsSource="{Binding PeoplePreview}" Margin="12,0,8,4"
                                           Height="{Binding PeopleBlockHeight}" VerticalAlignment="Top">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -331,15 +487,30 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Margin="2" Background="{StaticResource B.Tile}" CornerRadius="6"
+                                        <Border x:Name="cell" Margin="2" Background="{StaticResource B.Inset}"
+                                                CornerRadius="8" BorderThickness="1.5" BorderBrush="Transparent"
                                                 ClipToBounds="True" MouseLeftButtonDown="OnPersonClick"
                                                 Cursor="Hand" AutomationProperties.Name="{Binding Display}">
                                             <Border.Height>
                                                 <Binding Path="DataContext.PeopleCardSide"
                                                          RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
                                             </Border.Height>
-                                            <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
+                                            <Grid>
+                                                <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
+                                                <Border Background="{StaticResource B.GlassDark}" CornerRadius="999"
+                                                        Padding="4,1" Margin="4" HorizontalAlignment="Right"
+                                                        VerticalAlignment="Bottom">
+                                                    <TextBlock Text="{Binding Count}" FontSize="10"
+                                                               Foreground="White" />
+                                                </Border>
+                                            </Grid>
                                         </Border>
+                                        <DataTemplate.Triggers>
+                                            <Trigger SourceName="cell" Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="cell" Property="BorderBrush"
+                                                        Value="{StaticResource B.Accent}" />
+                                            </Trigger>
+                                        </DataTemplate.Triggers>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -349,8 +520,7 @@
                     <Border Grid.Row="5" Height="7" Background="Transparent" Cursor="SizeNS" Tag="people"
                             MouseLeftButtonDown="OnLeftRowDragStart" MouseMove="OnLeftRowDragMove"
                             MouseLeftButtonUp="OnLeftRowDragEnd" AutomationProperties.Name="调整人物高度">
-                        <Border Height="1" VerticalAlignment="Center" Margin="12,0"
-                                Background="{StaticResource B.Border}" IsHitTestVisible="False" />
+                        <Border Style="{StaticResource HLine}" VerticalAlignment="Center" IsHitTestVisible="False" />
                     </Border>
 
                     <!-- 资源库 -->
@@ -359,7 +529,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
-                        <Grid Margin="18,0,10,6">
+                        <Grid Margin="14,10,14,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
@@ -368,15 +538,19 @@
                             <TextBlock Text="资源库" Style="{StaticResource T.Section}" VerticalAlignment="Center" />
                             <Button Grid.Column="1" Content="{Binding FolderSortLabel}"
                                     Style="{StaticResource Btn.Ghost}" FontSize="11" Padding="6,2"
+                                    Foreground="{StaticResource B.Text3}"
                                     VerticalAlignment="Center" Click="OnFolderSortMenu"
                                     AutomationProperties.Name="资源库排序" Margin="0,0,2,0" />
-                            <Button Grid.Column="2" Content="…"
-                                    Style="{StaticResource Btn.Ghost}" FontSize="13" Padding="8,2"
+                            <Button Grid.Column="2" Style="{StaticResource Btn.IconSm}"
+                                    HorizontalContentAlignment="Center"
                                     VerticalAlignment="Center" Click="OnLibraryMenu"
-                                    AutomationProperties.Name="图库目录菜单" ToolTip="{Binding LibraryRoot}" />
+                                    AutomationProperties.Name="图库目录菜单" ToolTip="{Binding LibraryRoot}">
+                                <TextBlock Text="&#xE712;" FontFamily="{StaticResource F.Icon}" FontSize="13"
+                                           Foreground="{StaticResource B.Text2}" />
+                            </Button>
                         </Grid>
                         <ListBox x:Name="FolderList" Grid.Row="1" Background="Transparent" BorderThickness="0"
-                                 Margin="8,0,8,4"
+                                 Margin="6,0,6,4"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                  ItemsSource="{Binding Folders}" SelectionChanged="OnFolderSelected"
                                  ItemContainerStyle="{StaticResource FolderRow}">
@@ -388,22 +562,25 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <Border Width="14" Margin="{Binding DepthText}" Background="Transparent"
-                                                MouseLeftButtonDown="OnFolderChevron"
-                                                Visibility="{Binding HasChildren, Converter={StaticResource B2V}}">
-                                            <TextBlock FontSize="8" Foreground="{StaticResource B.Text3}"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Text" Value="▾" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding Expanded}" Value="False">
-                                                                <Setter Property="Text" Value="▸" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
+                                        <Border Width="14" Margin="{Binding DepthText}" Background="Transparent">
+                                            <!-- 缩进位始终占宽，叶子节点也能和父级对齐；只有父级那格可点 -->
+                                            <Border Background="Transparent" MouseLeftButtonDown="OnFolderChevron"
+                                                    Visibility="{Binding HasChildren, Converter={StaticResource B2V}}">
+                                                <TextBlock FontFamily="{StaticResource F.Icon}" FontSize="10"
+                                                           Foreground="{StaticResource B.Text3}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Text" Value="&#xE70D;" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Expanded}" Value="False">
+                                                                    <Setter Property="Text" Value="&#xE76C;" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Border>
                                         </Border>
                                         <TextBlock Grid.Column="1" Text="{Binding Display}" FontSize="12.5"
                                                    TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
@@ -417,7 +594,7 @@
 
                     <!-- 常驻底部：已删除 -->
                     <Button Grid.Row="7" Style="{StaticResource Btn.Ghost}" HorizontalContentAlignment="Stretch"
-                            Margin="8,0,8,8" Padding="10,7" Click="OnDeletedClick"
+                            Height="32" Margin="8,0,8,8" Padding="8,0" Click="OnDeletedClick"
                             AutomationProperties.Name="已删除">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -425,12 +602,14 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                            <TextBlock Text="&#xE74D;" FontFamily="{StaticResource F.Icon}" FontSize="12"
                                        Foreground="{StaticResource B.Text3}" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Text="已删除" Margin="9,0,0,0" VerticalAlignment="Center"
-                                       Foreground="{StaticResource B.Text2}" />
-                            <TextBlock Grid.Column="2" Text="{Binding DeletedCount, StringFormat={}{0:N0}}"
-                                       Style="{StaticResource T.Sub}" VerticalAlignment="Center" Margin="14,0,0,0" />
+                            <TextBlock Grid.Column="1" Text="已删除" Margin="8,0,0,0" VerticalAlignment="Center"
+                                       Style="{StaticResource T.Label}" />
+                            <Border Grid.Column="2" Style="{StaticResource Pill.Danger}" Margin="8,0,0,0">
+                                <TextBlock Text="{Binding DeletedCount, StringFormat={}{0:N0}}" FontSize="11.5"
+                                           Foreground="{StaticResource B.Danger}" />
+                            </Border>
                         </Grid>
                     </Button>
                 </Grid>
@@ -439,35 +618,34 @@
                 <Grid Grid.Column="0" Background="{StaticResource B.Panel}"
                       Visibility="{Binding LeftCollapsed, Converter={StaticResource B2V}}">
                     <StackPanel Margin="0,10,0,0" HorizontalAlignment="Center">
-                        <Button Style="{StaticResource Btn.Ghost}" Width="40" Height="38" Margin="0,2" Padding="0"
-                                FontSize="14" Foreground="{StaticResource B.Text2}"
-                                Click="OnOverviewClick" ToolTip="总览" AutomationProperties.Name="总览">
-                            <TextBlock Text="览" />
+                        <Button Style="{StaticResource P.Shell.RailBtn}" Click="OnOverviewClick" ToolTip="总览"
+                                AutomationProperties.Name="总览">
+                            <TextBlock Text="&#xE80F;" FontFamily="{StaticResource F.Icon}" FontSize="15"
+                                       Foreground="{StaticResource B.Text2}" />
                         </Button>
-                        <Button Style="{StaticResource Btn.Ghost}" Width="40" Height="38" Margin="0,2" Padding="0"
-                                FontSize="14" Foreground="{StaticResource B.Text2}"
-                                Click="OnNewColumnClick" ToolTip="新建栏" AutomationProperties.Name="新建栏">
-                            <TextBlock Text="栏" />
+                        <Button Style="{StaticResource P.Shell.RailBtn}" Click="OnNewColumnClick" ToolTip="新建栏"
+                                AutomationProperties.Name="新建栏">
+                            <TextBlock Text="+" FontSize="15" Foreground="{StaticResource B.Text2}" />
                         </Button>
-                        <Button Style="{StaticResource Btn.Ghost}" Width="40" Height="38" Margin="0,2" Padding="0"
-                                FontSize="14" Foreground="{StaticResource B.Text2}"
-                                Click="OnPeopleClick" ToolTip="人物" AutomationProperties.Name="人物">
-                            <TextBlock Text="人" />
+                        <Button Style="{StaticResource P.Shell.RailBtn}" Click="OnPeopleClick" ToolTip="人物"
+                                AutomationProperties.Name="人物">
+                            <TextBlock Text="&#xE77B;" FontFamily="{StaticResource F.Icon}" FontSize="15"
+                                       Foreground="{StaticResource B.Text2}" />
                         </Button>
-                        <Button Style="{StaticResource Btn.Ghost}" Width="40" Height="38" Margin="0,2" Padding="0"
-                                FontSize="14" Foreground="{StaticResource B.Text2}"
-                                Click="OnLibraryMenu" ToolTip="资源库" AutomationProperties.Name="资源库">
-                            <TextBlock Text="库" />
+                        <Button Style="{StaticResource P.Shell.RailBtn}" Click="OnLibraryMenu" ToolTip="资源库"
+                                AutomationProperties.Name="资源库">
+                            <TextBlock Text="&#xE8B7;" FontFamily="{StaticResource F.Icon}" FontSize="15"
+                                       Foreground="{StaticResource B.Text2}" />
                         </Button>
-                        <Button Style="{StaticResource Btn.Ghost}" Width="40" Height="38" Margin="0,2" Padding="0"
-                                FontSize="14" Foreground="{StaticResource B.Text2}"
-                                Click="OnDeletedClick" ToolTip="已删除" AutomationProperties.Name="已删除">
-                            <TextBlock Text="删" />
+                        <Button Style="{StaticResource P.Shell.RailBtn}" Click="OnDeletedClick" ToolTip="已删除"
+                                AutomationProperties.Name="已删除">
+                            <TextBlock Text="&#xE74D;" FontFamily="{StaticResource F.Icon}" FontSize="15"
+                                       Foreground="{StaticResource B.Text2}" />
                         </Button>
-                        <Button Style="{StaticResource Btn.Ghost}" Width="40" Height="38" Margin="0,2" Padding="0"
-                                FontSize="14" Foreground="{StaticResource B.Text2}"
-                                Click="OnTagsClick" ToolTip="标签体系" AutomationProperties.Name="标签体系">
-                            <TextBlock Text="签" />
+                        <Button Style="{StaticResource P.Shell.RailBtn}" Click="OnTagsClick" ToolTip="标签体系"
+                                AutomationProperties.Name="标签体系">
+                            <TextBlock Text="&#xE8EC;" FontFamily="{StaticResource F.Icon}" FontSize="15"
+                                       Foreground="{StaticResource B.Text2}" />
                         </Button>
                     </StackPanel>
                 </Grid>
@@ -492,7 +670,7 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" Margin="20,14,18,6">
+                        <Grid Grid.Row="0" Margin="20,16,20,6">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -504,33 +682,40 @@
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Row="0" Orientation="Horizontal">
-                                <TextBlock Text="{Binding Title}" Style="{StaticResource T.Title}"
+                                <TextBlock Text="{Binding Title}" Style="{StaticResource T.Page}"
                                            VerticalAlignment="Center" />
                                 <TextBlock Text="{Binding HitCount, StringFormat={}{0:N0} 张}" Style="{StaticResource T.Sub}"
                                            Margin="10,0,0,0" VerticalAlignment="Center" />
                                 <Button Content="编辑条件" Style="{StaticResource Btn.Ghost}" FontSize="12"
-                                        Margin="8,0,0,0" Padding="8,3" Click="OnEditColumnClick"
+                                        Margin="8,0,0,0" Padding="8,2" Click="OnEditColumnClick"
                                         Visibility="{Binding IsColumnView, Converter={StaticResource B2V}}" />
                             </StackPanel>
 
                             <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                 <!-- 简易筛选：星级 / 角色 / 模型，三个都从当前结果里出 -->
-                                <Button x:Name="StarFilterBtn" Content="星级" Style="{StaticResource Btn.Outline}"
-                                        Height="30" Padding="11,0" FontSize="12" Click="OnStarFilter"
+                                <Button x:Name="StarFilterBtn" Content="星级" Style="{StaticResource Btn.Pill}"
+                                        Height="30" Click="OnStarFilter"
                                         AutomationProperties.Name="按星级筛选" />
-                                <Button x:Name="CharFilterBtn" Content="角色" Style="{StaticResource Btn.Outline}"
-                                        Height="30" Padding="11,0" FontSize="12" Margin="6,0,0,0"
+                                <Button x:Name="CharFilterBtn" Content="角色" Style="{StaticResource Btn.Pill}"
+                                        Height="30" Margin="6,0,0,0"
                                         Click="OnCharFilter" AutomationProperties.Name="按角色筛选" />
-                                <Button x:Name="ModelFilterBtn" Content="模型" Style="{StaticResource Btn.Outline}"
-                                        Height="30" Padding="11,0" FontSize="12" Margin="6,0,0,0"
+                                <Button x:Name="ModelFilterBtn" Content="模型" Style="{StaticResource Btn.Pill}"
+                                        Height="30" Margin="6,0,0,0"
                                         Click="OnModelFilter" AutomationProperties.Name="按模型筛选" />
-                                <Button Content="⋯" Style="{StaticResource Btn.Outline}" Height="30" Width="30"
-                                        Padding="0" FontSize="13" Margin="6,0,0,0" Click="OnAdvancedFilter"
-                                        ToolTip="高级筛选（条件树）" AutomationProperties.Name="高级筛选" />
-                                <Button x:Name="FilterClearBtn" Content="✕" Style="{StaticResource Btn.Ghost}"
-                                        Height="26" Width="26" Padding="0" FontSize="11" Margin="2,0,0,0"
-                                        Click="OnFilterClear" ToolTip="清除筛选" AutomationProperties.Name="清除筛选"
-                                        Visibility="{Binding HasTempFilter, Converter={StaticResource B2V}}" />
+                                <Button Style="{StaticResource Btn.Icon}" HorizontalContentAlignment="Center"
+                                        Margin="4,0,0,0" Click="OnAdvancedFilter"
+                                        ToolTip="高级筛选（条件树）" AutomationProperties.Name="高级筛选">
+                                    <TextBlock Text="&#xE712;" FontFamily="{StaticResource F.Icon}" FontSize="13"
+                                               Foreground="{StaticResource B.Text2}" />
+                                </Button>
+                                <Button x:Name="FilterClearBtn" Style="{StaticResource Btn.IconSm}"
+                                        HorizontalContentAlignment="Center"
+                                        Margin="2,0,0,0" Click="OnFilterClear" ToolTip="清除筛选"
+                                        AutomationProperties.Name="清除筛选"
+                                        Visibility="{Binding HasTempFilter, Converter={StaticResource B2V}}">
+                                    <TextBlock Text="&#xE711;" FontFamily="{StaticResource F.Icon}" FontSize="12"
+                                               Foreground="{StaticResource B.Text3}" />
+                                </Button>
 
                                 <TextBlock Text="排序" Style="{StaticResource T.Label}" VerticalAlignment="Center"
                                            Margin="14,0,6,0" />
@@ -542,39 +727,42 @@
                                     <ComboBoxItem Content="分辨率" />
                                     <ComboBoxItem Content="文件大小" />
                                 </ComboBox>
-                                <Button x:Name="SortDirBtn" Style="{StaticResource Btn.Outline}"
-                                        Width="30" Height="30" Padding="0" FontSize="13" Margin="4,0,0,0"
-                                        Click="OnToggleSortDir" ToolTip="正序 / 倒序"
+                                <Button x:Name="SortDirBtn" Style="{StaticResource Btn.Icon}"
+                                        HorizontalContentAlignment="Center"
+                                        Margin="6,0,0,0" Click="OnToggleSortDir" ToolTip="正序 / 倒序"
                                         AutomationProperties.Name="排序方向">
-                                    <TextBlock Text="{Binding SortDirGlyph}" FontSize="12" />
+                                    <TextBlock Text="{Binding SortDirGlyph}" FontSize="12"
+                                               Foreground="{StaticResource B.Text2}" />
                                 </Button>
 
                                 <Border Style="{StaticResource VLine}" Height="18" Margin="14,0" VerticalAlignment="Center" />
 
                                 <!-- 缩略图 4 档 -->
-                                <StackPanel x:Name="SizeBar" Orientation="Horizontal" VerticalAlignment="Center"
-                                            AutomationProperties.Name="缩略图尺寸">
-                                    <Button Style="{StaticResource Btn.Ghost}" Click="OnSizeStep" Tag="0" Width="26"
-                                            Height="26" Padding="0" ToolTip="小">
-                                        <Border Width="5" Height="5" CornerRadius="1"
-                                                Background="{StaticResource B.Text2}" />
-                                    </Button>
-                                    <Button Style="{StaticResource Btn.Ghost}" Click="OnSizeStep" Tag="1" Width="26"
-                                            Height="26" Padding="0" ToolTip="中">
-                                        <Border Width="8" Height="8" CornerRadius="1"
-                                                Background="{StaticResource B.Text2}" />
-                                    </Button>
-                                    <Button Style="{StaticResource Btn.Ghost}" Click="OnSizeStep" Tag="2" Width="26"
-                                            Height="26" Padding="0" ToolTip="大">
-                                        <Border Width="11" Height="11" CornerRadius="2"
-                                                Background="{StaticResource B.Text2}" />
-                                    </Button>
-                                    <Button Style="{StaticResource Btn.Ghost}" Click="OnSizeStep" Tag="3" Width="26"
-                                            Height="26" Padding="0" ToolTip="特大">
-                                        <Border Width="14" Height="14" CornerRadius="2"
-                                                Background="{StaticResource B.Text2}" />
-                                    </Button>
-                                </StackPanel>
+                                <Border Style="{StaticResource Seg.Track}" Padding="2" VerticalAlignment="Center">
+                                    <StackPanel x:Name="SizeBar" Orientation="Horizontal" VerticalAlignment="Center"
+                                                AutomationProperties.Name="缩略图尺寸">
+                                        <Button Style="{StaticResource Btn.Seg}" Click="OnSizeStep" Tag="0" Width="26"
+                                                Height="26" Padding="0" ToolTip="小">
+                                            <Border Width="5" Height="5" CornerRadius="1"
+                                                    Background="{StaticResource B.Text2}" />
+                                        </Button>
+                                        <Button Style="{StaticResource Btn.Seg}" Click="OnSizeStep" Tag="1" Width="26"
+                                                Height="26" Padding="0" ToolTip="中">
+                                            <Border Width="8" Height="8" CornerRadius="1"
+                                                    Background="{StaticResource B.Text2}" />
+                                        </Button>
+                                        <Button Style="{StaticResource Btn.Seg}" Click="OnSizeStep" Tag="2" Width="26"
+                                                Height="26" Padding="0" ToolTip="大">
+                                            <Border Width="11" Height="11" CornerRadius="2"
+                                                    Background="{StaticResource B.Text2}" />
+                                        </Button>
+                                        <Button Style="{StaticResource Btn.Seg}" Click="OnSizeStep" Tag="3" Width="26"
+                                                Height="26" Padding="0" ToolTip="特大">
+                                            <Border Width="14" Height="14" CornerRadius="2"
+                                                    Background="{StaticResource B.Text2}" />
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
 
                             <ItemsControl Grid.Row="1" Grid.ColumnSpan="3" ItemsSource="{Binding Chips}"
@@ -586,9 +774,9 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Background="White" BorderBrush="{StaticResource B.Border}"
-                                                BorderThickness="1" CornerRadius="13" Padding="10,4" Margin="0,0,7,6">
-                                            <TextBlock Text="{Binding}" FontSize="11.5" Foreground="{StaticResource B.Text2}" />
+                                        <Border Style="{StaticResource P.Shell.Chip}">
+                                            <TextBlock Text="{Binding}" FontSize="11.5"
+                                                       Foreground="{StaticResource B.Accent}" />
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -618,8 +806,8 @@
                                 <ListBox.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <c:JustifiedGridPanel TargetHeight="{Binding TileSize}"
-                                                              Spacing="8" CaptionHeight="38"
-                                                              Pad="18,4,18,24" />
+                                                              Spacing="12" CaptionHeight="38"
+                                                              Pad="20,6,20,24" />
                                     </ItemsPanelTemplate>
                                 </ListBox.ItemsPanel>
                             </ListBox>
@@ -632,8 +820,8 @@
 
                             <StackPanel Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center"
                                         Visibility="{Binding IsEmpty, Converter={StaticResource B2V}}">
-                                <TextBlock Text="{Binding EmptyText}" FontSize="13"
-                                           Foreground="{StaticResource B.Text3}" HorizontalAlignment="Center" />
+                                <TextBlock Text="{Binding EmptyText}" Style="{StaticResource T.Empty}"
+                                           HorizontalAlignment="Center" />
                                 <Button Content="选择图库目录…" Style="{StaticResource Btn.Outline}" Height="32"
                                         Padding="14,0" Margin="0,14,0,0" HorizontalAlignment="Center"
                                         Click="OnSettingsClick"
@@ -651,8 +839,9 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <Grid Margin="20,14,18,10">
+                        <Grid Margin="20,16,20,10">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
@@ -663,21 +852,23 @@
                                     AutomationProperties.Name="返回图库" Padding="8,4">
                                 <Button.Content>
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="‹" FontSize="16" Foreground="{StaticResource B.Text2}"
-                                                   VerticalAlignment="Center" Margin="0,0,2,2" />
-                                        <TextBlock Text="返回图库" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="&#xE72B;" FontFamily="{StaticResource F.Icon}" FontSize="13"
+                                                   Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
+                                        <TextBlock Text="返回图库" FontSize="12.5" Foreground="{StaticResource B.Text2}"
+                                                   Margin="6,0,0,0" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button.Content>
                             </Button>
-                            <TextBlock Grid.Column="1" Text="人物" Style="{StaticResource T.Title}"
+                            <TextBlock Grid.Column="1" Text="人物" Style="{StaticResource T.Page}"
                                        Margin="14,0,0,0" VerticalAlignment="Center" />
-                            <TextBox Grid.Column="2" x:Name="PeopleFilterBox" Width="220" Height="30" Margin="16,0,0,0"
-                                     VerticalContentAlignment="Center" FontSize="12.5"
+                            <TextBlock Grid.Column="2" Text="{Binding PeopleCountText}" Style="{StaticResource T.Sub}"
+                                       VerticalAlignment="Center" Margin="10,0,0,0" />
+                            <TextBox Grid.Column="3" x:Name="PeopleFilterBox" Width="220" Height="30" Margin="16,0,0,0"
+                                     VerticalContentAlignment="Center" FontSize="12.5" Padding="10,0"
+                                     Background="{StaticResource B.Inset}" BorderBrush="Transparent" BorderThickness="1"
                                      AutomationProperties.Name="搜索人物"
                                      Text="{Binding PeopleQuery, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
-                            <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding PeopleCountText}" Style="{StaticResource T.Sub}"
-                                           VerticalAlignment="Center" Margin="0,0,12,0" />
+                            <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center">
                                 <CheckBox Content="只看有中文名" FontSize="12" VerticalAlignment="Center"
                                           IsChecked="{Binding PeopleOnlyZh}" />
                                 <ComboBox Width="132" Margin="12,0,0,0" SelectedIndex="0" SelectionChanged="OnPeopleSort">
@@ -692,7 +883,8 @@
                         </Grid>
 
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding PeopleView}" ItemTemplate="{StaticResource PersonTpl}">
+                            <ItemsControl ItemsSource="{Binding PeopleView}" ItemTemplate="{StaticResource PersonTpl}"
+                                          Margin="14,4,14,24">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel />
@@ -845,18 +1037,19 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
-                        <StackPanel Orientation="Horizontal" Margin="20,14,20,10">
+                        <StackPanel Orientation="Horizontal" Margin="20,16,20,10">
                             <Button Style="{StaticResource Btn.Ghost}" Click="OnCloseStats"
                                     AutomationProperties.Name="返回图库" Padding="8,4">
                                 <Button.Content>
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="‹" FontSize="16" Foreground="{StaticResource B.Text2}"
-                                                   VerticalAlignment="Center" Margin="0,0,2,2" />
-                                        <TextBlock Text="返回图库" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="&#xE72B;" FontFamily="{StaticResource F.Icon}" FontSize="13"
+                                                   Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
+                                        <TextBlock Text="返回图库" FontSize="12.5" Foreground="{StaticResource B.Text2}"
+                                                   Margin="6,0,0,0" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button.Content>
                             </Button>
-                            <TextBlock Text="统计" Style="{StaticResource T.Title}" Margin="14,0,0,0"
+                            <TextBlock Text="统计" Style="{StaticResource T.Page}" Margin="14,0,0,0"
                                        VerticalAlignment="Center" />
                         </StackPanel>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
@@ -872,11 +1065,12 @@
                             Click="OnToggleLeftRail" AutomationProperties.Name="收起左栏">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource Btn.Tab}">
-                                <Setter Property="Content" Value="‹" />
+                                <Setter Property="FontFamily" Value="{StaticResource F.Icon}" />
+                                <Setter Property="Content" Value="&#xE76B;" />
                                 <Setter Property="ToolTip" Value="收起左栏" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding LeftCollapsed}" Value="True">
-                                        <Setter Property="Content" Value="›" />
+                                        <Setter Property="Content" Value="&#xE76C;" />
                                         <Setter Property="ToolTip" Value="展开左栏" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -888,11 +1082,12 @@
                             Click="OnTogglePanel" AutomationProperties.Name="收起详情栏">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource Btn.Tab}">
-                                <Setter Property="Content" Value="‹" />
+                                <Setter Property="FontFamily" Value="{StaticResource F.Icon}" />
+                                <Setter Property="Content" Value="&#xE76B;" />
                                 <Setter Property="ToolTip" Value="收起详情栏" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsPanelVisible}" Value="False">
-                                        <Setter Property="Content" Value="›" />
+                                        <Setter Property="Content" Value="&#xE76C;" />
                                         <Setter Property="ToolTip" Value="展开详情栏" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -910,20 +1105,21 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="{Binding StatusLeft}" Style="{StaticResource T.Sub}" Margin="15,0,0,0"
+                    <TextBlock Text="{Binding StatusLeft}" Style="{StaticResource T.Sub}" Margin="14,0,0,0"
                                VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="{Binding StatusRight}" Style="{StaticResource T.Sub}"
-                               Margin="0,0,15,0" VerticalAlignment="Center" />
+                               Margin="0,0,14,0" VerticalAlignment="Center" />
                 </Grid>
             </Grid>
 
             <!-- 忙碌遮罩 -->
-            <Border Grid.Row="1" Background="#B3FFFFFF" Visibility="{Binding IsBusy, Converter={StaticResource B2V}}">
+            <Border Grid.Row="1" Background="#E6FFFFFF" Visibility="{Binding IsBusy, Converter={StaticResource B2V}}">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="360">
                     <TextBlock Text="{Binding BusyText}" HorizontalAlignment="Center" FontSize="13"
                                Foreground="{StaticResource B.Text2}" TextTrimming="CharacterEllipsis" />
-                    <ProgressBar Height="4" Margin="0,12,0,0" Value="{Binding BusyFraction}" Maximum="100"
-                                 Foreground="{StaticResource B.Accent}" Background="{StaticResource B.Border}" />
+                    <ProgressBar Style="{StaticResource P.Shell.BusyBar}" Height="4" Margin="0,12,0,0"
+                                 Value="{Binding BusyFraction}" Maximum="100"
+                                 Foreground="{StaticResource B.Accent}" Background="{StaticResource B.Inset}" />
                 </StackPanel>
             </Border>
         </Grid>
