@@ -65,6 +65,10 @@ public static class SelfTest
         Log.AppendLine($"图片 {vm.AllImages.Count:N0}  （已删除 {vm.DeletedCount:N0}）");
         Log.AppendLine();
 
+        // 右栏开合是记在设置里的，上次若折了起来，这里几条「默认展开」的断言就没意义了。
+        // 自检要的是行为本身，先把状态摆正。
+        vm.PanelCollapsed = false;
+
         try
         {
             await Cases(window, vm);
@@ -96,7 +100,7 @@ public static class SelfTest
         // ---------- 2. 滚动要能换出新的一批格子 ----------
         if (window is MainWindow mw0)
         {
-            var panel = FindChild<Controls.VirtualizingWrapPanel>(mw0.GridListForTest);
+            var panel = FindChild<Controls.JustifiedGridPanel>(mw0.GridListForTest);
             if (panel is null) Bad("找到虚拟化面板", "没找到");
             else
             {
@@ -107,10 +111,35 @@ public static class SelfTest
                 Check(panel.VerticalOffset > 100, "滚动位移生效", $"{panel.VerticalOffset:F0}");
                 Check(firstAfter > firstBefore, "滚动后实例化的是后面那批图",
                     $"第一个容器索引 {firstBefore} -> {firstAfter}");
-                Check(panel.RealizedCount > 0 && panel.FirstChildTop > -panel.ItemHeight
+                Check(panel.RealizedCount > 0 && panel.FirstChildTop > -panel.FirstRowHeight - 2
                       && panel.FirstChildTop < panel.ViewportHeight,
                     "滚动后视野里真的有格子（不是空白）",
-                    $"首个容器 Y={panel.FirstChildTop:F0}，视口高 {panel.ViewportHeight:F0}，共 {panel.RealizedCount} 个");
+                    $"首个容器 Y={panel.FirstChildTop:F0}，行高 {panel.FirstRowHeight:F0}，视口高 {panel.ViewportHeight:F0}，共 {panel.RealizedCount} 个");
+
+                // 等高不等宽：同一行的图高度一致，宽度按各自比例（不裁剪）
+                var groups = new Dictionary<int, List<FrameworkElement>>();
+                for (int i = 0; i < VisualTreeHelper.GetChildrenCount(panel); i++)
+                {
+                    if (VisualTreeHelper.GetChild(panel, i) is not FrameworkElement fe) continue;
+                    int key = (int)Math.Round(fe.TranslatePoint(new Point(0, 0), panel).Y);
+                    if (!groups.TryGetValue(key, out var list)) groups[key] = list = [];
+                    list.Add(fe);
+                }
+                var row = groups.Count > 0
+                    ? groups.OrderByDescending(g => g.Value.Count).First().Value
+                    : [];
+                if (row.Count >= 2)
+                {
+                    Check(row.All(x => Math.Abs(x.ActualHeight - row[0].ActualHeight) < 0.8),
+                        "同一行里的图高度一致", $"{row[0].ActualHeight:F0}px × {row.Count} 张");
+                    bool prop = row.All(x => x.DataContext is ImageVm iv && iv.Height > 0
+                        && Math.Abs(x.ActualWidth / Math.Max(1, x.ActualHeight - panel.CaptionHeight)
+                                    - (double)iv.Width / iv.Height) < 0.04);
+                    Check(prop, "宽度按原图比例，没有裁剪",
+                        string.Join(" ", row.Take(4).Select(x => $"{x.ActualWidth:F0}x{x.ActualHeight - panel.CaptionHeight:F0}")));
+                }
+                else Ok("等高布局", "这一屏只有一张图，跳过");
+
                 panel.SetVerticalOffset(0);
                 for (int i = 0; i < 4; i++) await Pulse(window);
             }
@@ -365,6 +394,8 @@ public static class SelfTest
         vm.FilmHeight = 160;
         await Pulse(window);
         Check(vm.FilmImageHeight > fh0, "胶片条高度可调", $"{fh0:F0} -> {vm.FilmImageHeight:F0}");
+        Check(App.Services.Store.GetSetting("film_height") == "160", "胶片条高度记进设置",
+            App.Services.Store.GetSetting("film_height") ?? "");
         vm.FilmHeight = 96;
         await Pulse(window);
 
@@ -415,7 +446,7 @@ public static class SelfTest
         // ---------- 18. 详情栏开合不丢选中位置 ----------
         if (window is MainWindow mw4)
         {
-            var panel = FindChild<Controls.VirtualizingWrapPanel>(mw4.GridListForTest);
+            var panel = FindChild<Controls.JustifiedGridPanel>(mw4.GridListForTest);
             if (panel is not null && vm.Items.Count > 40)
             {
                 // 右栏只在有当前图时才出现，先选一张，否则列宽根本不会变
@@ -483,6 +514,32 @@ public static class SelfTest
         await Pulse(window);
         Check(vm.LeftWidth >= 180, "左栏宽度有下限", $"{vm.LeftWidth:F0}");
         vm.SetLeftWidth(w0);
+        await Pulse(window);
+
+        // ---------- 21b. 可拖的分区高度、排序都记进设置 ----------
+        double ch0 = vm.LeftColumnsHeight, ph0 = vm.LeftPeopleHeight;
+        vm.SetLeftColumnsHeight(300);
+        vm.SetLeftPeopleHeight(200);
+        await Pulse(window);
+        Check(App.Services.Store.GetSetting("left_cols_h") == "300"
+              && App.Services.Store.GetSetting("left_people_h") == "200",
+            "分区高度记进设置",
+            $"{App.Services.Store.GetSetting("left_cols_h")} / {App.Services.Store.GetSetting("left_people_h")}");
+        vm.SetLeftColumnsHeight(ch0);
+        vm.SetLeftPeopleHeight(ph0);
+        vm.SetLeftWidth(320);
+        await Pulse(window);
+        Check(vm.PeopleCardSide > 40, "左栏变宽后人物卡跟着变大", $"{vm.PeopleCardSide:F0}px");
+        vm.SetLeftWidth(w0);
+        await Pulse(window);
+
+        int sort0 = vm.GridSortIndex;
+        vm.GridSortIndex = 4;
+        await Pulse(window);
+        Check(App.Services.Store.GetSetting("grid_sort") == "4", "总览排序记进设置",
+            App.Services.Store.GetSetting("grid_sort") ?? "");
+        Check(vm.Sort.Key == LatentFolio.Core.Filtering.SortKey.Name, "排序真的换了", vm.SortLabel);
+        vm.GridSortIndex = sort0;
         await Pulse(window);
 
         // ---------- 22. 简易筛选 + 人物面板 ----------

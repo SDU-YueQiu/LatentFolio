@@ -9,7 +9,7 @@ using LatentFolio.Core.Text;
 namespace LatentFolio.App.ViewModels;
 
 /// <summary>网格里一个格子 / 查看器里的当前图。同一个 ImageItem 只有一个 VM。</summary>
-public sealed partial class ImageVm : ObservableObject
+public sealed partial class ImageVm : ObservableObject, Controls.IAspectItem
 {
     public override string ToString() => FileName;
     public ImageItem Item { get; }
@@ -35,6 +35,9 @@ public sealed partial class ImageVm : ObservableObject
 
     public int Width => Item.Width;
     public int Height => Item.Height;
+
+    /// <summary>等高网格靠它算这一张该占多宽。</summary>
+    public double PixelAspect => Height > 0 ? (double)Width / Height : 1;
 
     public string SizeText => Item.Size switch
     {

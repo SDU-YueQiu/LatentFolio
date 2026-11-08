@@ -178,6 +178,8 @@ public partial class MainWindow : Window
         };
         await Vm.InitAsync();
         SyncSizeButtons();
+        // 排序、尺寸这些"上次留下的状态"在 InitAsync 里已经读回来了，这里把控件摆成一致的样子
+        if (SortBox.SelectedIndex != Vm.GridSortIndex) SortBox.SelectedIndex = Vm.GridSortIndex;
 
         var args = Environment.GetCommandLineArgs();
         if (args.Contains("--self-test"))
@@ -574,18 +576,7 @@ public partial class MainWindow : Window
     private void OnSortChanged(object sender, SelectionChangedEventArgs e)
     {
         if (App.Root is null) return;
-        string key = SortBox.SelectedIndex switch
-        {
-            0 => "Date|1",
-            1 => "Date|0",
-            2 => "Rating|1",
-            3 => "Rating|0",
-            4 => "Name|1",
-            5 => "Resolution|1",
-            6 => "Size|1",
-            _ => "Date|1",
-        };
-        Vm.SetSortCommand.Execute(key);
+        Vm.GridSortIndex = SortBox.SelectedIndex;
     }
 
     private void OnSizeStep(object sender, RoutedEventArgs e)
@@ -702,6 +693,43 @@ public partial class MainWindow : Window
     {
         var win = new ColumnEditorWindow(null, filterMode: true) { Owner = this };
         if (win.ShowDialog() == true) Vm.SetTempFilter(win.Tree, "高级筛选");
+    }
+
+    // ================= 左栏分区高度：上下拖，位置记进设置 =================
+
+    private bool _leftRowDragging;
+    private string _leftRowWhat = "cols";
+    private Point _leftRowStart;
+    private double _leftRowFrom;
+
+    private void OnLeftRowDragStart(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement fe) return;
+        _leftRowWhat = fe.Tag as string ?? "cols";
+        _leftRowStart = e.GetPosition(this);
+        _leftRowFrom = _leftRowWhat == "cols" ? Vm.LeftColumnsHeight : Vm.LeftPeopleHeight;
+        _leftRowDragging = true;
+        fe.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnLeftRowDragMove(object sender, MouseEventArgs e)
+    {
+        if (!_leftRowDragging || e.LeftButton != MouseButtonState.Pressed) return;
+        double d = e.GetPosition(this).Y - _leftRowStart.Y;
+        double total = LeftPane.ActualHeight > 0 ? LeftPane.ActualHeight : 800;
+        if (_leftRowWhat == "cols")
+            Vm.SetLeftColumnsHeight(Math.Clamp(_leftRowFrom + d, 88, Math.Max(120, total - 260)));
+        else
+            Vm.SetLeftPeopleHeight(Math.Clamp(_leftRowFrom + d, 64, Math.Max(90, total - 300)));
+    }
+
+    private void OnLeftRowDragEnd(object sender, MouseButtonEventArgs e)
+    {
+        if (!_leftRowDragging) return;
+        _leftRowDragging = false;
+        (sender as UIElement)?.ReleaseMouseCapture();
+        e.Handled = true;
     }
 
     // ================= 胶片条：滚轮横滚 / 拖高度 =================

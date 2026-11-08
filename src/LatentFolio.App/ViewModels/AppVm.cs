@@ -338,6 +338,12 @@ public sealed partial class AppVm : ObservableObject
         TileSize = TileSizes[TileStep];
         if (int.TryParse(_store.GetSetting("folder_sort"), out var fs))
             FolderSort = (FolderSortKind)Math.Clamp(fs, 0, 2);
+        if (int.TryParse(_store.GetSetting("left_cols_h"), out var lch) && lch >= 88)
+            LeftColumnsHeight = Math.Clamp(lch, 88, 900);
+        if (int.TryParse(_store.GetSetting("left_people_h"), out var lph) && lph >= 64)
+            LeftPeopleHeight = Math.Clamp(lph, 64, 900);
+        _gridSortIndex = int.TryParse(_store.GetSetting("grid_sort"), out var gsi) ? Math.Clamp(gsi, 0, 6) : 0;
+        ApplySortSpec(_gridSortIndex);
         LoadAliases();
         LoadPersonAvatars();
         LoadPersonMeta();
@@ -1086,6 +1092,42 @@ public sealed partial class AppVm : ObservableObject
     public void RefreshSelectionStatus()
         => StatusLeft = Selection.Count == 0 ? "" : $"已选 {Selection.Count} 张";
 
+    /// <summary>总览页排序下拉框的当前项（存设置，下次开还是这个）。</summary>
+    private int _gridSortIndex;
+
+    public int GridSortIndex
+    {
+        get => _gridSortIndex;
+        set
+        {
+            if (_gridSortIndex == value) return;
+            _gridSortIndex = value;
+            _store.SetSetting("grid_sort", value.ToString());
+            ApplySortSpec(value);
+            RefreshGrid();
+        }
+    }
+
+    /// <summary>下拉框的 7 个选项 → 排序键。启动恢复时不重排网格，只把状态摆好。</summary>
+    private void ApplySortSpec(int index)
+    {
+        var key = index switch
+        {
+            1 => "Date|0",
+            2 => "Rating|1",
+            3 => "Rating|0",
+            4 => "Name|1",
+            5 => "Resolution|1",
+            6 => "Size|1",
+            _ => "Date|1",
+        };
+        var parts = key.Split('|');
+        if (!Enum.TryParse<SortKey>(parts[0], out var k)) return;
+        bool desc = parts.Length < 2 || parts[1] == "1";
+        Sort = new SortSpec(k, desc);
+        SortLabel = $"{ColumnEngine.SortLabel(k)} · {(desc ? "新/大在前" : "旧/小在前")}";
+    }
+
     [RelayCommand]
     private void SetSort(string key)
     {
@@ -1398,17 +1440,60 @@ public sealed partial class AppVm : ObservableObject
         if (Math.Abs(v - _leftExpanded) < 0.5) return;
         _leftExpanded = v;
         OnPropertyChanged(nameof(LeftWidth));
+        RaisePeopleCard();
         _store.SetSetting("left_width", ((int)Math.Round(v)).ToString());
     }
 
     partial void OnLeftCollapsedChanged(bool value)
     {
         OnPropertyChanged(nameof(LeftWidth));
+        RaisePeopleCard();
         _store.SetSetting("left_collapsed", value ? "1" : "0");
     }
 
     [RelayCommand]
     private void ToggleLeftRail() => LeftCollapsed = !LeftCollapsed;
+
+    // ================= 左栏分区高度（拖动记进设置，下次开还在原地） =================
+
+    /// <summary>左栏「我的栏」那一块的高度。</summary>
+    [ObservableProperty] private double _leftColumnsHeight = 150;
+
+    public void SetLeftColumnsHeight(double v)
+    {
+        var h = Math.Clamp(v, 88, 1200);
+        if (Math.Abs(h - LeftColumnsHeight) < 0.5) return;
+        LeftColumnsHeight = h;
+        _store.SetSetting("left_cols_h", ((int)Math.Round(h)).ToString());
+    }
+
+    /// <summary>左栏「人物」那一块的高度（拖出来的值）。</summary>
+    [ObservableProperty] private double _leftPeopleHeight = 118;
+
+    partial void OnLeftPeopleHeightChanged(double value) => OnPropertyChanged(nameof(LeftPeopleRowHeight));
+
+    public void SetLeftPeopleHeight(double v)
+    {
+        var h = Math.Clamp(v, 64, 1200);
+        if (Math.Abs(h - LeftPeopleHeight) < 0.5) return;
+        LeftPeopleHeight = h;
+        _store.SetSetting("left_people_h", ((int)Math.Round(h)).ToString());
+    }
+
+    /// <summary>左栏人物缩略块：10 个一直铺满栏宽，卡片是正方形（不裁剪）。</summary>
+    public double PeopleCardSide => Math.Max(24, (LeftWidth - 20) / 5.0 - 4);
+
+    /// <summary>
+    /// 人物那一行实际要占多高：栏拖宽了卡片就变大，两行装不下就得把这一块也撑高
+    /// （否则卡片被裁一半）。
+    /// </summary>
+    public double LeftPeopleRowHeight => Math.Max(LeftPeopleHeight, PeopleCardSide * 2 + 58);
+
+    private void RaisePeopleCard()
+    {
+        OnPropertyChanged(nameof(PeopleCardSide));
+        OnPropertyChanged(nameof(LeftPeopleRowHeight));
+    }
 
     // ================= 临时筛选（顶部「筛选」按钮） =================
 
