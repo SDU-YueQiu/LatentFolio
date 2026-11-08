@@ -293,6 +293,36 @@ public partial class MainWindow : Window
         Vm.ShowColumnCommand.Execute(col);
     }
 
+    // ================= 右栏宽度拖拽 =================
+
+    private bool _detailDragging;
+    private double _detailDragX0;
+    private double _detailDragW0;
+
+    private void OnDetailDragStart(object sender, MouseButtonEventArgs e)
+    {
+        _detailDragging = true;
+        _detailDragX0 = e.GetPosition(this).X;
+        _detailDragW0 = Vm.DetailWidth;
+        if (sender is UIElement el) el.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnDetailDragMove(object sender, MouseEventArgs e)
+    {
+        if (!_detailDragging) return;
+        // 手柄在右栏左边缘：往左拖 = 变宽
+        double dx = e.GetPosition(this).X - _detailDragX0;
+        Vm.SetDetailWidth(_detailDragW0 - dx);
+    }
+
+    private void OnDetailDragEnd(object sender, MouseButtonEventArgs e)
+    {
+        if (!_detailDragging) return;
+        _detailDragging = false;
+        if (sender is UIElement el) el.ReleaseMouseCapture();
+    }
+
     private void OnFolderSelected(object sender, SelectionChangedEventArgs e)
     {
         if (FolderList.SelectedItem is not FolderVm f) return;
@@ -363,7 +393,12 @@ public partial class MainWindow : Window
     private void OnColMouseDown(object sender, MouseButtonEventArgs e)
     {
         _colDragStart = e.GetPosition(ColList);
-        _colDragItem = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext as ColumnVm;
+        var item = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
+        _colDragItem = item?.DataContext as ColumnVm;
+        // 点「我的栏」必须立刻切过去。窗口没激活时第一次点击常常只把焦点给过去、
+        // 选中事件不触发，表现就是"点了没反应"，这里直接把选中补上。
+        if (item?.DataContext is ColumnVm col && !ReferenceEquals(ColList.SelectedItem, col))
+            ColList.SelectedItem = col;
     }
 
     private void OnColMouseMove(object sender, MouseEventArgs e)

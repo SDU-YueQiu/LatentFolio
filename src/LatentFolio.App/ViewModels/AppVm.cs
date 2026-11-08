@@ -311,7 +311,19 @@ public sealed partial class AppVm : ObservableObject
     [ObservableProperty] private bool _isPanelVisible;
 
     /// <summary>右栏占的宽度。查看器里用它做可折叠的列宽，折叠时是 0。</summary>
-    public double DetailWidth => IsPanelVisible ? 380 : 0;
+        /// <summary>右栏宽度：用户能拖，默认 380，夹在 300–640 之间。</summary>
+    private double _detailWidthPref = 380;
+
+    public double DetailWidth => IsPanelVisible ? _detailWidthPref : 0;
+
+    public void SetDetailWidth(double w)
+    {
+        double v = Math.Clamp(w, 300, 640);
+        if (Math.Abs(v - _detailWidthPref) < 0.5) return;
+        _detailWidthPref = v;
+        _store.SetSetting("detail_width", ((int)v).ToString());
+        RaiseDetailWidth();
+    }
 
     /// <summary>左栏折叠把手的位置：贴着左栏和网格之间那道缝的中点。</summary>
     public Thickness LeftHandleMargin => new(LeftWidth - 11, 0, 0, 0);
@@ -364,6 +376,7 @@ public sealed partial class AppVm : ObservableObject
         AlwaysVsr = _store.GetSetting("always_vsr") == "1";
         WatchEnabled = true;
         PanelCollapsed = _store.GetSetting("panel_collapsed") == "1";
+            if (double.TryParse(_store.GetSetting("detail_width"), out var dw)) _detailWidthPref = Math.Clamp(dw, 300, 640);
         LeftCollapsed = _store.GetSetting("left_collapsed") == "1";
         if (double.TryParse(_store.GetSetting("left_width"), out var lw) && lw >= 180)
         {
@@ -1641,10 +1654,14 @@ public sealed partial class AppVm : ObservableObject
     {
         get
         {
-            double side = PeopleSideByWidth;
-            // 四舍五入而不是向下取整：默认 118 高的块里 74 / 42 ≈ 1.76 应该排两行，
-            // 向下取整只会排一行，底部留一条空带 —— 用户要的是「始终填满」
-            int rows = (int)Math.Round(PeopleUsableHeight / (side + PeopleCellGap), MidpointRounding.AwayFromZero);
+            double sideW = PeopleSideByWidth;
+            double usable = PeopleUsableHeight;
+            // 基准是 10 个（5 列 × 2 行）：高度不够时先缩格子，够时先放大格子，
+            // 边长顶到栏宽上限之后还有一整行的高度，才多排一行、顺延补 5 个人
+            int rows = 2;
+            double side = Math.Floor(usable / rows - PeopleCellGap);
+            if (side > sideW) side = sideW;
+            while (rows < 6 && usable >= (rows + 1) * (side + PeopleCellGap)) rows++;
             return Math.Clamp(rows, 1, 6);
         }
     }
@@ -1658,7 +1675,8 @@ public sealed partial class AppVm : ObservableObject
             // 行数定了之后把边长收到刚好铺满高度；但不能超过「按宽度算出来的那一档」，
             // 否则左栏变宽时边长反而不涨（自检会挂）
             double fit = Math.Floor(PeopleUsableHeight / rows - PeopleCellGap);
-            return fit >= 20 && fit < side ? fit : side;
+            if (fit < 20) fit = 20;
+            return Math.Min(fit, side);
         }
     }
 

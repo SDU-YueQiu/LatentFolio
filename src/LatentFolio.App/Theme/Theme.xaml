@@ -24,8 +24,8 @@
 
     <!-- ================= 颜色 ================= -->
     <Color x:Key="C.Window">#FFFFFFFF</Color>
-    <Color x:Key="C.Canvas">#FFF7F8FB</Color>
-    <Color x:Key="C.Panel">#FFFBFCFD</Color>
+    <Color x:Key="C.Canvas">#FFF0F2F7</Color>
+    <Color x:Key="C.Panel">#FFF6F8FC</Color>
     <Color x:Key="C.Tile">#FFF1F3F8</Color>
     <Color x:Key="C.Inset">#FFF1F3F8</Color>
     <Color x:Key="C.Hover">#FFF2F4F9</Color>
@@ -195,7 +195,10 @@
     </Style>
 
     <!-- ================= 滚动条 ================= -->
-    <Style x:Key="SB.Thumb" TargetType="Thumb">
+    <!-- 缩略图滚到底的时候滑块会被压成一根线，几乎点不中：
+         给滑块加最小长度（竖条 44、横条 44），内容再多也能一把抓住 -->
+    <Style x:Key="SB.ThumbV" TargetType="Thumb">
+        <Setter Property="MinHeight" Value="44" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
@@ -213,6 +216,28 @@
         </Setter>
     </Style>
 
+    <Style x:Key="SB.ThumbH" TargetType="Thumb">
+        <Setter Property="MinWidth" Value="44" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="b" Background="#FFC7CCD8" CornerRadius="4" Margin="0,2" />
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="#FFA7AEBE" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="#FF8E96A8" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 兼容旧键名：还有几处引用了 SB.Thumb -->
+    <Style x:Key="SB.Thumb" TargetType="Thumb" BasedOn="{StaticResource SB.ThumbV}" />
+
     <Style TargetType="ScrollBar">
         <Setter Property="Width" Value="9" />
         <Setter Property="Background" Value="Transparent" />
@@ -222,7 +247,7 @@
                     <Grid Background="Transparent">
                         <Track x:Name="PART_Track" IsDirectionReversed="True">
                             <Track.Thumb>
-                                <Thumb Style="{StaticResource SB.Thumb}" />
+                                <Thumb Style="{StaticResource SB.ThumbV}" />
                             </Track.Thumb>
                             <Track.IncreaseRepeatButton>
                                 <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False" />
@@ -245,7 +270,7 @@
                             <Grid Background="Transparent">
                                 <Track x:Name="PART_Track">
                                     <Track.Thumb>
-                                        <Thumb Style="{StaticResource SB.Thumb}" />
+                                        <Thumb Style="{StaticResource SB.ThumbH}" />
                                     </Track.Thumb>
                                     <Track.IncreaseRepeatButton>
                                         <RepeatButton Command="ScrollBar.PageRightCommand" Opacity="0" Focusable="False" />
@@ -976,6 +1001,39 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- ================= 动效：切页淡入 ================= -->
+    <!-- 只做 140ms 的透明度淡入：不位移、不缩放，切视图时不闪也不晕 -->
+    <Style x:Key="PaneFade" TargetType="Grid">
+        <Style.Triggers>
+            <Trigger Property="IsVisible" Value="True">
+                <Trigger.EnterActions>
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1"
+                                             Duration="0:0:0.14" />
+                        </Storyboard>
+                    </BeginStoryboard>
+                </Trigger.EnterActions>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- 忙碌遮罩淡入 -->
+    <Style x:Key="MaskFade" TargetType="Border">
+        <Style.Triggers>
+            <Trigger Property="IsVisible" Value="True">
+                <Trigger.EnterActions>
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1"
+                                             Duration="0:0:0.12" />
+                        </Storyboard>
+                    </BeginStoryboard>
+                </Trigger.EnterActions>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
 </ResourceDictionary>

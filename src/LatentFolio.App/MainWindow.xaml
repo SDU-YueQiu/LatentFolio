@@ -19,8 +19,9 @@
 
     <Window.Resources>
         <!-- ── 图库格子 ───────────────────────────────────────────────
-             图按原比例铺满自己的宽度（不裁剪）；选中态靠两层 1px 精度描边，
-             不挤压内容：外层 2px 主色 + 内层 2px 白，正好落在 4px 内边距上。 -->
+             图按原比例铺满自己的宽度（不裁剪）。图片本身不做圆角：
+             圆角只能加在容器上，而容器又裁不出同曲率的图片，边缘那道弧会显得很突兀。
+             选中/悬停改成细边框（方角），和照片的直边对齐，反而干净。 -->
         <DataTemplate x:Key="TileTpl" DataType="{x:Type vm:ImageVm}">
             <Grid Background="Transparent" AutomationProperties.Name="{Binding FileName}">
                 <Grid.RowDefinitions>
@@ -30,13 +31,13 @@
                 </Grid.RowDefinitions>
 
                 <Grid Grid.Row="0">
-                    <Border Background="{StaticResource B.Inset}" CornerRadius="10" ClipToBounds="True">
+                    <Border Background="{StaticResource B.Inset}" ClipToBounds="True">
                         <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="Uniform"
                                RenderOptions.BitmapScalingMode="Linear"
                                c:ThumbLoader.PixelWidth="{Binding DataContext.TileSize,
                                            RelativeSource={RelativeSource AncestorType=Window}}" />
                     </Border>
-                    <Border Background="{StaticResource B.Danger}" CornerRadius="8" Padding="8,2"
+                    <Border Background="{StaticResource B.Danger}" CornerRadius="4" Padding="8,2"
                             HorizontalAlignment="Center" VerticalAlignment="Center"
                             Visibility="{Binding IsMissing, Converter={StaticResource B2V}}">
                         <TextBlock Text="源文件丢失" Foreground="White" FontSize="11" />
@@ -59,21 +60,20 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
                         <Grid Background="Transparent">
-                            <Border x:Name="bd" Background="Transparent" CornerRadius="12" Padding="4">
+                            <Border x:Name="bd" Background="Transparent" Padding="4">
                                 <ContentPresenter />
                             </Border>
-                            <Border x:Name="ring" CornerRadius="12" BorderThickness="2"
-                                    BorderBrush="Transparent" IsHitTestVisible="False" />
-                            <Border x:Name="inner" Margin="2" CornerRadius="10" BorderThickness="2"
+                            <Border x:Name="ring" BorderThickness="2" Margin="1"
                                     BorderBrush="Transparent" IsHitTestVisible="False" />
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Hover}" />
+                                <Setter TargetName="ring" Property="BorderBrush" Value="{StaticResource B.BorderStrong}" />
+                                <Setter TargetName="ring" Property="BorderThickness" Value="1" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="ring" Property="BorderBrush" Value="{StaticResource B.Accent}" />
-                                <Setter TargetName="inner" Property="BorderBrush" Value="White" />
+                                <Setter TargetName="ring" Property="BorderThickness" Value="2" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -696,7 +696,7 @@
                 <Grid Grid.Column="2">
 
                     <!-- 图库 -->
-                    <Grid x:Name="LibraryPane">
+                    <Grid x:Name="LibraryPane" Style="{StaticResource PaneFade}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
@@ -847,7 +847,19 @@
                             <Border x:Name="LibraryDetailHost" Grid.Column="1" Background="{StaticResource B.Panel}"
                                     BorderBrush="{StaticResource B.Border}" BorderThickness="1,0,0,0"
                                     Visibility="{Binding IsPanelVisible, Converter={StaticResource B2V}}">
-                                <views:DetailPanel />
+                                <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="5" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <!-- 右栏左边 5px 拖拽带：往左拖变宽 -->
+                                <Border Grid.Column="0" Background="Transparent" Cursor="SizeWE"
+                                        AutomationProperties.Name="调整详情栏宽度"
+                                        MouseLeftButtonDown="OnDetailDragStart"
+                                        MouseMove="OnDetailDragMove"
+                                        MouseLeftButtonUp="OnDetailDragEnd" />
+                                <views:DetailPanel Grid.Column="1" />
+                            </Grid>
                             </Border>
 
                             <StackPanel Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -864,7 +876,7 @@
 
 
                     <!-- 人物墙（中间显示，不弹窗） -->
-                    <Grid x:Name="PeoplePane" Visibility="{Binding ShowPeoplePane, Converter={StaticResource B2V}}"
+                    <Grid x:Name="PeoplePane" Style="{StaticResource PaneFade}" Visibility="{Binding ShowPeoplePane, Converter={StaticResource B2V}}"
                           Background="{StaticResource B.Window}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -953,7 +965,7 @@
                     </Grid>
 
                     <!-- 查看器 -->
-                    <Grid x:Name="ViewerPane" Visibility="{Binding ViewerOpen, Converter={StaticResource B2V}}"
+                    <Grid x:Name="ViewerPane" Style="{StaticResource PaneFade}" Visibility="{Binding ViewerOpen, Converter={StaticResource B2V}}"
                           Background="{StaticResource B.Window}">
                         <Grid.Resources>
                             <!-- 舞台：深灰纵向渐变，画面上只有图片是亮的 -->
@@ -1169,12 +1181,24 @@
                         <Border Grid.Row="1" Grid.RowSpan="3" Grid.Column="1" Background="{StaticResource B.Panel}"
                                 BorderBrush="{StaticResource B.Border}" BorderThickness="1,0,0,0"
                                 Visibility="{Binding IsPanelVisible, Converter={StaticResource B2V}}">
-                            <views:DetailPanel />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="5" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <!-- 右栏左边 5px 拖拽带：往左拖变宽 -->
+                                <Border Grid.Column="0" Background="Transparent" Cursor="SizeWE"
+                                        AutomationProperties.Name="调整详情栏宽度"
+                                        MouseLeftButtonDown="OnDetailDragStart"
+                                        MouseMove="OnDetailDragMove"
+                                        MouseLeftButtonUp="OnDetailDragEnd" />
+                                <views:DetailPanel Grid.Column="1" />
+                            </Grid>
                         </Border>
                     </Grid>
 
                     <!-- 统计 -->
-                    <Grid x:Name="StatsPane" Visibility="Collapsed" Background="{StaticResource B.Window}">
+                    <Grid x:Name="StatsPane" Style="{StaticResource PaneFade}" Visibility="Collapsed" Background="{StaticResource B.Window}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
@@ -1223,11 +1247,11 @@
                             Click="OnTogglePanel" AutomationProperties.Name="收起详情栏">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource Btn.Tab}">
-                                <Setter Property="Content" Value="&#x2039;" />
+                                <Setter Property="Content" Value="&#x203A;" />
                                 <Setter Property="ToolTip" Value="收起详情栏" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsPanelVisible}" Value="False">
-                                        <Setter Property="Content" Value="&#x203A;" />
+                                        <Setter Property="Content" Value="&#x2039;" />
                                         <Setter Property="ToolTip" Value="展开详情栏" />
                                     </DataTrigger>
                                 </Style.Triggers>

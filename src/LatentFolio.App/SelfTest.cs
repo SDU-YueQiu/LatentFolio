@@ -102,7 +102,7 @@ public static class SelfTest
         await Pulse(window);
         vm.SelectSingle(first);
         await Pulse(window);
-        Check(vm.IsPanelVisible && Math.Abs(vm.DetailWidth - 380) < 0.1, "点图自动展开右栏",
+        Check(vm.IsPanelVisible && vm.DetailWidth >= 300, "点图自动展开右栏",
             $"{vm.DetailWidth:F0}");
 
         // ---------- 2. 滚动要能换出新的一批格子 ----------
@@ -392,7 +392,7 @@ public static class SelfTest
         await vm.OpenViewerCommand.ExecuteAsync(firstNow);
         await Pulse(window, 3);
         Check(!vm.LeftCollapsed, "打开查看器不会擅自收起左栏");
-        Check(Math.Abs(vm.DetailWidth - 380) < 0.1, "右栏默认展开", $"{vm.DetailWidth:F0}");
+        Check(vm.DetailWidth >= 300, "右栏默认展开", $"{vm.DetailWidth:F0}");
 
         vm.ToggleLeftRailCommand.Execute(null);
         await Pulse(window);
@@ -405,7 +405,7 @@ public static class SelfTest
         vm.ToggleLeftRailCommand.Execute(null);
         vm.PanelCollapsed = false;
         await Pulse(window);
-        Check(!vm.LeftCollapsed && Math.Abs(vm.DetailWidth - 380) < 0.1, "两栏都能再展开",
+        Check(!vm.LeftCollapsed && vm.DetailWidth >= 300, "两栏都能再展开",
             $"{vm.LeftWidth:F0} / {vm.DetailWidth:F0}");
 
         Check(vm.Filmstrip.Count is > 0 and <= 81, "胶片条覆盖前后各 40 张", $"{vm.Filmstrip.Count}");
@@ -605,10 +605,11 @@ public static class SelfTest
             "分区高度记进设置",
             $"{App.Services.Store.GetSetting("left_cols_h")} / {App.Services.Store.GetSetting("left_people_h")}");
         vm.SetLeftColumnsHeight(ch0);
-        vm.SetLeftPeopleHeight(ph0);
+        vm.SetLeftPeopleHeight(300);      // 先把人物块拖高，别让它被高度卡住
         vm.SetLeftWidth(320);
         await Pulse(window);
         Check(vm.PeopleCardSide > 40, "左栏变宽后人物卡跟着变大", $"{vm.PeopleCardSide:F0}px");
+        vm.SetLeftPeopleHeight(ph0);
         vm.SetLeftWidth(w0);
         await Pulse(window);
 
@@ -718,6 +719,8 @@ public static class SelfTest
 
         // ---------- 23c. 人物块跟着栏宽缩放 ----------
         double wKeep = vm.LeftWidth;
+        double phKeep = vm.LeftPeopleHeight;
+        vm.SetLeftPeopleHeight(300);      // 同上：先解除高度限制
         vm.SetLeftWidth(248);
         await Pulse(window);
         double sideNarrow = vm.PeopleCardSide;
@@ -729,6 +732,7 @@ public static class SelfTest
         Check(vm.PeopleCols is >= 2 and <= 5 && vm.PeopleCardSide > 20, "人物是自适应方块网格",
             $"{colsNarrow} 列 / {sideNarrow:F0}px → {vm.PeopleCols} 列 / {vm.PeopleCardSide:F0}px");
         vm.SetLeftWidth(wKeep);
+        vm.SetLeftPeopleHeight(phKeep);
         await Pulse(window);
 
         // ---------- 23d. 源文件在被外部删掉 → 进「已删除」，不在图墙 ----------
