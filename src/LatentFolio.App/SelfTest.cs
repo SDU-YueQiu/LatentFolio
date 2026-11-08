@@ -453,6 +453,27 @@ public static class SelfTest
         Check(App.Services.Scanner.DedupeByHash, "判重默认开着",
             App.Services.Store.GetSetting("dedupe") ?? "未设置");
 
+        // ---------- 24. 解析回归：ConditioningZeroOut 不能当成负面 ----------
+        // 这张图的工作流是 positive→CLIPTextEncode→ConditioningZeroOut→negative，
+        // 曾经把正面文本当成负面，误报「正负提示词完全相同」
+        var probe = System.IO.Path.Combine(App.Services.LibraryRoot, "2026-06-30", "Anima", "Anima_00018_.png");
+        if (System.IO.File.Exists(probe))
+        {
+            var meta = LatentFolio.Core.Comfy.PngReader.Read(probe);
+            var parsed = meta.Prompt is null ? null : LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(meta.Prompt);
+            Check(parsed is not null, "能解析零化负面的工作流");
+            if (parsed is not null)
+            {
+                Check(!parsed.Negative.Contains("one piece", StringComparison.OrdinalIgnoreCase),
+                    "ConditioningZeroOut 不会被当成负面", $"{parsed.Negative.Length} 字符");
+                Check(parsed.Negative.Contains("worst quality", StringComparison.OrdinalIgnoreCase),
+                    "真正的负面词还在", parsed.Negative);
+                Check(!LatentFolio.Core.Scan.LibraryScanner.IsNegDup(parsed.Positive, parsed.Negative),
+                    "正负不再被误判成相同");
+            }
+        }
+        else Ok("解析回归", "样本图不在，跳过");
+
         // ---------- 21. 左栏可拖宽 ----------
         double w0 = vm.LeftWidth;
         vm.SetLeftWidth(320);

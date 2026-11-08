@@ -165,11 +165,25 @@ public static partial class GraphParser
         return "";
     }
 
+    /// <summary>
+    /// 这些节点产出的 conditioning 是「空的」。最典型的是 ConditioningZeroOut：
+    /// 把正面的 conditioning 清零当负面用（就是「不要负面词」的标准接法）。
+    /// 顺着它的输入往上走会把正面文本当成负面，于是一大批工作流会误报「正负提示词相同」。
+    /// </summary>
+    private static readonly HashSet<string> EmptyCond = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ConditioningZeroOut",
+        "ConditioningSetAreaEmpty",
+    };
+
     private static void WalkUp(Dictionary<string, Node> g, string nodeId, string role,
         List<(string Id, string Role, string Text, string Cls)> found, HashSet<string> seen, int depth)
     {
         if (depth > 25 || !seen.Add(nodeId)) return;
         if (!g.TryGetValue(nodeId, out var node)) return;
+
+        // 空 conditioning：到此为止，这一口就是没有文本
+        if (EmptyCond.Contains(node.ClassType)) return;
 
         var txt = ResolveNodeText(g, node, 0, []);
         if (!string.IsNullOrWhiteSpace(txt))

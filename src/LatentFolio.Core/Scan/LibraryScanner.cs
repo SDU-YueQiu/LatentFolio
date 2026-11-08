@@ -466,7 +466,11 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         return s.Length switch { 0 => null, > 200 => s[..200], _ => s };
     }
 
-    /// <summary>负面和正面几乎一样 —— 同一条 CLIPTextEncode 接了正负两口。</summary>
+    /// <summary>
+    /// 负面和正面几乎一样 —— 同一条 CLIPTextEncode 接了正负两口。
+    /// 只认「基本完全一致」：负面 = 正面 + 一点尾巴 这种情况是正常的（有人在负面里追加
+    /// worst quality），不能算重复，之前按 1.15 倍长度 + 90% 前缀判会误报一大片。
+    /// </summary>
     public static bool IsNegDup(string pos, string neg)
     {
         if (pos.Length == 0 || neg.Length == 0) return false;
@@ -474,11 +478,12 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         var m = Normalize(neg);
         if (n.Length == 0 || m.Length == 0) return false;
         if (n == m) return true;
+
         int min = Math.Min(n.Length, m.Length), max = Math.Max(n.Length, m.Length);
-        if (max > min * 1.15) return false;
+        if (max > min * 1.02) return false;
         int same = 0;
         for (int i = 0; i < min; i++) if (n[i] == m[i]) same++;
-        return same >= min * 0.9;
+        return same >= min * 0.97;
     }
 
     private static string Normalize(string s)
