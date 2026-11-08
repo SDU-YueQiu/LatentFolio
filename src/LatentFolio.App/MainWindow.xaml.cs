@@ -39,6 +39,11 @@ public partial class MainWindow : Window
         BigZoom.ZoomChanged += UpdateZoomLabel;
         // VSR 出图后源换了，百分比也要跟着重算
         App.Root.CurrentChangedForViewer += UpdateZoomLabel;
+        // VSR 出图 / 切原图 只换 ViewerImage，不换 Current —— 百分比要跟着这两个属性走
+        App.Root.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(AppVm.ViewerImage) or nameof(AppVm.ShowOriginal)) UpdateZoomLabel();
+        };
     }
 
     private void OnNavMouseDown(object sender, MouseButtonEventArgs e)
@@ -337,6 +342,41 @@ public partial class MainWindow : Window
     private bool _detailDragging;
     private double _detailDragX0;
     private double _detailDragW0;
+
+    // 折叠手柄自己就能拖：按下不动 = 折叠/展开，按住横拖 = 调栏宽。
+    // （以前另铺一条透明拖拽带，正好盖在手柄上把点击吃掉——那是"只有中间一小块能点"的根因）
+    private bool _handleDrag;
+    private double _handleX0;
+    private double _handleW0;
+    private bool _handleIsDetail;
+
+    private void OnHandleDown(object sender, MouseButtonEventArgs e)
+    {
+        _handleDrag = false;
+        _handleIsDetail = ReferenceEquals(sender, DetailTab);
+        _handleX0 = e.GetPosition(this).X;
+        _handleW0 = _handleIsDetail ? Vm.DetailWidth : Vm.LeftWidth;
+    }
+
+    private void OnHandleMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed) return;
+        double dx = e.GetPosition(this).X - _handleX0;
+        if (!_handleDrag)
+        {
+            if (Math.Abs(dx) < 4) return;
+            _handleDrag = true;
+        }
+        if (_handleIsDetail) Vm.SetDetailWidth(_handleW0 - dx);
+        else Vm.SetLeftWidth(_handleW0 + dx);
+    }
+
+    private void OnHandleUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_handleDrag) return;
+        _handleDrag = false;
+        e.Handled = true;   // 拖过了就别再当成一次点击去折叠
+    }
 
     private void OnDetailDragStart(object sender, MouseButtonEventArgs e)
     {

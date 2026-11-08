@@ -203,9 +203,11 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
-                    <Border x:Name="b" Background="#FFC7CCD8" CornerRadius="4" Margin="2"
-                            Height="{Binding ActualHeight, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource MinLen}}"
-                            VerticalAlignment="Center" />
+                    <Grid Background="Transparent" ClipToBounds="False">
+                        <Border x:Name="b" Width="5" CornerRadius="3" Background="#FFC7CCD8"
+                                Height="{Binding ActualHeight, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource MinLen}}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="b" Property="Background" Value="#FFA7AEBE" />
@@ -224,9 +226,11 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
-                    <Border x:Name="b" Background="#FFC7CCD8" CornerRadius="4" Margin="0,2"
-                            Width="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource MinLen}}"
-                            HorizontalAlignment="Center" />
+                    <Grid Background="Transparent" ClipToBounds="False">
+                        <Border x:Name="b" Height="5" CornerRadius="3" Background="#FFC7CCD8"
+                                Width="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource MinLen}}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="b" Property="Background" Value="#FFA7AEBE" />

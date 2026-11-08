@@ -847,30 +847,7 @@
                             <Border x:Name="LibraryDetailHost" Grid.Column="1" Background="{StaticResource B.Panel}"
                                     BorderBrush="{StaticResource B.Border}" BorderThickness="1,0,0,0"
                                     Visibility="{Binding IsPanelVisible, Converter={StaticResource B2V}}">
-                                <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="5" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <!-- 拖拽带避开垂直居中的折叠手柄（中间留 96px），
-                                     否则手柄那一块会被这条带子吃掉点击 -->
-                                <Grid Grid.Column="0">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="*" />
-                                        <RowDefinition Height="96" />
-                                        <RowDefinition Height="*" />
-                                    </Grid.RowDefinitions>
-                                    <Border Grid.Row="0" Background="Transparent" Cursor="SizeWE"
-                                            AutomationProperties.Name="调整详情栏宽度"
-                                            MouseLeftButtonDown="OnDetailDragStart" MouseMove="OnDetailDragMove"
-                                            MouseLeftButtonUp="OnDetailDragEnd" />
-                                    <Border Grid.Row="2" Background="Transparent" Cursor="SizeWE"
-                                            AutomationProperties.Name="调整详情栏宽度"
-                                            MouseLeftButtonDown="OnDetailDragStart" MouseMove="OnDetailDragMove"
-                                            MouseLeftButtonUp="OnDetailDragEnd" />
-                                </Grid>
-                                <views:DetailPanel Grid.Column="1" />
-                            </Grid>
+                                <views:DetailPanel />
                             </Border>
 
                             <StackPanel Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -1198,30 +1175,7 @@
                         <Border Grid.Row="1" Grid.RowSpan="3" Grid.Column="1" Background="{StaticResource B.Panel}"
                                 BorderBrush="{StaticResource B.Border}" BorderThickness="1,0,0,0"
                                 Visibility="{Binding IsPanelVisible, Converter={StaticResource B2V}}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="5" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <!-- 拖拽带避开垂直居中的折叠手柄（中间留 96px），
-                                     否则手柄那一块会被这条带子吃掉点击 -->
-                                <Grid Grid.Column="0">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="*" />
-                                        <RowDefinition Height="96" />
-                                        <RowDefinition Height="*" />
-                                    </Grid.RowDefinitions>
-                                    <Border Grid.Row="0" Background="Transparent" Cursor="SizeWE"
-                                            AutomationProperties.Name="调整详情栏宽度"
-                                            MouseLeftButtonDown="OnDetailDragStart" MouseMove="OnDetailDragMove"
-                                            MouseLeftButtonUp="OnDetailDragEnd" />
-                                    <Border Grid.Row="2" Background="Transparent" Cursor="SizeWE"
-                                            AutomationProperties.Name="调整详情栏宽度"
-                                            MouseLeftButtonDown="OnDetailDragStart" MouseMove="OnDetailDragMove"
-                                            MouseLeftButtonUp="OnDetailDragEnd" />
-                                </Grid>
-                                <views:DetailPanel Grid.Column="1" />
-                            </Grid>
+                            <views:DetailPanel />
                         </Border>
                     </Grid>
 
@@ -1255,6 +1209,8 @@
                 <!-- 折叠把手叠层：跨所有列、盖在最上面，两个把手同一套尺寸、同一个垂直中线 -->
                 <Grid Grid.Column="0" Grid.ColumnSpan="3" Panel.ZIndex="80">
                     <Button x:Name="LeftTab" HorizontalAlignment="Left" VerticalAlignment="Center"
+                            PreviewMouseLeftButtonDown="OnHandleDown" PreviewMouseMove="OnHandleMove"
+                            PreviewMouseLeftButtonUp="OnHandleUp"
                             Margin="{Binding LeftHandleMargin}"
                             Click="OnToggleLeftRail" AutomationProperties.Name="收起左栏">
                         <Button.Style>
@@ -1271,6 +1227,8 @@
                         </Button.Style>
                     </Button>
                     <Button x:Name="DetailTab" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            PreviewMouseLeftButtonDown="OnHandleDown" PreviewMouseMove="OnHandleMove"
+                            PreviewMouseLeftButtonUp="OnHandleUp"
                             Margin="{Binding DetailHandleMargin}"
                             Click="OnTogglePanel" AutomationProperties.Name="收起详情栏">
                         <Button.Style>
