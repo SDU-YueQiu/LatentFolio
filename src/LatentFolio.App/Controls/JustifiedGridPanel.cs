@@ -252,17 +252,33 @@ public sealed class JustifiedGridPanel : VirtualizingPanel, IScrollInfo
         double anchorDelta = 0;
         if (relayout && count > 0 && _rowTop.Count > 0)
         {
-            int r = RowAtOffset(_offset.Y);
-            if (r >= 0) { anchorIndex = _rowStart[r]; anchorDelta = _rowTop[r] - _offset.Y; }
+            // 重排前先记下「要锚住谁」的屏幕位置。
+            // 优先锚选中的那张：点开详情栏变窄之后，被选中的图还在原地，
+            // 否则按视口顶行锚，选中的图会随行数变化跑到屏幕外（用户就是这么丢的图）。
+            int sel = SelectedIndex(owner);
+            bool selVisible = false;
+            if (sel >= 0 && sel < _rects.Length)
+            {
+                double selY = _rects[sel].Y - _offset.Y;
+                if (selY > -_rects[sel].Height && selY < _viewport.Height)
+                {
+                    anchorIndex = sel;
+                    anchorDelta = selY;
+                    selVisible = true;
+                }
+            }
+
+            if (!selVisible)
+            {
+                int r = RowAtOffset(_offset.Y);
+                if (r >= 0) { anchorIndex = _rowStart[r]; anchorDelta = _rowTop[r] - _offset.Y; }
+            }
         }
 
         if (relayout) BuildLayout(owner, count, availW);
 
-        if (anchorIndex >= 0)
-        {
-            int r = RowOfIndex(anchorIndex);
-            if (r >= 0) _offset.Y = Math.Max(0, _rowTop[r] - anchorDelta);
-        }
+        if (anchorIndex >= 0 && anchorIndex < _rects.Length)
+            _offset.Y = Math.Max(0, _rects[anchorIndex].Y - anchorDelta);
 
         double extentH = _rowBottom.Count > 0
             ? _rowBottom[^1] + pad.Bottom
@@ -275,6 +291,8 @@ public sealed class JustifiedGridPanel : VirtualizingPanel, IScrollInfo
     }
 
     /// <summary>视口顶边落在哪一行。</summary>
+    private static int SelectedIndex(ItemsControl? owner) => owner is ListBox lb ? lb.SelectedIndex : -1;
+
     private int RowAtOffset(double offY)
     {
         if (_rowBottom.Count == 0) return -1;

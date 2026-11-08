@@ -423,7 +423,7 @@ public static class SelfTest
             var (cw, ch) = zoom.ContentSize;
 
             zoom.PanBy(100000, 100000);
-            await Pulse(window);
+            await Pulse(window, 3);
             var lim = zoom.PanLimit;
             Check(lim.X > 0 && Math.Abs(zoom.OffsetX - lim.X) < 1.5 && Math.Abs(zoom.OffsetY - lim.Y) < 1.5,
                 "放大后能拖到左上角", $"tx={zoom.OffsetX:F1} 上限 {lim.X:F1}");
@@ -431,8 +431,9 @@ public static class SelfTest
             Check(Math.Abs(leftEdge) < 2, "拖到极限时图片左边缘贴住视口左边", $"{leftEdge:F1}");
 
             zoom.PanBy(-100000, -100000);
-            await Pulse(window);
-            Check(Math.Abs(zoom.OffsetX + lim.X) < 1.5, "放大后能拖到右下角",
+            await Pulse(window, 3);
+            Check(Math.Abs(zoom.OffsetX + lim.X) < 1.5 && Math.Abs(zoom.OffsetY + lim.Y) < 1.5,
+                "放大后能拖到右下角",
                 $"tx={zoom.OffsetX:F1} 下限 {-lim.X:F1}");
             double rightEdge = zoom.ActualWidth / 2 + cw * 3.0 / 2 + zoom.OffsetX;
             Check(Math.Abs(rightEdge - zoom.ActualWidth) < 2, "拖到极限时图片右边缘贴住视口右边",
@@ -491,6 +492,41 @@ public static class SelfTest
                 for (int i = 0; i < 4; i++) await Pulse(window);
             }
             else Ok("详情栏锚定", "网格太小，跳过");
+        }
+
+        // ---------- 18b. 展开详情栏（列数变了）不能把选中的那张甩出视野 ----------
+        if (window is MainWindow mw5 && vm.Items.Count > 80)
+        {
+            var panel2 = FindChild<Controls.JustifiedGridPanel>(mw5.GridListForTest);
+            if (panel2 is not null)
+            {
+                double YOf(int idx) =>
+                    mw5.GridListForTest.ItemContainerGenerator.ContainerFromIndex(idx) is FrameworkElement fe
+                        ? fe.TranslatePoint(new Point(0, 0), panel2).Y
+                        : double.NaN;
+
+                vm.PanelCollapsed = true;                       // 先收起，网格变宽
+                for (int i = 0; i < 6; i++) await Pulse(window);
+                panel2.SetVerticalOffset(1500);
+                for (int i = 0; i < 6; i++) await Pulse(window);
+
+                int sel = Math.Min(vm.Items.Count - 1, panel2.FirstRealizedIndex + 2);
+                mw5.GridListForTest.SelectedIndex = sel;
+                vm.SelectSingle(vm.Items[sel]);
+                for (int i = 0; i < 4; i++) await Pulse(window);
+                double yBefore = YOf(sel);
+
+                vm.PanelCollapsed = false;                      // 展开 → 每行张数变少，整体重排
+                for (int i = 0; i < 8; i++) await Pulse(window);
+                double yAfter = YOf(sel);
+                Check(!double.IsNaN(yBefore) && !double.IsNaN(yAfter)
+                      && Math.Abs(yAfter - yBefore) <= 6,
+                    "展开详情栏后选中的那张钉在原位（不会甩出视野）",
+                    $"Y {yBefore:F0} -> {yAfter:F0}，视口高 {panel2.ViewportHeight:F0}");
+
+                panel2.SetVerticalOffset(0);
+                for (int i = 0; i < 4; i++) await Pulse(window);
+            }
         }
 
         // ---------- 19. 缩略图规格 ----------
