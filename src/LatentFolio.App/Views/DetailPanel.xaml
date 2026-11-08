@@ -39,9 +39,9 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
-        <!-- ===== 备注：凹槽底、无可见描边、圆角 9、高 56，聚焦时白底 + 主色描边 ===== -->
+        <!-- ===== 备注：凹槽底、无可见描边、圆角 9、高 44，聚焦时白底 + 主色描边 ===== -->
         <Style x:Key="P.Detail.Note" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-            <Setter Property="Height" Value="56" />
+            <Setter Property="Height" Value="44" />
             <Setter Property="AcceptsReturn" Value="True" />
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="VerticalContentAlignment" Value="Top" />

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using LatentFolio.App.ViewModels;
@@ -167,26 +168,43 @@ public static class StatsBuilder
     }
 
     /// <summary>
-    /// 胶囊筛选：Btn.Pill 模板固定白底 + B.Border，选中项按全局口径只把文字转成主色，
-    /// 不再铺 AccentSoft 底。
+    /// 门槛胶囊。Btn.Pill 的模板把白底 / B.Border 写死，表现不了选中态的底色和描边；
+    /// 这里用 Btn.Base 壳 + Border 内胆复制胶囊外观：
+    /// 选中 = AccentSoft 底 + Accent 边 + Accent 字，未选中 = 白底 + B.Border + Text2 字。
     /// </summary>
     private static Button Pill(string label, bool active, Action onClick)
     {
+        var text = new TextBlock
+        {
+            Text = label,
+            FontSize = 11.5,
+            Foreground = active ? R("B.Accent") : R("B.Text2"),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var fill = new Border
+        {
+            Background = active ? R("B.AccentSoft") : R("B.Window"),
+            BorderBrush = active ? R("B.Accent") : R("B.Border"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(11, 0, 11, 0),
+            Child = text,
+            SnapsToDevicePixels = true,
+        };
+        var rest = fill.Background;
+        var hover = active ? R("B.AccentSoft2") : R("B.Hover");
+
         var button = new Button
         {
-            Content = new TextBlock
-            {
-                Text = label,
-                FontSize = 11.5,
-                Foreground = active ? R("B.Accent") : R("B.Text2"),
-                VerticalAlignment = VerticalAlignment.Center,
-            },
-            Style = (Style)Application.Current.FindResource("Btn.Pill"),
+            Content = fill,
+            Style = (Style)Application.Current.FindResource("Btn.Base"),
             Height = 28,
-            Padding = new Thickness(11, 0, 11, 0),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            VerticalContentAlignment = VerticalAlignment.Stretch,
         };
+        button.MouseEnter += (_, _) => fill.Background = hover;
+        button.MouseLeave += (_, _) => fill.Background = rest;
         AutomationProperties.SetName(button, label);
         button.Click += (_, _) => onClick();
         return button;
@@ -241,7 +259,7 @@ public static class StatsBuilder
         foreach (var it in _images) hist[Math.Clamp(it.Rating, 0, 5)]++;
         int maxH = Math.Max(1, hist.Max());
         for (int r = 5; r >= 0; r--)
-            panel.Children.Add(BarRow(r == 0 ? "未评分" : $"{r}★", hist[r], maxH, _images.Count));
+            panel.Children.Add(BarRow(r == 0 ? "未评分" : $"{r}★", hist[r], maxH, _images.Count, muted: r == 0));
 
         // 月度产出
         panel.Children.Add(H("月度产出"));
@@ -294,6 +312,7 @@ public static class StatsBuilder
             {
                 Text = value,
                 Style = (Style)Application.Current.FindResource("T.Num"),
+                FontSize = 26,
                 Margin = new Thickness(0, 6, 0, 0),
             });
             content.Children.Add(new TextBlock
@@ -392,7 +411,7 @@ public static class StatsBuilder
 
             double lift = x.Avg <= 0 || baseline <= 0 ? 0 : x.Avg / baseline;
             Place(row, 3, NumCell(lift > 0 ? $"{lift:0.00}×" : "—", LiftBrush(lift)));
-            table.Children.Add(TableRow(row));
+            table.Children.Add(TableRow(row, withRule: true));
         }
         return table;
     }
@@ -477,7 +496,7 @@ public static class StatsBuilder
         Style = (Style)Application.Current.FindResource("HLine"),
     };
 
-    private static Border TableRow(Grid grid)
+    private static Border TableRow(Grid grid, bool withRule = false)
     {
         var row = new Border
         {
@@ -485,20 +504,25 @@ public static class StatsBuilder
             Background = Brushes.Transparent,
             Child = grid,
         };
+        if (withRule)
+        {
+            row.BorderBrush = R("B.Hairline");
+            row.BorderThickness = new Thickness(0, 0, 0, 1);
+        }
         row.MouseEnter += (_, _) => row.Background = R("B.Hover");
         row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
         return row;
     }
 
-    /// <summary>分布条：标签 76 右对齐、条高 6 圆角 3、百分比 56 右对齐、行高 26。</summary>
-    private static UIElement BarRow(string label, int value, int max, int total)
+    /// <summary>分布条：标签 76 右对齐、条高 6 圆角 3、右列 104 显示「张数 · 百分比」、行高 26。</summary>
+    private static UIElement BarRow(string label, int value, int max, int total, bool muted = false)
     {
         var grid = new Grid { Height = 26 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(104) });
 
         grid.Children.Add(new TextBlock
         {
@@ -524,7 +548,7 @@ public static class StatsBuilder
             fillHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0.0001, 1 - frac), GridUnitType.Star) });
             var fill = new Border
             {
-                Background = R("B.Accent"),
+                Background = muted ? R("B.BorderStrong") : R("B.Accent"),
                 CornerRadius = new CornerRadius(3),
             };
             Grid.SetColumn(fill, 0);
@@ -534,16 +558,17 @@ public static class StatsBuilder
         Grid.SetColumn(track, 2);
         grid.Children.Add(track);
 
-        var pct = new TextBlock
+        var figure = new TextBlock
         {
-            Text = Pct(value, total),
-            FontSize = 11.5,
-            Foreground = R("B.Text3"),
+            Style = (Style)Application.Current.FindResource("T.Value"),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        Grid.SetColumn(pct, 4);
-        grid.Children.Add(pct);
+        figure.Inlines.Add(new Run(value.ToString("N0")) { Foreground = R("B.Text2") });
+        figure.Inlines.Add(new Run(" · ") { FontSize = 11.5, Foreground = R("B.Text3") });
+        figure.Inlines.Add(new Run(Pct(value, total)) { FontSize = 11.5, Foreground = R("B.Text3") });
+        Grid.SetColumn(figure, 4);
+        grid.Children.Add(figure);
 
         return grid;
     }
@@ -806,7 +831,7 @@ public static class StatsBuilder
             word.Foreground = R("B.Text2");
             Place(row, 0, word);
             Place(row, 1, NumCell(kv.Value.ToString("N0")));
-            table.Children.Add(TableRow(row));
+            table.Children.Add(TableRow(row, withRule: true));
         }
 
         return table;

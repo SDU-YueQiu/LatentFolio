@@ -22,9 +22,9 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
-        <!-- 组内次要按钮：白底描边，高 30 -->
+        <!-- 组内次要按钮：白底描边，高 28 -->
         <Style x:Key="P.Set.Action" TargetType="Button" BasedOn="{StaticResource Btn.Outline}">
-            <Setter Property="Height" Value="30" />
+            <Setter Property="Height" Value="28" />
             <Setter Property="Padding" Value="12,0" />
         </Style>
 
@@ -45,6 +45,60 @@
         <Style x:Key="P.Set.CapText" TargetType="TextBlock" BasedOn="{StaticResource T.Sub}">
             <Setter Property="Foreground" Value="{StaticResource B.Accent}" />
         </Style>
+
+        <!-- 分段项（未选中）：透明底 + 次要字，悬停加深字色 -->
+        <Style x:Key="P.Set.Seg" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="7"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Hover}" />
+                                <Setter Property="Foreground" Value="{StaticResource B.Text}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 分段项（选中）：白底 + 主色字 + 卡片阴影，悬停保持白底 -->
+        <Style x:Key="P.Set.SegOn" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource B.Accent}" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border Background="{TemplateBinding Background}" CornerRadius="7"
+                                    Effect="{StaticResource Fx.Card}" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="20">
@@ -63,7 +117,21 @@
                 <!-- 图库与导入 -->
                 <Border Style="{StaticResource P.Set.Card}">
                     <StackPanel>
-                        <TextBlock Text="图库与导入" Style="{StaticResource T.CardTitle}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="图库与导入" Style="{StaticResource T.CardTitle}"
+                                       VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right"
+                                        VerticalAlignment="Center">
+                                <Button Content="更换目录…" Style="{StaticResource P.Set.Action}"
+                                        Click="OnChangeRoot" />
+                                <Button Content="重新扫描" Style="{StaticResource P.Set.Action}"
+                                        Margin="8,0,0,0" Click="OnRescan" />
+                            </StackPanel>
+                        </Grid>
                         <StackPanel Margin="0,12,0,0">
                             <Grid Style="{StaticResource P.Set.Row}">
                                 <Grid.ColumnDefinitions>
@@ -72,20 +140,13 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="输出目录" Style="{StaticResource P.Set.Label}" />
                                 <TextBlock x:Name="RootText" Grid.Column="1" Style="{StaticResource T.Mono}"
-                                           TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,6,0,6" />
-                            </Grid>
-                            <Grid Style="{StaticResource P.Set.Row}">
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                            VerticalAlignment="Center">
-                                    <Button Content="更换目录…" Style="{StaticResource P.Set.Action}"
-                                            Click="OnChangeRoot" />
-                                    <Button Content="重新扫描" Style="{StaticResource P.Set.Action}"
-                                            Margin="8,0,0,0" Click="OnRescan" />
-                                </StackPanel>
+                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                           Margin="12,0,0,0"
+                                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
                             </Grid>
                             <!-- 判重记录：9 圆角凹槽块 -->
-                            <Border Style="{StaticResource Card.Inset}" Padding="12" Margin="0,8,0,0">
-                                <Grid Style="{StaticResource P.Set.Row}">
+                            <Border Style="{StaticResource Card.Inset}" Padding="10,8" Margin="-10,8,-10,0">
+                                <Grid MinHeight="40">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
@@ -115,7 +176,7 @@
                                        Margin="12,0,0,0" />
                         </Grid>
                         <!-- 缩略图缓存数据：9 圆角凹槽块 -->
-                        <Border Style="{StaticResource Card.Inset}" Padding="12" Margin="0,12,0,0">
+                        <Border Style="{StaticResource Card.Inset}" Padding="10,8" Margin="-10,12,-10,0">
                             <StackPanel>
                                 <Grid Style="{StaticResource P.Set.Row}">
                                     <Grid.ColumnDefinitions>
@@ -133,11 +194,8 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
-                        <Grid Style="{StaticResource P.Set.Row}" Margin="0,8,0,0">
-                            <Button Content="清空网格缩略图缓存" Style="{StaticResource P.Set.Danger}"
-                                    HorizontalAlignment="Right" VerticalAlignment="Center"
-                                    Click="OnClearCache" />
-                        </Grid>
+                        <Button Content="清空网格缩略图缓存" Style="{StaticResource P.Set.Danger}"
+                                HorizontalAlignment="Right" Margin="0,4,-10,0" Click="OnClearCache" />
                     </StackPanel>
                 </Border>
 

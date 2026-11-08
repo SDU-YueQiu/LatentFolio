@@ -764,7 +764,7 @@
         <Setter Property="Width" Value="22" />
         <Setter Property="Height" Value="88" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="Foreground" Value="{StaticResource B.Text3}" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
@@ -772,6 +772,8 @@
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="White" CornerRadius="11" BorderThickness="1"
                             BorderBrush="{StaticResource B.Border}" Effect="{StaticResource Fx.Card}">
+                        <!-- 手柄内容用半角尖括号 ‹ ›（U+2039/203A）：MDL2 里没有这两个码位，
+                             换成 E76B 之类会渲染成空方框，所以这边也不锁图标字体 -->
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>

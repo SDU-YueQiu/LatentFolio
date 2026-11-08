@@ -1215,12 +1215,11 @@
                             Click="OnToggleLeftRail" AutomationProperties.Name="收起左栏">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource Btn.Tab}">
-                                <Setter Property="FontFamily" Value="{StaticResource F.Icon}" />
-                                <Setter Property="Content" Value="&#xE76B;" />
+                                <Setter Property="Content" Value="&#x2039;" />
                                 <Setter Property="ToolTip" Value="收起左栏" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding LeftCollapsed}" Value="True">
-                                        <Setter Property="Content" Value="&#xE76C;" />
+                                        <Setter Property="Content" Value="&#x203A;" />
                                         <Setter Property="ToolTip" Value="展开左栏" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -1232,12 +1231,11 @@
                             Click="OnTogglePanel" AutomationProperties.Name="收起详情栏">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource Btn.Tab}">
-                                <Setter Property="FontFamily" Value="{StaticResource F.Icon}" />
-                                <Setter Property="Content" Value="&#xE76B;" />
+                                <Setter Property="Content" Value="&#x2039;" />
                                 <Setter Property="ToolTip" Value="收起详情栏" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsPanelVisible}" Value="False">
-                                        <Setter Property="Content" Value="&#xE76C;" />
+                                        <Setter Property="Content" Value="&#x203A;" />
                                         <Setter Property="ToolTip" Value="展开详情栏" />
                                     </DataTrigger>
                                 </Style.Triggers>

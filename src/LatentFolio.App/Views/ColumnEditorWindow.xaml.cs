@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using LatentFolio.App.ViewModels;
 using LatentFolio.Core.Filtering;
@@ -60,10 +61,8 @@ public partial class ColumnEditorWindow : Window
         {
             Title = "筛选";
             HeaderText.Text = "筛选";
-            NameLabel.Visibility = Visibility.Collapsed;
-            NameBox.Visibility = Visibility.Collapsed;
-            ColorLabel.Visibility = Visibility.Collapsed;
-            ColorBar.Visibility = Visibility.Collapsed;
+            // 筛选模式不要「名称 + 标记色」整行，省下来的高度全给条件树
+            MetaRow.Visibility = Visibility.Collapsed;
             SaveTemplateBtn.Visibility = Visibility.Visible;
             SaveAsColumnBtn.Visibility = Visibility.Visible;
             OkBtn.Content = "应用";
@@ -86,21 +85,21 @@ public partial class ColumnEditorWindow : Window
     private void BuildColorBar()
     {
         ColorBar.Children.Clear();
-        foreach (var (_, hex) in Colors)
+        foreach (var (name, hex) in Colors)
         {
+            bool selected = string.Equals(hex, ColumnColor, StringComparison.OrdinalIgnoreCase);
             var dot = new Border
             {
-                Width = 18,
-                Height = 18,
-                CornerRadius = new CornerRadius(9),
-                Margin = new Thickness(0, 0, 6, 0),
-                BorderThickness = new Thickness(hex.Length == 0 ? 1 : 2),
-                BorderBrush = (Brush)FindResource(
-                    string.Equals(hex, ColumnColor, StringComparison.OrdinalIgnoreCase)
-                        ? "B.Accent" : "B.Border"),
+                Width = 20,
+                Height = 20,
+                CornerRadius = new CornerRadius(10),
+                Margin = new Thickness(0, 0, 8, 0),
+                BorderThickness = new Thickness(selected ? 2 : 1),
+                BorderBrush = (Brush)FindResource(selected ? "B.Accent" : "B.Border"),
                 Background = hex.Length == 0 ? Brushes.Transparent : HexBrush(hex),
                 Cursor = System.Windows.Input.Cursors.Hand,
                 Tag = hex,
+                ToolTip = name,
             };
             dot.MouseLeftButtonDown += (s, _) =>
             {
@@ -117,11 +116,12 @@ public partial class ColumnEditorWindow : Window
         catch { return Brushes.Gray; }
     }
 
-    // ================= 右栏：可用字段 =================
+    // ================= 左栏：可用字段 =================
 
     private void BuildFieldPanel()
     {
         FieldHost.Children.Clear();
+        bool firstGroup = true;
         foreach (var (name, fields) in FieldNames.Groups)
         {
             FieldHost.Children.Add(new TextBlock
@@ -129,27 +129,58 @@ public partial class ColumnEditorWindow : Window
                 Text = name,
                 FontSize = 11,
                 Foreground = (Brush)FindResource("B.Text3"),
-                Margin = new Thickness(0, 6, 0, 4),
+                Margin = new Thickness(0, firstGroup ? 0 : 12, 0, 4),
             });
-            var wrap = new WrapPanel();
+            firstGroup = false;
+
             foreach (var f in fields)
             {
-                var b = new Button
+                var label = new TextBlock
                 {
-                    Content = FieldNames.Label(f),
-                    Style = (Style)FindResource("Btn.Outline"),
-                    Height = 26,
-                    Padding = new Thickness(8, 0, 8, 0),
-                    Margin = new Thickness(0, 0, 5, 5),
-                    FontSize = 11,
+                    Text = FieldNames.Label(f),
+                    Style = (Style)FindResource("T.Value"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                };
+                var kind = new TextBlock
+                {
+                    Text = KindLabel(f),
+                    Style = (Style)FindResource("T.Sub"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(8, 0, 0, 0),
+                };
+
+                var line = new Grid();
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                line.Children.Add(label);
+                Grid.SetColumn(kind, 1);
+                line.Children.Add(kind);
+
+                var row = new Button
+                {
+                    Content = line,
+                    Style = (Style)FindResource("P.ColEd.FieldRow"),
                     Tag = f,
                 };
-                b.Click += (s, _) => InsertCondition((FieldType)((Button)s).Tag);
-                wrap.Children.Add(b);
+                row.Click += (s, _) => InsertCondition((FieldType)((Button)s).Tag);
+                FieldHost.Children.Add(row);
             }
-            FieldHost.Children.Add(wrap);
         }
     }
+
+    /// <summary>可用字段右侧那枚很淡的类型标记，只是把输入形态说清楚。</summary>
+    private static string KindLabel(FieldType f) => f switch
+    {
+        FieldType.Steps or FieldType.Cfg or FieldType.Seed or FieldType.Rating
+            or FieldType.Resolution or FieldType.SimilarGroup => "数值",
+        FieldType.Character or FieldType.Artist or FieldType.Tag or FieldType.MyTag
+            or FieldType.Lora => "标签",
+        FieldType.HasPrompt or FieldType.Deleted => "开关",
+        FieldType.FileState => "枚举",
+        FieldType.Date => "日期",
+        _ => "文本",
+    };
 
     private void InsertCondition(FieldType f)
     {
@@ -282,11 +313,13 @@ public partial class ColumnEditorWindow : Window
         var hits = ColumnEngine.Filter(images, Tree, App.Root.MakeContext());
         double pct = images.Count == 0 ? 0 : hits.Count * 100.0 / images.Count;
         PreviewText.Text = $"{hits.Count:N0} 张 · {pct:F1}%";
+        ExpressionText.Text = Tree.ToExpression();
 
-        var vms = new List<ImageVm>(24);
+        // 预览固定 8 列 × 2 行 = 16 张：整行整行地露，不切半行
+        var vms = new List<ImageVm>(16);
         foreach (var it in hits)
         {
-            if (vms.Count >= 24) break;
+            if (vms.Count >= 16) break;
             if (App.Root.VmById.TryGetValue(it.Id, out var vm)) vms.Add(vm);
         }
         PreviewHost.ItemsSource = vms;
@@ -296,10 +329,15 @@ public partial class ColumnEditorWindow : Window
     {
         var stack = new StackPanel();
 
-        var head = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
-        head.Children.Add(Toggle("全部满足", g.Op == BoolOp.And, () => { g.Op = BoolOp.And; Rebuild(); }));
-        head.Children.Add(Toggle("任一满足", g.Op == BoolOp.Or, () => { g.Op = BoolOp.Or; Rebuild(); }));
-        head.Children.Add(Toggle("反选", g.Op == BoolOp.Not, () =>
+        // 组头：谓词三选 + 新增动作；嵌套组右侧多一个删除图标
+        var head = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var bar = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+        bar.Children.Add(Toggle("全部满足", g.Op == BoolOp.And, () => { g.Op = BoolOp.And; Rebuild(); }));
+        bar.Children.Add(Toggle("任一满足", g.Op == BoolOp.Or, () => { g.Op = BoolOp.Or; Rebuild(); }));
+        bar.Children.Add(Toggle("反选", g.Op == BoolOp.Not, () =>
         {
             g.Op = BoolOp.Not;
             if (g.Children.Count > 1) g.Children.RemoveRange(1, g.Children.Count - 1);
@@ -307,13 +345,16 @@ public partial class ColumnEditorWindow : Window
                 g.Children.Add(new FilterCond { Field = FieldType.Prompt, Op = CondOp.Contains, Value = "" });
             Rebuild();
         }));
-        head.Children.Add(Link("+ 条件", () =>
+
+        var addCond = Pill("+ 条件", () =>
         {
             g.Children.Add(new FilterCond { Field = FieldType.Prompt, Op = CondOp.Contains, Value = "" });
             _activeGroup = g;
             Rebuild();
-        }));
-        head.Children.Add(Link("+ 条件组", () =>
+        });
+        addCond.Margin = new Thickness(8, 0, 6, 0);
+        bar.Children.Add(addCond);
+        bar.Children.Add(Pill("+ 条件组", () =>
         {
             var ng = new FilterGroup
             {
@@ -325,7 +366,15 @@ public partial class ColumnEditorWindow : Window
             _activeGroup = ng;
             Rebuild();
         }));
-        if (!isRoot) head.Children.Add(Link("删除组", () => { RemoveNode(g); }));
+        head.Children.Add(bar);
+
+        if (!isRoot)
+        {
+            var del = IconButton("\uE74D", "删除条件组", () => RemoveNode(g));
+            del.Margin = new Thickness(8, 0, 0, 0);
+            Grid.SetColumn(del, 1);
+            head.Children.Add(del);
+        }
 
         stack.Children.Add(head);
 
@@ -336,29 +385,26 @@ public partial class ColumnEditorWindow : Window
             {
                 var inner = new StackPanel();
                 AddGroup(inner, sg, depth + 1, false);
+                // 缩进处的竖线就是层级线：选中的组用主色，其余用最轻的 Hairline
                 stack.Children.Add(new Border
                 {
-                    Margin = new Thickness(14, 2, 0, 2),
-                    Padding = new Thickness(10, 8, 0, 2),
-                    BorderBrush = (Brush)FindResource("B.Border"),
-                    BorderThickness = new Thickness(2, 0, 0, 0),
+                    Margin = new Thickness(16, 4, 0, 4),
+                    Padding = new Thickness(8, 0, 0, 0),
+                    BorderBrush = (Brush)FindResource(
+                        ReferenceEquals(sg, _activeGroup) ? "B.Accent" : "B.Hairline"),
+                    BorderThickness = new Thickness(1, 0, 0, 0),
                     Child = inner,
                 });
             }
         }
 
-        bool active = ReferenceEquals(g, _activeGroup);
         var card = new Border
         {
-            Background = isRoot ? Brushes.Transparent : Brushes.White,
-            BorderBrush = (Brush)FindResource(active && !isRoot ? "B.Accent" : "B.Border"),
-            BorderThickness = isRoot ? new Thickness(0) : new Thickness(active ? 2 : 1),
-            CornerRadius = new CornerRadius(9),
-            Padding = new Thickness(isRoot ? 0 : 10),
-            Margin = new Thickness(0, 0, 0, 8),
+            Background = Brushes.Transparent,
+            Padding = new Thickness(0),
             Child = stack,
         };
-        // 点组里的空白处 = 把这一组设成「插入目标」，右栏点字段就加到这里
+        // 点组里的空白处 = 把这一组设成「插入目标」，左栏点字段就加到这里
         card.MouseLeftButtonDown += (_, e) =>
         {
             if (!ReferenceEquals(_activeGroup, g))
@@ -389,12 +435,9 @@ public partial class ColumnEditorWindow : Window
         var b = new Button
         {
             Content = text,
-            Style = (Style)FindResource("Btn.Outline"),
-            Height = 27,
-            Padding = new Thickness(10, 0, 10, 0),
-            Margin = new Thickness(0, 0, 6, 4),
-            FontSize = 11.5,
+            Style = (Style)FindResource("P.ColEd.OpToggle"),
         };
+        // 选中态写成本地值：本地值优先于样式里的悬停触发器，悬停时不会被 B.Hover 盖掉
         if (active)
         {
             b.Background = (Brush)FindResource("B.AccentSoft");
@@ -405,17 +448,37 @@ public partial class ColumnEditorWindow : Window
         return b;
     }
 
-    private Button Link(string text, Action onClick)
+    private Button Pill(string text, Action onClick)
     {
         var b = new Button
         {
             Content = text,
-            Style = (Style)FindResource("Btn.Ghost"),
-            Height = 27,
-            Padding = new Thickness(8, 0, 8, 0),
-            Margin = new Thickness(0, 0, 6, 4),
-            FontSize = 11.5,
-            Foreground = (Brush)FindResource("B.Accent"),
+            Style = (Style)FindResource("P.ColEd.AddPill"),
+        };
+        b.Click += (_, _) => onClick();
+        return b;
+    }
+
+    private Button IconButton(string glyphText, string tip, Action onClick)
+    {
+        var glyph = new TextBlock
+        {
+            Text = glyphText,
+            FontFamily = (FontFamily)FindResource("F.Icon"),
+            FontSize = 13,
+        };
+        // TextBlock 的隐式样式会自己定 Foreground，这里改成跟按钮走，悬停才能变 B.Danger
+        glyph.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(Control.Foreground))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(Button), 1),
+        });
+
+        var b = new Button
+        {
+            Content = glyph,
+            Style = (Style)FindResource("P.ColEd.RowDelete"),
+            ToolTip = tip,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
         };
         b.Click += (_, _) => onClick();
         return b;
@@ -423,11 +486,24 @@ public partial class ColumnEditorWindow : Window
 
     private FrameworkElement MakeCondRow(FilterCond cond, FilterGroup parent)
     {
-        var grid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) });
+        // 每层一行 30：▾ + 字段 + 运算符 + 值 + 删除；三个控件统一 26 高
+        var grid = new Grid { Height = 30, Margin = new Thickness(0, 0, 0, 6) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        grid.Children.Add(new TextBlock
+        {
+            Text = "\uE70D",
+            FontFamily = (FontFamily)FindResource("F.Icon"),
+            FontSize = 10,
+            Foreground = (Brush)FindResource("B.Text3"),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            IsHitTestVisible = false,
+        });
 
         // 直接用字符串当选项，SelectedIndex 取下标回查枚举。
         // DisplayMemberPath / ItemTemplate 在这套自定义 ComboBox 模板上会退化成 ToString，
@@ -436,29 +512,30 @@ public partial class ColumnEditorWindow : Window
         if (Array.IndexOf(fields, cond.Field) < 0) fields = [.. FieldNames.All, cond.Field];
         var fieldBox = new ComboBox
         {
-            MinHeight = 30,
+            Style = (Style)FindResource("P.ColEd.FieldCombo"),
             Margin = new Thickness(0, 0, 6, 0),
             ItemsSource = fields.Select(FieldNames.Label).ToList(),
             VerticalContentAlignment = VerticalAlignment.Center,
         };
+        Grid.SetColumn(fieldBox, 1);
         grid.Children.Add(fieldBox);
 
         var ops = FieldNames.OpsFor(cond.Field);
         if (!ops.Contains(cond.Op)) cond.Op = ops[0];
         var opBox = new ComboBox
         {
-            MinHeight = 30,
+            Style = (Style)FindResource("P.ColEd.OpCombo"),
             Margin = new Thickness(0, 0, 6, 0),
             ItemsSource = ops.Select(FieldNames.OpLabel).ToList(),
             VerticalContentAlignment = VerticalAlignment.Center,
         };
-        Grid.SetColumn(opBox, 1);
+        Grid.SetColumn(opBox, 2);
         grid.Children.Add(opBox);
 
         bool needsValue = FieldNames.NeedsValue(cond.Field, cond.Op);
         var valueBox = new TextBox
         {
-            MinHeight = 30,
+            Style = (Style)FindResource("P.ColEd.ValueBox"),
             Text = needsValue ? cond.Value : "—",
             IsEnabled = needsValue,
             VerticalContentAlignment = VerticalAlignment.Center,
@@ -469,13 +546,16 @@ public partial class ColumnEditorWindow : Window
             valueBox.HorizontalAlignment = HorizontalAlignment.Left;
             valueBox.TextAlignment = TextAlignment.Center;
         }
-        Grid.SetColumn(valueBox, 2);
+        Grid.SetColumn(valueBox, 3);
         grid.Children.Add(valueBox);
 
-        var del = Link("移除", () => { parent.Children.Remove(cond); Rebuild(); });
-        Grid.SetColumn(del, 3);
+        var del = IconButton("\uE74D", "移除条件", () =>
+        {
+            parent.Children.Remove(cond);
+            Rebuild();
+        });
         del.Margin = new Thickness(6, 0, 0, 0);
-        del.Foreground = (Brush)FindResource("B.Text3");
+        Grid.SetColumn(del, 4);
         grid.Children.Add(del);
 
         // 先设初值再挂事件：反过来设置 SelectedIndex 会立刻触发 SelectionChanged，

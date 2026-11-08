@@ -5,8 +5,175 @@
         Title="自定义栏" Height="780" Width="1060" MinWidth="880" MinHeight="560"
         WindowStartupLocation="CenterOwner" Background="{StaticResource B.Window}"
         FontFamily="{StaticResource F.UI}">
-    <Grid Margin="18">
+
+    <!-- 本页专用样式：键名统一 P.ColEd. 前缀，不污染 Theme.xaml -->
+    <Window.Resources>
+        <!-- 栏标题 / 字段标签：显式 18 行高，保证 11.5–12 号字的上缘不被裁 -->
+        <Style x:Key="P.ColEd.Section" TargetType="TextBlock" BasedOn="{StaticResource T.Section}">
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+        <Style x:Key="P.ColEd.Label" TargetType="TextBlock" BasedOn="{StaticResource T.Label}">
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+
+        <!-- 可用字段的一行：左字段名、右淡淡的类型标记，点一下插入条件 -->
+        <Style x:Key="P.ColEd.FieldRow" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Foreground" Value="{StaticResource B.Text}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="9"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Hover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Pressed}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 条件组的谓词：全部满足 / 任一满足 / 反选。选中态由代码写本地值，盖过下面的悬停触发器 -->
+        <Style x:Key="P.ColEd.OpToggle" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
+            <Setter Property="Background" Value="{StaticResource B.Window}" />
+            <Setter Property="BorderBrush" Value="{StaticResource B.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="999"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource B.Hover}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource B.BorderStrong}" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{StaticResource B.Pressed}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- + 条件 / + 条件组 -->
+        <Style x:Key="P.ColEd.AddPill" TargetType="Button" BasedOn="{StaticResource Btn.Pill}">
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+        </Style>
+
+        <!-- 条件行 / 条件组右侧的图标删除 -->
+        <Style x:Key="P.ColEd.RowDelete" TargetType="Button" BasedOn="{StaticResource Btn.IconSm}">
+            <Setter Property="Foreground" Value="{StaticResource B.Text3}" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource B.Danger}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 条件值：和运算符、删除按钮同高 -->
+        <Style x:Key="P.ColEd.ValueBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Height" Value="26" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Padding" Value="8,0" />
+        </Style>
+
+        <!-- 运算符下拉：26 高，固定 92 宽，行才齐 -->
+        <Style x:Key="P.ColEd.OpCombo" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Width" Value="92" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <!-- 字段名：看起来是标签，点开才是下拉。参数编辑器里字段比运算符更“静态”，
+             所以不给它描边，只在悬停时浮一层 B.Hover -->
+        <Style x:Key="P.ColEd.FieldCombo" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Width" Value="104" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource B.Text}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="PART_Toggle" Focusable="False" ClickMode="Press"
+                                          Cursor="Hand" FocusVisualStyle="{x:Null}"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="bd" Background="Transparent" CornerRadius="8">
+                                            <TextBlock x:Name="chev" Text="&#xE70D;" FontFamily="{StaticResource F.Icon}"
+                                                       FontSize="9" Foreground="{StaticResource B.Text3}"
+                                                       HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                       Margin="0,0,6,0" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Hover}" />
+                                                <Setter TargetName="chev" Property="Foreground" Value="{StaticResource B.Text2}" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="bd" Property="Background" Value="{StaticResource B.Hover}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="PART_Content" Margin="6,0,16,0" VerticalAlignment="Center"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+                            <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom"
+                                   Focusable="False" PopupAnimation="Fade"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}">
+                                <Border Background="{StaticResource B.Window}" BorderBrush="{StaticResource B.Border}"
+                                        BorderThickness="1" CornerRadius="10" Padding="4" Margin="0,4,0,0"
+                                        MinWidth="{TemplateBinding ActualWidth}"
+                                        Effect="{StaticResource Fx.Pop}">
+                                    <ScrollViewer MaxHeight="320" VerticalScrollBarVisibility="Auto">
+                                        <StackPanel IsItemsHost="True" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="20,16,20,16">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -14,89 +181,112 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="新建自定义栏" x:Name="HeaderText" Style="{StaticResource T.Title}" />
+        <TextBlock Grid.Row="0" Text="新建自定义栏" x:Name="HeaderText" Style="{StaticResource T.Page}" />
+        <Border Grid.Row="1" Style="{StaticResource HLine}" Margin="0,12,0,0" />
 
-        <!-- 名称 + 标记色 -->
-        <Grid Grid.Row="1" Margin="0,12,0,12">
+        <!-- 名称 + 标记色；筛选模式由代码整行收起 -->
+        <Grid Grid.Row="2" x:Name="MetaRow" Margin="0,16,0,16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock x:Name="NameLabel" Text="名称" Style="{StaticResource T.Label}" VerticalAlignment="Center"
-                       Margin="0,0,10,0" />
-            <TextBox Grid.Column="1" x:Name="NameBox" MinHeight="34" FontSize="13"
-                     VerticalContentAlignment="Center" />
-            <TextBlock Grid.Column="2" Text="标记色" Style="{StaticResource T.Label}" VerticalAlignment="Center"
-                       Margin="16,0,10,0" x:Name="ColorLabel" />
+            <TextBlock x:Name="NameLabel" Text="名称" Style="{StaticResource P.ColEd.Label}" Width="48"
+                       TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" />
+            <TextBox Grid.Column="1" x:Name="NameBox" Height="32" Width="320"
+                     HorizontalAlignment="Left" VerticalContentAlignment="Center" FontSize="13" />
+            <TextBlock Grid.Column="2" Text="标记色" Style="{StaticResource P.ColEd.Label}" Width="48"
+                       TextAlignment="Right" VerticalAlignment="Center" Margin="24,0,10,0" x:Name="ColorLabel" />
             <StackPanel Grid.Column="3" x:Name="ColorBar" Orientation="Horizontal" VerticalAlignment="Center" />
         </Grid>
 
-        <!-- 条件树 + 右栏 -->
-        <Grid Grid.Row="2">
+        <!-- 左：可用字段 + 预览（B.Panel）；右：筛选条件树（白底） -->
+        <Grid Grid.Row="3">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="14" />
-                <ColumnDefinition Width="300" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" BorderBrush="{StaticResource B.Border}" BorderThickness="1" CornerRadius="10"
-                    Background="{StaticResource B.Panel}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
-                    <StackPanel x:Name="TreeHost" />
-                </ScrollViewer>
+            <Border Grid.Column="0" Background="{StaticResource B.Panel}"
+                    BorderBrush="{StaticResource B.Border}" BorderThickness="0,0,1,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 固定表头：字段列表滚动时「可用字段」不动，且 18 行高保证字顶不被裁 -->
+                    <Border Grid.Row="0" Background="{StaticResource B.Panel}" MinHeight="38"
+                            Padding="16,14,16,6">
+                        <TextBlock Text="可用字段" Style="{StaticResource P.ColEd.Section}"
+                                   VerticalAlignment="Center" />
+                    </Border>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="16,12,16,12">
+                        <StackPanel x:Name="FieldHost" />
+                    </ScrollViewer>
+
+                    <!-- 预览做成凹槽，不加描边卡片 -->
+                    <Border Grid.Row="2" Background="{StaticResource B.Inset}" CornerRadius="9"
+                            Padding="10" Margin="16,10,16,16">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="预览" Style="{StaticResource P.ColEd.Section}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="PreviewText" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                           Style="{StaticResource T.Value}" />
+                            </Grid>
+                            <TextBlock x:Name="ExpressionText" Style="{StaticResource T.Mono}" Margin="0,6,0,0"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                            <ItemsControl x:Name="PreviewHost" Margin="0,8,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="8" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Height="28" Margin="2" Background="{StaticResource B.Panel}"
+                                                CornerRadius="8" ClipToBounds="True"
+                                                ToolTip="{Binding FileName}">
+                                            <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </Border>
 
-            <Grid Grid.Column="2">
+            <Grid Grid.Column="1">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <Border BorderBrush="{StaticResource B.Border}" BorderThickness="1" CornerRadius="10"
-                        Background="{StaticResource B.Panel}" Padding="12,10">
-                    <StackPanel>
-                        <TextBlock Text="可用字段" Style="{StaticResource T.Section}" />
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
-                            <StackPanel x:Name="FieldHost" />
-                        </ScrollViewer>
-                    </StackPanel>
-                </Border>
+                <TextBlock Grid.Row="0" Text="筛选条件" Style="{StaticResource P.ColEd.Section}" Margin="20,14,0,8" />
 
-                <Border Grid.Row="1" BorderBrush="{StaticResource B.Border}" BorderThickness="1" CornerRadius="10"
-                        Background="{StaticResource B.Panel}" Padding="12,10" Margin="0,10,0,0">
-                    <StackPanel>
-                        <TextBlock Text="预览" Style="{StaticResource T.Section}" />
-                        <TextBlock x:Name="PreviewText" FontSize="12" FontWeight="SemiBold"
-                                   Foreground="{StaticResource B.Accent}" Margin="0,6,0,8" />
-                        <ItemsControl x:Name="PreviewHost">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <UniformGrid Columns="8" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Height="34" Margin="2" Background="{StaticResource B.Tile}"
-                                            CornerRadius="4" ClipToBounds="True"
-                                            ToolTip="{Binding FileName}">
-                                        <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
+                <ScrollViewer Grid.Row="1" Margin="20,0,0,0" Padding="0,0,4,20"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="TreeHost" />
+                </ScrollViewer>
             </Grid>
         </Grid>
 
-        <!-- 快捷模板 -->
-        <Border Grid.Row="3" Margin="0,12,0,0" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
-                CornerRadius="10" Background="{StaticResource B.Panel}" Padding="12,8">
-            <StackPanel>
-                <TextBlock Text="快捷模板" Style="{StaticResource T.Section}" Margin="0,0,0,4" />
-                <ItemsControl x:Name="TemplateHost">
+        <!-- 快捷模板：Btn.Pill 一排横排，可换行 -->
+        <StackPanel Grid.Row="4" Margin="0,14,0,0">
+            <Border Style="{StaticResource HLine}" />
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="快捷模板" Style="{StaticResource P.ColEd.Section}" VerticalAlignment="Center"
+                           Margin="0,0,14,0" />
+                <ItemsControl Grid.Column="1" x:Name="TemplateHost">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel />
@@ -104,36 +294,31 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Background="White" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
-                                    CornerRadius="14" Padding="10,4" Margin="0,4,8,0">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding Name}" FontSize="11.5"
-                                               Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
-                                    <Button Content="套用" Style="{StaticResource Btn.Ghost}" FontSize="11"
-                                            Padding="6,0" Height="20" Margin="8,0,0,0"
-                                            Click="OnApplyTemplate" Tag="{Binding}" />
-                                </StackPanel>
-                            </Border>
+                            <Button Style="{StaticResource Btn.Pill}" Content="{Binding Name}" Tag="{Binding}"
+                                    Click="OnApplyTemplate" Height="28" Padding="12,0" Margin="0,4,8,4" />
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-            </StackPanel>
-        </Border>
+            </Grid>
+        </StackPanel>
 
-        <Grid Grid.Row="4" Margin="0,14,0,0">
+        <!-- 底部动作：辅助动作靠左，取消/保存靠右 -->
+        <Grid Grid.Row="5" Margin="0,14,0,0">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                <Button x:Name="DeleteBtn" Content="删除这一栏" Style="{StaticResource Btn.Ghost}" Height="34"
+                <Button x:Name="DeleteBtn" Content="删除这一栏" Style="{StaticResource Btn.Ghost}" Height="32"
                         Foreground="{StaticResource B.Danger}" Click="OnDelete" Visibility="Collapsed" />
-                <Button x:Name="SaveTemplateBtn" Content="存为模板" Style="{StaticResource Btn.Ghost}" Height="34"
-                        Click="OnSaveAsTemplate" Margin="4,0,0,0" />
-                <Button x:Name="SaveAsColumnBtn" Content="存为一栏" Style="{StaticResource Btn.Ghost}" Height="34"
-                        Click="OnSaveAsColumn" Margin="4,0,0,0" Visibility="Collapsed" />
+                <Button x:Name="SaveTemplateBtn" Content="存为模板" Style="{StaticResource Btn.Ghost}" Height="32"
+                        Foreground="{StaticResource B.Text2}" Click="OnSaveAsTemplate" Margin="4,0,0,0" />
+                <Button x:Name="SaveAsColumnBtn" Content="存为一栏" Style="{StaticResource Btn.Ghost}" Height="32"
+                        Foreground="{StaticResource B.Text2}" Click="OnSaveAsColumn" Margin="4,0,0,0"
+                        Visibility="Collapsed" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="取消" Style="{StaticResource Btn.Outline}" Width="88" Height="34"
-                        Click="OnCancel" Margin="0,0,10,0" />
-                <Button x:Name="OkBtn" Content="保存" Style="{StaticResource Btn.Primary}" Width="96" Height="34"
-                        Click="OnSave" />
+                <Button Content="取消" Style="{StaticResource Btn.Ghost}" Height="32" MinWidth="72" Padding="14,0"
+                        HorizontalContentAlignment="Center" Foreground="{StaticResource B.Text2}"
+                        Click="OnCancel" Margin="0,0,8,0" />
+                <Button x:Name="OkBtn" Content="保存" Style="{StaticResource Btn.Primary}" Height="32" MinWidth="88"
+                        Padding="18,0" Click="OnSave" />
             </StackPanel>
         </Grid>
     </Grid>

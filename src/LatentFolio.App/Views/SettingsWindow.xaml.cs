@@ -1,7 +1,6 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using LatentFolio.App.ViewModels;
 
 namespace LatentFolio.App.Views;
@@ -18,8 +17,6 @@ public partial class SettingsWindow : Window
         Refresh();
         _loading = false;
     }
-
-    private static Brush R(string key) => (Brush)Application.Current.FindResource(key);
 
     private void Refresh()
     {
@@ -58,11 +55,7 @@ public partial class SettingsWindow : Window
             var b = new Button
             {
                 Content = label,
-                Style = (Style)FindResource("Btn.Seg"),
-                Height = 26,
-                Padding = new Thickness(12, 0, 12, 0),
-                Background = _vm.StatsThreshold == v ? R("B.AccentSoft") : Brushes.Transparent,
-                Foreground = _vm.StatsThreshold == v ? R("B.Accent") : R("B.Text2"),
+                Style = (Style)FindResource(_vm.StatsThreshold == v ? "P.Set.SegOn" : "P.Set.Seg"),
             };
             b.Click += (_, _) => { _vm.StatsThreshold = v; BuildChips(); };
             ThresholdBar.Children.Add(b);
@@ -75,11 +68,7 @@ public partial class SettingsWindow : Window
             var b = new Button
             {
                 Content = label,
-                Style = (Style)FindResource("Btn.Seg"),
-                Height = 26,
-                Padding = new Thickness(12, 0, 12, 0),
-                Background = _vm.VsrScale == v ? R("B.AccentSoft") : Brushes.Transparent,
-                Foreground = _vm.VsrScale == v ? R("B.Accent") : R("B.Text2"),
+                Style = (Style)FindResource(_vm.VsrScale == v ? "P.Set.SegOn" : "P.Set.Seg"),
             };
             b.Click += (_, _) => { _vm.VsrScale = v; BuildChips(); };
             ScaleBar.Children.Add(b);
