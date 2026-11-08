@@ -970,7 +970,7 @@ public sealed partial class AppVm : ObservableObject
 
     private SimilarityIndex? _similar;
 
-    public FilterNode? CurrentTree()
+    public FilterNode? CurrentTree(bool includeTemp = true)
     {
         FilterGroup root = new() { Op = BoolOp.And };
 
@@ -1008,7 +1008,7 @@ public sealed partial class AppVm : ObservableObject
                 break;
         }
 
-        if (TempFilter is not null) root.Children.Add(TempFilter);
+        if (includeTemp && TempFilter is not null) root.Children.Add(TempFilter);
 
         if (!string.IsNullOrWhiteSpace(SearchText))
         {
@@ -1432,12 +1432,27 @@ public sealed partial class AppVm : ObservableObject
         TempFilter = tree;
     }
 
+    /// <summary>
+    /// 当前视图（含搜索）但**不含**临时筛选的那批图。
+    /// 角色/模型菜单要从这里统计：从筛选后的结果里统计的话，选了「模型 A」之后
+    /// 菜单里就只剩 A 了，别的模型全被藏起来。
+    /// </summary>
+    public List<ImageItem> BaseItems()
+    {
+        var tree = CurrentTree(includeTemp: false);
+        var ctx = MakeContext();
+        var list = tree is null ? [.. AllImages] : ColumnEngine.Filter(AllImages, tree, ctx);
+        return View == ViewKind.Deleted
+            ? list.Where(x => x.State == FileState.Deleted).ToList()
+            : list.Where(x => x.State != FileState.Deleted).ToList();
+    }
+
     /// <summary>当前网格里出现的角色，按张数排序（简易筛选用）。</summary>
     public List<(string Tag, string Display, int Count)> CharsInView(int limit = 200)
     {
         var map = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var vm in Items)
-            foreach (var c in vm.Item.Chars)
+        foreach (var it in BaseItems())
+            foreach (var c in it.Chars)
                 map[c] = map.GetValueOrDefault(c) + 1;
         var v = Vocabulary.Instance;
         return map.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
@@ -1446,13 +1461,13 @@ public sealed partial class AppVm : ObservableObject
             .ToList();
     }
 
-    /// <summary>当前网格里出现的模型。</summary>
+    /// <summary>当前视图里出现的模型。</summary>
     public List<(string Model, int Count)> ModelsInView(int limit = 60)
     {
         var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var vm in Items)
+        foreach (var it in BaseItems())
         {
-            var m = vm.Item.Model;
+            var m = it.Model;
             if (string.IsNullOrWhiteSpace(m)) continue;
             map[m] = map.GetValueOrDefault(m) + 1;
         }

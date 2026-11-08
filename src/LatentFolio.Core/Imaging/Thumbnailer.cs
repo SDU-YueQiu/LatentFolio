@@ -6,10 +6,10 @@ namespace LatentFolio.Core.Imaging;
 public static class Thumbnailer
 {
     /// <summary>
-    /// 网格缩略图长边。格子最大 330 DIP，125% 缩放下要 412 物理像素才够，
-    /// 再留一点余量取 480 —— 320 那版放到最大档会糊。
+    /// 网格缩略图长边。最大档的格子是 322x291 DIP，125% 缩放下要 402x364 物理像素；
+    /// 2:3 竖图按 UniformToFill 铺满要 603 的长边，所以取 640 —— 480 在最大档会不够。
     /// </summary>
-    public const int GridSize = 480;
+    public const int GridSize = 640;
 
     public const int ArchiveSize = 256;
     public const int Quality = 70;

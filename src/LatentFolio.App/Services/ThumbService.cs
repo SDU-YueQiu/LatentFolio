@@ -34,7 +34,7 @@ public sealed class ThumbService : IDisposable
     {
         if (px <= 0) return 480;
         int b = (int)(Math.Ceiling(px / 32.0) * 32);
-        return Math.Clamp(b, 96, 512);
+        return Math.Clamp(b, 96, 704);
     }
 
     public ThumbService(ThumbCache disk) => _disk = disk;

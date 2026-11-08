@@ -609,6 +609,18 @@ public partial class MainWindow : Window
         return mi;
     }
 
+    /// <summary>筛选菜单里选一项：已经是它的话再点一次就取消。</summary>
+    private void PickFilter(string name, FieldType field, CondOp op, string value, string label)
+    {
+        if (Vm.TempFilterName == name)
+        {
+            Vm.ClearFilterCommand.Execute(null);
+            return;
+        }
+        Vm.SetTempFilter(One(field, op, value), name);
+        _ = label;
+    }
+
     private void OpenMenu(UIElement anchor, ContextMenu menu)
     {
         menu.PlacementTarget = anchor;
@@ -627,10 +639,8 @@ public partial class MainWindow : Window
             {
                 int v = n;
                 var name = $"{v} 星 {suffix}";
-                sub.Items.Add(Mi(new string('★', v), Vm.TempFilterName == name, () =>
-                {
-                    Vm.SetTempFilter(One(FieldType.Rating, op, v.ToString()), name);
-                }));
+                sub.Items.Add(Mi(new string('★', v), Vm.TempFilterName == name,
+                    () => PickFilter(name, FieldType.Rating, op, v.ToString(), name)));
             }
             menu.Items.Add(sub);
         }
@@ -638,56 +648,38 @@ public partial class MainWindow : Window
         Mode("仅", CondOp.Eq, "仅");
         Mode("及以上", CondOp.Gte, "及以上");
         Mode("及以下", CondOp.Lte, "及以下");
-        menu.Items.Add(new Separator());
-        var clear = new MenuItem { Header = "不限星级", IsEnabled = Vm.HasTempFilter };
-        clear.Click += (_, _) => Vm.ClearFilterCommand.Execute(null);
-        menu.Items.Add(clear);
 
         OpenMenu((UIElement)sender, menu);
     }
 
-    /// <summary>角色：从当前结果里出现的角色中选。</summary>
+    /// <summary>角色：从当前视图（不含临时筛选）里出现的角色中选。</summary>
     private void OnCharFilter(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
         var list = Vm.CharsInView();
         if (list.Count == 0)
-            menu.Items.Add(new MenuItem { Header = "当前没有识别到角色", IsEnabled = false });
+            menu.Items.Add(new MenuItem { Header = "当前视图里没有识别到角色", IsEnabled = false });
         foreach (var (tag, display, count) in list)
         {
             var name = "角色 · " + tag;
             menu.Items.Add(Mi($"{display}   {count}", Vm.TempFilterName == name,
-                () => Vm.SetTempFilter(One(FieldType.Character, CondOp.Eq, tag), name)));
-        }
-        if (Vm.HasTempFilter)
-        {
-            menu.Items.Add(new Separator());
-            var clear = new MenuItem { Header = "清除筛选" };
-            clear.Click += (_, _) => Vm.ClearFilterCommand.Execute(null);
-            menu.Items.Add(clear);
+                () => PickFilter(name, FieldType.Character, CondOp.Eq, tag, display)));
         }
         OpenMenu((UIElement)sender, menu);
     }
 
-    /// <summary>模型：从当前结果里出现的模型里选。</summary>
+    /// <summary>模型：从当前视图（不含临时筛选）里出现的模型里选。</summary>
     private void OnModelFilter(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
         var list = Vm.ModelsInView();
         if (list.Count == 0)
-            menu.Items.Add(new MenuItem { Header = "当前结果里没有模型信息", IsEnabled = false });
+            menu.Items.Add(new MenuItem { Header = "当前视图里没有模型信息", IsEnabled = false });
         foreach (var (model, count) in list)
         {
             var name = "模型 · " + model;
             menu.Items.Add(Mi($"{model}   {count}", Vm.TempFilterName == name,
-                () => Vm.SetTempFilter(One(FieldType.Model, CondOp.Eq, model), name)));
-        }
-        if (Vm.HasTempFilter)
-        {
-            menu.Items.Add(new Separator());
-            var clear = new MenuItem { Header = "清除筛选" };
-            clear.Click += (_, _) => Vm.ClearFilterCommand.Execute(null);
-            menu.Items.Add(clear);
+                () => PickFilter(name, FieldType.Model, CondOp.Eq, model, model)));
         }
         OpenMenu((UIElement)sender, menu);
     }

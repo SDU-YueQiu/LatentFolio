@@ -17,7 +17,7 @@ public static class ThumbLoader
     /// <summary>要显示的宽度（DIP）。0 表示按网格缩略图当前档位算。</summary>
     public static readonly DependencyProperty PixelWidthProperty = DependencyProperty.RegisterAttached(
         "PixelWidth", typeof(double), typeof(ThumbLoader),
-        new PropertyMetadata(0.0, OnSourceItemChanged));
+        new PropertyMetadata(0.0, OnPixelWidthChanged));
 
     public static void SetSourceItem(DependencyObject o, object? v) => o.SetValue(SourceItemProperty, v);
     public static object? GetSourceItem(DependencyObject o) => o.GetValue(SourceItemProperty);
@@ -25,26 +25,58 @@ public static class ThumbLoader
     public static void SetPixelWidth(DependencyObject o, double v) => o.SetValue(PixelWidthProperty, v);
     public static double GetPixelWidth(DependencyObject o) => (double)o.GetValue(PixelWidthProperty);
 
-    /// <summary>按 DPI 把 DIP 换成物理像素，解码尺寸就是屏幕上真正要用的尺寸。</summary>
-    private static int TargetPx(Image img)
+    /// <summary>
+    /// 需要多大的缩略图：按「铺满这个盒子」倒推长边，而不是直接拿盒子宽度当长边。
+    /// 竖图的长边是高，盒子宽度顶上去的话解出来的图比盒子还窄，WPF 再放大一次 —— 就是糊的根源。
+    /// </summary>
+    private static int NeedLongSide(Image img, object? item)
     {
         double dip = GetPixelWidth(img);
         if (dip <= 0) dip = App.Root?.TileSize ?? 188;
-        double scale = 1.0;
-        try { scale = System.Windows.Media.VisualTreeHelper.GetDpi(img).PixelsPerDip; } catch { }
-        return (int)Math.Round(dip * scale);
+
+        double dpi = 1.0;
+        try { dpi = System.Windows.Media.VisualTreeHelper.GetDpi(img).PixelsPerDip; } catch { }
+
+        double boxW = img.ActualWidth > 1 ? img.ActualWidth : dip;
+        double boxH = img.ActualHeight > 1 ? img.ActualHeight : dip;
+        boxW *= dpi;
+        boxH *= dpi;
+
+        int sw = 0, sh = 0;
+        if (item is ImageVm vm) { sw = vm.Width; sh = vm.Height; }
+        if (sw <= 0 || sh <= 0) return (int)Math.Round(Math.Max(boxW, boxH));
+
+        // UniformToFill：两轴各算一次放大倍数，取大的那个
+        double need = Math.Max(boxW / sw, boxH / sh);
+        return (int)Math.Round(Math.Max(sw, sh) * Math.Max(need, 0.05));
+    }
+
+    private static void OnPixelWidthChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is Image img) _ = Apply(img, GetSourceItem(img));
     }
 
     private static async void OnSourceItemChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        if (d is not Image img) return;
-        img.Source = null;
+        if (d is Image img) await Apply(img, e.NewValue);
+    }
 
+    private static void OnImageSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is Image img && img.Source is not null) _ = Apply(img, GetSourceItem(img));
+    }
+
+    private static async Task Apply(Image img, object? item)
+    {
         var svc = App.Services?.ThumbService;
         if (svc is null) return;
-        int px = TargetPx(img);
 
-        switch (e.NewValue)
+        img.SizeChanged -= OnImageSizeChanged;
+        img.SizeChanged += OnImageSizeChanged;
+
+        int px = Services.ThumbService.Bucket(NeedLongSide(img, item));
+
+        switch (item)
         {
             case ImageVm vm:
                 {
@@ -56,18 +88,18 @@ public static class ThumbLoader
             case LatentFolio.App.ViewModels.PersonChip chip:
                 {
                     if (chip.AvatarImageId == 0) return;
-                    if (!App.Root.ById.TryGetValue(chip.AvatarImageId, out var item)) return;
-                    if (svc.Peek(item.Id, px) is { } h3) { img.Source = h3; return; }
-                    var bmp3 = await svc.LoadAsync(item.Id, item.Path, item.MTime, item.Size, px);
+                    if (!App.Root.ById.TryGetValue(chip.AvatarImageId, out var item2)) return;
+                    if (svc.Peek(item2.Id, px) is { } h3) { img.Source = h3; return; }
+                    var bmp3 = await svc.LoadAsync(item2.Id, item2.Path, item2.MTime, item2.Size, px);
                     if (ReferenceEquals(GetSourceItem(img), chip) && bmp3 is not null) img.Source = bmp3;
                     break;
                 }
             case PersonVm p:
                 {
                     if (p.AvatarImageId == 0) return;
-                    if (!App.Root.ById.TryGetValue(p.AvatarImageId, out var item)) return;
-                    if (svc.Peek(item.Id, px) is { } h2) { img.Source = h2; return; }
-                    var bmp = await svc.LoadAsync(item.Id, item.Path, item.MTime, item.Size, px);
+                    if (!App.Root.ById.TryGetValue(p.AvatarImageId, out var item2)) return;
+                    if (svc.Peek(item2.Id, px) is { } h2) { img.Source = h2; return; }
+                    var bmp = await svc.LoadAsync(item2.Id, item2.Path, item2.MTime, item2.Size, px);
                     if (ReferenceEquals(GetSourceItem(img), p) && bmp is not null) img.Source = bmp;
                     break;
                 }
