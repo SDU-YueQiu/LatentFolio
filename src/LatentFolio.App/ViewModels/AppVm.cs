@@ -18,6 +18,9 @@ public enum ViewKind { Overview, Column, Folder, Deleted, Person }
 
 public sealed partial class ColumnVm : ObservableObject
 {
+    // ListBoxItem 的无障碍名字默认取数据对象的 ToString()，不覆写的话
+    // UIA / 读屏软件看到的是 "LatentFolio.App.ViewModels.ColumnVm"。
+    public override string ToString() => Name;
     public long Id;
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string _color = "";
@@ -34,6 +37,7 @@ public sealed partial class ColumnVm : ObservableObject
 
 public sealed partial class PersonVm : ObservableObject
 {
+    public override string ToString() => Display;
     public string Tag = "";
     [ObservableProperty] private string _display = "";
     [ObservableProperty] private int _count;
@@ -43,6 +47,7 @@ public sealed partial class PersonVm : ObservableObject
 
 public sealed partial class FolderVm : ObservableObject
 {
+    public override string ToString() => Display;
     public string Path = "";
     [ObservableProperty] private string _display = "";
     public int Depth;
@@ -933,5 +938,6 @@ public sealed partial class AppVm : ObservableObject
         else { UpdateColumn(existing.Id, name, tree); _ = RunColumnCountsAsync(); RefreshGrid(); }
     }
 }
+
 
 

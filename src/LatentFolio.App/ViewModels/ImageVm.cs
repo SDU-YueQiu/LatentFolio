@@ -11,6 +11,7 @@ namespace LatentFolio.App.ViewModels;
 /// <summary>网格里一个格子 / 查看器里的当前图。同一个 ImageItem 只有一个 VM。</summary>
 public sealed partial class ImageVm : ObservableObject
 {
+    public override string ToString() => FileName;
     public ImageItem Item { get; }
     public long Id => Item.Id;
 
@@ -124,3 +125,4 @@ public sealed partial class ImageVm : ObservableObject
 }
 
 public sealed record PersonChip(string Tag, string Display, bool IsLocalized);
+

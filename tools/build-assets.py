@@ -86,13 +86,16 @@ if exp.exists():
         fname = r.get('file_name') or ''
         if not fname:
             continue
-        rel = f'{folder}/{fname}' if folder else fname
         rating = r.get('rating')
         if rating is None or rating == '':
             rating = 0
         rating = int(rating)
         note = (r.get('annotation') or '').replace('\t', ' ').replace('\r', ' ').replace('\n', ' ')
         deleted = 1 if r.get('deleted') else 0
+        # 还原脚本把已删除的图挪到了 _whale_deleted/ 下面，路径要跟着加前缀，
+        # 否则这些行的评分和删除状态对不上任何一张图（131 张）。
+        rel_folder = f'_whale_deleted/{folder}' if deleted and folder else folder
+        rel = f'{rel_folder}/{fname}' if rel_folder else fname
         if rating == 0 and not note and not deleted:
             continue
         out.append((rel, int(rating), note, deleted))
@@ -103,3 +106,4 @@ if exp.exists():
     print(f'legacy_ratings.tsv  {len(out)} 行（{sum(1 for x in out if x[1] > 0)} 条评分）')
 else:
     print('!! 没有 whale_library_export.json，跳过评分迁移')
+

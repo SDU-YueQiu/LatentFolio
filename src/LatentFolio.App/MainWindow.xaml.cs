@@ -93,6 +93,10 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         App.Root.CurrentChangedForViewer += UpdateParams;
+        App.Root.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(AppVm.ViewerImage) or nameof(AppVm.Current)) BigZoom.Reset();
+        };
         await Vm.InitAsync();
 
         // 开发用：方便截图/回归，不影响正常启动
