@@ -102,10 +102,32 @@ try {
 
 $fj = Try-Json $filesRaw
 $items = @()
+
+# 不猜字段名：递归找"看起来像文件条目"的对象（有 path/name 这类键 + 有 size 或 url）
+function Find-FileEntries($node, $depth = 0) {
+  $found = @()
+  if ($depth -gt 8 -or $null -eq $node) { return $found }
+  if ($node -is [array]) {
+    foreach ($e in $node) { $found += Find-FileEntries $e ($depth + 1) }
+    return $found
+  }
+  if ($node -isnot [System.Management.Automation.PSCustomObject]) { return $found }
+  $names = $node.PSObject.Properties.Name
+  $hasPath = $names | Where-Object { $_ -in @('path', 'name', 'filename', 'fileName', 'file') }
+  $hasMeta = $names | Where-Object { $_ -in @('size', 'contentLength', 'url', 'downloadUrl') }
+  if ($hasPath -and $hasMeta) { return @($node) }
+  foreach ($p in $node.PSObject.Properties) {
+    if ($p.Value -is [array] -or $p.Value -is [System.Management.Automation.PSCustomObject]) {
+      $found += Find-FileEntries $p.Value ($depth + 1)
+    }
+  }
+  return $found
+}
+
 if ($fj) {
   if ($fj.PSObject.Properties.Name -contains 'content') { $items = @($fj.content) }
-  elseif ($fj -is [array]) { $items = @($fj) }
-  else { $items = @($fj) }
+  if ($items.Count -eq 0) { $items = @(Find-FileEntries $fj) }
+  if ($items.Count -eq 0) { $items = @($fj) }
 }
 
 function Get-Prop($obj, [string[]]$names) {
