@@ -194,9 +194,16 @@ public static partial class GraphParser
         var res = new ParseResult();
         if (string.IsNullOrWhiteSpace(promptJson)) return res;
 
-        System.Text.Json.JsonDocument doc;
-        try { doc = System.Text.Json.JsonDocument.Parse(promptJson); }
-        catch { return res; }
+        System.Text.Json.JsonDocument? doc = TryParse(promptJson);
+        // ComfyUI 里个别节点会把 is_changed 写成 JS 的 NaN / Infinity。
+        // 这不是合法 JSON，Python 的 json.loads 能忍，System.Text.Json 不能。
+        // 实测 1,192 张图因为这一个字面量整份解析失败。
+        if (doc is null)
+        {
+            var fixedJson = NaNRe().Replace(promptJson, "null");
+            if (!ReferenceEquals(fixedJson, promptJson)) doc = TryParse(fixedJson);
+        }
+        if (doc is null) return res;
 
         using (doc)
         {
@@ -208,6 +215,15 @@ public static partial class GraphParser
         }
         return res;
     }
+
+    private static System.Text.Json.JsonDocument? TryParse(string json)
+    {
+        try { return System.Text.Json.JsonDocument.Parse(json); }
+        catch { return null; }
+    }
+
+    [GeneratedRegex(@"(?<=[:\[,\s])-?(?:Infinity|NaN)(?=\s*[,\}\]])")]
+    private static partial Regex NaNRe();
 
     private static void Fill(Dictionary<string, Node> g, ParseResult res)
     {

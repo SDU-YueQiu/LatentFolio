@@ -138,7 +138,10 @@ public sealed class FilterCond : FilterNode
                     return (img.State == want) == (Op != CondOp.Ne);
                 }
             case FieldType.SimilarGroup:
-                return Op == CondOp.IsFalse ? img.DHash == 0 : img.DHash != 0;
+                {
+                    bool inGroup = ctx.SimilarGroupIds?.Contains(img.Id) ?? false;
+                    return inGroup == (Op != CondOp.IsFalse);
+                }
         }
         return true;
     }

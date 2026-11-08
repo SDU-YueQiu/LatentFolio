@@ -31,10 +31,101 @@ public partial class MainWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
     }
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public int dwFlags;
+    }
+
+    /// <summary>
+    /// 按真实 DPI 算窗口大小。SystemParameters.WorkArea 在窗口还没连到显示器时
+    /// 读到的是未缩放的数值，125% 缩放下会算出一个比屏幕还大的窗口，右边直接被裁掉。
+    /// </summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        FitToMonitor();
+    }
+
+    private void FitToMonitor()
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        uint dpi = GetDpiForWindow(hwnd);
+        if (dpi == 0) dpi = 96;
+        double s = dpi / 96.0;
+
+        var mi = new MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
+        var mon = MonitorFromWindow(hwnd, 2 /* MONITOR_DEFAULTTONEAREST */);
+        int waW = 0, waH = 0, waL = 0, waT = 0;
+        if (mon != IntPtr.Zero && GetMonitorInfo(mon, ref mi))
+        {
+            waL = mi.rcWork.Left; waT = mi.rcWork.Top;
+            waW = mi.rcWork.Right - mi.rcWork.Left;
+            waH = mi.rcWork.Bottom - mi.rcWork.Top;
+        }
+        if (waW <= 0) { waW = (int)(SystemParameters.PrimaryScreenWidth * s); waH = (int)(SystemParameters.PrimaryScreenHeight * s); }
+
+        double availW = waW / s - 32;
+        double availH = waH / s - 32;
+        Width = Math.Min(1680, Math.Max(960, availW));
+        Height = Math.Min(1060, Math.Max(640, availH));
+        Left = (waL + (waW - Width * s) / 2) / s;
+        Top = (waT + (waH - Height * s) / 2) / s;
+    }
+
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         App.Root.CurrentChangedForViewer += UpdateParams;
         await Vm.InitAsync();
+
+        // 开发用：方便截图/回归，不影响正常启动
+        var args = Environment.GetCommandLineArgs();
+        if (args.Contains("--open-first") && Vm.Items.Count > 0)
+            Vm.OpenViewerCommand.Execute(Vm.Items[0]);
+        if (args.Contains("--show-stats")) ShowStats();
+        if (args.Contains("--show-editor") && Vm.Columns.Count > 0)
+        {
+            var win = new ColumnEditorWindow(Vm.Columns[0]) { Owner = this };
+            win.ShowDialog();
+        }
+        if (args.Contains("--show-people"))
+        {
+            var win = new PeopleWindow(Vm) { Owner = this };
+            win.ShowDialog();
+        }
+        if (args.Contains("--debug-size"))
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            uint sysDpi = GetDpiForWindow(hwnd);
+            var mi = new MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
+            var mon = MonitorFromWindow(hwnd, 2);
+            GetMonitorInfo(mon, ref mi);
+            var txt = $"actual {ActualWidth:F0}x{ActualHeight:F0}\nwin {Width:F0}x{Height:F0}\n"
+                      + $"dpi {dpi.DpiScaleX:F3} sys {sysDpi}\n"
+                      + $"monitor {mi.rcMonitor.Right - mi.rcMonitor.Left}x{mi.rcMonitor.Bottom - mi.rcMonitor.Top} "
+                      + $"work {mi.rcWork.Right - mi.rcWork.Left}x{mi.rcWork.Bottom - mi.rcWork.Top}\n"
+                      + $"left,top {Left:F0},{Top:F0}\n"
+                      + $"transform {PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M11:F3}\n";
+            System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lf-size.txt"), txt);
+        }
     }
 
     // ================= 窗口按钮 =================

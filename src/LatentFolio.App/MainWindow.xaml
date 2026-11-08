@@ -178,8 +178,8 @@
                             <TextBlock Grid.Column="0" Text="&#xE8A9;" FontFamily="Segoe MDL2 Assets"
                                        FontSize="13" Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
                             <TextBlock Grid.Column="1" Text="总览 · 全部图片" Margin="9,0,0,0" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="2" Text="{Binding TotalCount}" Style="{StaticResource T.Sub}"
-                                       VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="{Binding TotalCount, StringFormat={}{0:N0}}" Style="{StaticResource T.Sub}"
+                                       VerticalAlignment="Center" Margin="14,0,0,0" />
                         </Grid>
                     </Button>
 
@@ -276,6 +276,9 @@
 
                         <Border Style="{StaticResource HLine}" Margin="14,10,14,10" />
 
+                        <CheckBox Content="自动导入新图" Margin="14,0,14,10" FontSize="12" Height="24"
+                                  IsChecked="{Binding WatchEnabled}" />
+
                         <Button Style="{StaticResource Btn.Ghost}" HorizontalContentAlignment="Stretch"
                                 Margin="8,0,8,10" Padding="10,7" Click="OnDeletedClick">
                             <Grid>
@@ -288,8 +291,8 @@
                                            Foreground="{StaticResource B.Text3}" VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="已删除" Margin="9,0,0,0" VerticalAlignment="Center"
                                            Foreground="{StaticResource B.Text2}" />
-                                <TextBlock Grid.Column="2" Text="{Binding DeletedCount}" Style="{StaticResource T.Sub}"
-                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2" Text="{Binding DeletedCount, StringFormat={}{0:N0}}"
+                                           Style="{StaticResource T.Sub}" VerticalAlignment="Center" Margin="14,0,0,0" />
                             </Grid>
                         </Button>
                     </StackPanel>
@@ -320,7 +323,7 @@
 
                         <StackPanel Grid.Row="0" Orientation="Horizontal">
                             <TextBlock Text="{Binding Title}" Style="{StaticResource T.Title}" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding HitCount, StringFormat={}{0} 张}" Style="{StaticResource T.Sub}"
+                            <TextBlock Text="{Binding HitCount, StringFormat={}{0:N0} 张}" Style="{StaticResource T.Sub}"
                                        Margin="10,0,0,0" VerticalAlignment="Center" />
                             <Button Content="编辑条件" Style="{StaticResource Btn.Ghost}" FontSize="12"
                                     Margin="8,0,0,0" Padding="8,3" Click="OnEditColumnClick" />
@@ -329,7 +332,7 @@
                         <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Text="排序" Style="{StaticResource T.Label}" VerticalAlignment="Center"
                                        Margin="0,0,6,0" />
-                            <ComboBox x:Name="SortBox" Width="150" SelectionChanged="OnSortChanged">
+                            <ComboBox x:Name="SortBox" Width="168" SelectedIndex="0" SelectionChanged="OnSortChanged">
                                 <ComboBoxItem Content="添加时间 · 新在前" />
                                 <ComboBoxItem Content="添加时间 · 旧在前" />
                                 <ComboBoxItem Content="评分 · 高在前" />
@@ -340,7 +343,7 @@
                             </ComboBox>
                             <TextBlock Text="尺寸" Style="{StaticResource T.Label}" VerticalAlignment="Center"
                                        Margin="14,0,6,0" />
-                            <Slider x:Name="SizeSlider" Width="90" Minimum="110" Maximum="380" Value="190"
+                            <Slider x:Name="SizeSlider" Width="100" Minimum="110" Maximum="380" Value="190"
                                     VerticalAlignment="Center" ValueChanged="OnSizeChanged" />
                         </StackPanel>
 
@@ -547,6 +550,9 @@
                                 <Button Content="复制" Style="{StaticResource Btn.Ghost}" FontSize="11"
                                         Padding="6,2" HorizontalAlignment="Right" Click="OnCopyNegative" />
                             </Grid>
+                            <TextBlock Text="{Binding Current.NegHint}" TextWrapping="Wrap" FontSize="11"
+                                       Foreground="{StaticResource B.Danger}" Margin="0,0,0,6"
+                                       Visibility="{Binding Current.NegHint, Converter={StaticResource NE2V}}" />
                             <Border Background="White" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
                                     CornerRadius="8" Padding="10,8" Margin="0,0,0,10"
                                     Visibility="{Binding Current.HasNegative, Converter={StaticResource B2V}}">

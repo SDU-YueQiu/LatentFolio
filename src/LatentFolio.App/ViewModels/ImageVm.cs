@@ -57,6 +57,10 @@ public sealed partial class ImageVm : ObservableObject
     public bool HasNegative => Item.Negative.Length > 0;
     public bool NegIsDup => Item.NegIsDup;
 
+    public string NegHint => Item.NegIsDup
+        ? "与正面提示词完全相同 —— 工作流把同一条 CLIPTextEncode 接到了正负两个口，不是真的负面词。"
+        : "";
+
     public string ModelText => Item.Model ?? "—";
     public string SamplerText => Item.Sampler ?? "—";
     public string SchedulerText => Item.Scheduler ?? "—";

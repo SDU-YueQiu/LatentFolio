@@ -41,11 +41,118 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         return false;
     }
 
+    /// <summary>解析单张图（不落库）。扫描和监视导入共用。</summary>
+    public (ImageItem Item, string? Workflow)? ParseOne(string root, string path, bool makeThumb = true)
+    {
+        try
+        {
+            var fi = new FileInfo(path);
+            var meta = PngReader.Read(path);
+            var parsed = meta.Prompt is null ? null : GraphParser.ParseWorkflowApiJson(meta.Prompt);
+
+            var item = new ImageItem
+            {
+                Path = path,
+                Folder = RelativeFolder(root, path),
+                FileName = Path.GetFileName(path),
+                Ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant(),
+                Size = fi.Length,
+                MTime = fi.LastWriteTimeUtc.Ticks,
+                AddedAt = new DateTimeOffset(fi.CreationTimeUtc).ToUnixTimeMilliseconds(),
+                Width = meta.Width,
+                Height = meta.Height,
+                State = FileState.Present,
+            };
+
+            if (parsed is not null)
+            {
+                item.Prompt = parsed.Positive;
+                item.Negative = parsed.Negative;
+                item.PromptSource = parsed.Method;
+                item.Model = Clean(parsed.Model);
+                item.Sampler = Clean(parsed.Sampler);
+                item.Scheduler = Clean(parsed.Scheduler);
+                item.Steps = parsed.Steps;
+                item.Cfg = parsed.Cfg;
+                item.Seed = parsed.Seed;
+                item.Denoise = parsed.Denoise;
+                if (item.Width == 0 && parsed.Width is > 0) item.Width = parsed.Width.Value;
+                if (item.Height == 0 && parsed.Height is > 0) item.Height = parsed.Height.Value;
+                item.NegIsDup = IsNegDup(parsed.Positive, parsed.Negative);
+            }
+
+            item.Aspect = ImageItem.BucketOf(item.AspectRatio);
+            item.SearchText = GraphParser.BuildSearchText(item.Prompt, item.Negative);
+            item.Hash = QuickHash(path, fi.Length);
+
+            var vocab = Vocabulary.Instance;
+            if (vocab.Ready)
+            {
+                var (chars, artists) = vocab.Tag(item.Prompt);
+                item.Chars = chars;
+                item.Artists = artists;
+            }
+
+            if (makeThumb)
+            {
+                var key = ThumbCache.Key(path, item.MTime, fi.Length);
+                if (!thumbs.HasGrid(key))
+                {
+                    var t = Thumbnailer.Make(path, Thumbnailer.GridSize);
+                    if (t.Webp is not null) thumbs.SaveGrid(key, t.Webp);
+                    item.DHash = t.DHash;
+                    if (item.Width <= 0 && t.Width > 0) { item.Width = t.Width; item.Height = t.Height; }
+                }
+            }
+
+            return (item, meta.Workflow);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>监视器触发的单批导入。返回新增/更新的张数。</summary>
+    public int ImportPaths(string root, IEnumerable<string> paths)
+    {
+        var existing = new Dictionary<string, ImageItem>(StringComparer.OrdinalIgnoreCase);
+        foreach (var it in store.LoadAll()) existing[it.Path] = it;
+
+        int n = 0;
+        using var tx = db.Connection.BeginTransaction();
+        foreach (var path in paths)
+        {
+            if (!File.Exists(path)) continue;
+            var parsed = ParseOne(root, path);
+            if (parsed is null) continue;
+            var (item, wf) = parsed.Value;
+
+            if (existing.TryGetValue(path, out var old))
+            {
+                if (old.MTime == item.MTime && old.Size == item.Size) continue;
+                item.Id = old.Id;
+                item.Rating = old.Rating;
+                item.Note = old.Note;
+                store.Update(item);
+            }
+            else
+            {
+                store.Insert(item);
+            }
+            if (wf is not null) store.SetWorkflow(item.Id, PngReader.Gzip(wf));
+            n++;
+        }
+        tx.Commit();
+        return n;
+    }
+
     /// <summary>
-    /// 扫描整个图库。
+    /// 扫描整个图库。force=true 时忽略 mtime/大小，把元数据全部重新解析一遍
+    /// （解析器升级后需要它，否则老记录里的 null 永远补不上）。
     /// </summary>
     public async Task<ScanResult> ScanAsync(string root, IProgress<ScanProgress>? progress,
-        bool makeThumbs = true, CancellationToken ct = default)
+        bool makeThumbs = true, CancellationToken ct = default, bool force = false)
     {
         var sw = Stopwatch.StartNew();
         var result = new ScanResult();
@@ -87,7 +194,8 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
                 long mtime = fi.LastWriteTimeUtc.Ticks;
                 var key = ThumbCache.Key(path, mtime, fi.Length);
 
-                bool unchanged = existing.TryGetValue(path, out var old)
+                existing.TryGetValue(path, out var old);
+                bool unchanged = !force && old is not null
                                  && old.MTime == mtime && old.Size == fi.Length;
 
                 if (unchanged)
@@ -96,73 +204,9 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
                     return ValueTask.CompletedTask;
                 }
 
-                var meta = PngReader.Read(path);
-                var parsed = meta.Prompt is null ? null : GraphParser.ParseWorkflowApiJson(meta.Prompt);
-
-                var item = new ImageItem
-                {
-                    Path = path,
-                    Folder = RelativeFolder(root, path),
-                    FileName = Path.GetFileName(path),
-                    Ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant(),
-                    Size = fi.Length,
-                    MTime = mtime,
-                    AddedAt = new DateTimeOffset(fi.CreationTimeUtc).ToUnixTimeMilliseconds(),
-                    Width = meta.Width,
-                    Height = meta.Height,
-                    State = FileState.Present,
-                };
-
-                if (parsed is not null)
-                {
-                    item.Prompt = parsed.Positive;
-                    item.Negative = parsed.Negative;
-                    item.PromptSource = parsed.Method;
-                    item.Model = Clean(parsed.Model);
-                    item.Sampler = Clean(parsed.Sampler);
-                    item.Scheduler = Clean(parsed.Scheduler);
-                    item.Steps = parsed.Steps;
-                    item.Cfg = parsed.Cfg;
-                    item.Seed = parsed.Seed;
-                    item.Denoise = parsed.Denoise;
-                    if (item.Width == 0 && parsed.Width is > 0) item.Width = parsed.Width.Value;
-                    if (item.Height == 0 && parsed.Height is > 0) item.Height = parsed.Height.Value;
-                    item.NegIsDup = IsNegDup(parsed.Positive, parsed.Negative);
-                }
-
-                if (item.Width <= 0 || item.Height <= 0)
-                {
-                    // PNG 头没读到就靠缩略图拿尺寸
-                    var probe = Thumbnailer.Make(path, Thumbnailer.GridSize);
-                    if (probe.Ok && probe.Width > 0 && probe.Height > 0)
-                    {
-                        // 缩略图是按比例缩的，反推原尺寸
-                        double k = Math.Max(1.0, (double)Math.Max(item.Width, item.Height) / Math.Max(probe.Width, probe.Height));
-                        if (item.Width <= 0) item.Width = (int)Math.Round(probe.Width * k);
-                        if (item.Height <= 0) item.Height = (int)Math.Round(probe.Height * k);
-                    }
-                }
-
-                item.Aspect = ImageItem.BucketOf(item.AspectRatio);
-                item.SearchText = GraphParser.BuildSearchText(item.Prompt, item.Negative);
-                item.Hash = QuickHash(path, fi.Length);
-
-                if (vocab.Ready)
-                {
-                    var (chars, artists) = vocab.Tag(item.Prompt);
-                    item.Chars = chars;
-                    item.Artists = artists;
-                }
-
-                if (makeThumbs && !thumbs.HasGrid(key))
-                {
-                    var t = Thumbnailer.Make(path, Thumbnailer.GridSize);
-                    if (t.Webp is not null)
-                    {
-                        thumbs.SaveGrid(key, t.Webp);
-                        item.DHash = t.DHash;
-                    }
-                }
+                var parsedOne = ParseOne(root, path, makeThumbs);
+                if (parsedOne is null) throw new InvalidOperationException("解析失败");
+                var (item, workflow) = parsedOne.Value;
 
                 lock (lockObj)
                 {
@@ -173,12 +217,12 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
                         item.Rating = old.Rating;
                         item.Note = old.Note;
                         item.AppTags = old.AppTags;
-                        toUpdate.Add((item, meta.Workflow));
+                        toUpdate.Add((item, workflow));
                         result.Updated++;
                     }
                     else
                     {
-                        toInsert.Add((item, meta.Workflow));
+                        toInsert.Add((item, workflow));
                         result.Added++;
                     }
                     Interlocked.Increment(ref done);

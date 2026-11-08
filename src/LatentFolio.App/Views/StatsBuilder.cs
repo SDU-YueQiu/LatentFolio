@@ -167,15 +167,14 @@ public static class StatsBuilder
         var barHost = new Grid { VerticalAlignment = VerticalAlignment.Center, Height = 8 };
         barHost.Children.Add(new Border { Background = R("B.Tile"), CornerRadius = new CornerRadius(4) });
         double frac = max <= 0 ? 0 : Math.Clamp(value / (double)max, 0, 1);
-        barHost.Children.Add(new Border
-        {
-            Background = R("B.Accent"),
-            CornerRadius = new CornerRadius(4),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Width = double.NaN,
-            RenderTransform = new ScaleTransform(frac, 1),
-            RenderTransformOrigin = new Point(0, 0.5),
-        });
+        // 用星号列按比例切，比给 Border 设 Width 靠谱（NaN 宽度会画不出来）
+        var fillGrid = new Grid();
+        fillGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(frac, GridUnitType.Star) });
+        fillGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0.0001, 1 - frac), GridUnitType.Star) });
+        var fill = new Border { Background = R("B.Accent"), CornerRadius = new CornerRadius(4), Margin = new Thickness(0) };
+        Grid.SetColumn(fill, 0);
+        fillGrid.Children.Add(fill);
+        barHost.Children.Add(fillGrid);
         Grid.SetColumn(barHost, 1);
         barHost.Margin = new Thickness(0, 0, 10, 0);
         g.Children.Add(barHost);

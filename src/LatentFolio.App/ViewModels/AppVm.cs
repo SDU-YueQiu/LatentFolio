@@ -101,6 +101,52 @@ public sealed partial class AppVm : ObservableObject
 
     public SortSpec Sort { get; private set; } = new(SortKey.Date, true);
 
+    private LibraryWatcher? _watcher;
+
+    [ObservableProperty] private bool _watchEnabled = true;
+
+    partial void OnWatchEnabledChanged(bool value)
+    {
+        _svc.Store.SetSetting("watch", value ? "1" : "0");
+        if (value) StartWatcher(); else _watcher?.Stop();
+    }
+
+    public void StartWatcher()
+    {
+        if (!WatchEnabled) return;
+        try
+        {
+            _watcher?.Dispose();
+            _watcher = new LibraryWatcher(LibraryRoot, _svc.Scanner);
+            _watcher.Imported += OnWatcherImported;
+            _watcher.Start();
+        }
+        catch
+        {
+            // 目录不可监视（网络盘/权限）就算了
+        }
+    }
+
+    private void OnWatcherImported(int count)
+    {
+        var app = System.Windows.Application.Current;
+        if (app is null) return;
+        app.Dispatcher.BeginInvoke(() =>
+        {
+            var selected = Selection.Select(x => x.Id).ToHashSet();
+            ReloadFromDb();
+            foreach (var vm in VmById.Values) vm.RefreshTags();
+            _engine.Invalidate();
+            _ = RunColumnCountsAsync();
+            BuildPeople();
+            BuildFolders();
+            RefreshGrid();
+            Selection.Clear();
+            foreach (var vm in Items) if (selected.Contains(vm.Id)) Selection.Add(vm);
+            StatusLeft = $"自动导入 {count} 张";
+        });
+    }
+
     public double TileHeight => TileSize + 46;
 
     partial void OnTileSizeChanged(double value) => OnPropertyChanged(nameof(TileHeight));
@@ -148,6 +194,7 @@ public sealed partial class AppVm : ObservableObject
     {
         LibraryRoot = _svc.LibraryRoot;
         AlwaysVsr = _store.GetSetting("always_vsr") == "1";
+        WatchEnabled = _store.GetSetting("watch") != "0";
         _ = _svc.Vsr.StartAsync().ContinueWith(_ =>
         {
             OnPropertyChanged(nameof(VsrReady));
@@ -161,11 +208,13 @@ public sealed partial class AppVm : ObservableObject
         BuildFolders();
         await ScanAsync(initial: true);
         RefreshGrid();
+        StartWatcher();
     }
 
     public void ReloadFromDb()
     {
         AllImages = _store.LoadAll();
+        _similar = null;
         ById.Clear();
         VmById.Clear();
         foreach (var it in AllImages)
@@ -201,6 +250,9 @@ public sealed partial class AppVm : ObservableObject
 
     private async Task ScanAsync(bool initial) => await ScanAsyncCore(initial);
 
+    /// <summary>解析器改了就 +1，老库下次启动会强制重解析一遍元数据。</summary>
+    public const int ParserVersion = 3;
+
     private async Task ScanAsyncCore(bool initial)
     {
         if (IsBusy) return;
@@ -214,7 +266,10 @@ public sealed partial class AppVm : ObservableObject
                 BusyFraction = p.Fraction * 100;
             });
 
-            var result = await Task.Run(() => _svc.Scanner.ScanAsync(LibraryRoot, prog));
+            bool force = _store.GetSetting("parser_version") != ParserVersion.ToString();
+            var result = await Task.Run(() => _svc.Scanner.ScanAsync(
+                LibraryRoot, prog, makeThumbs: true, ct: default, force: force));
+            _store.SetSetting("parser_version", ParserVersion.ToString());
 
             // 词表是后台加载的；扫描时可能还没好，这里补一次打标
             var vocab = Vocabulary.Instance;
@@ -309,7 +364,7 @@ public sealed partial class AppVm : ObservableObject
 
     public async Task RunColumnCountsAsync()
     {
-        var ctx = new FilterContext();
+        var ctx = MakeContext();
         long ver = DataVersion();
         using var tx = _svc.Db.Connection.BeginTransaction();
         foreach (var col in Columns.ToList())
@@ -512,6 +567,14 @@ public sealed partial class AppVm : ObservableObject
         }
     }
 
+    public FilterContext MakeContext()
+    {
+        _similar ??= SimilarityIndex.Build(AllImages);
+        return new FilterContext { SimilarGroupIds = _similar.InGroup };
+    }
+
+    private SimilarityIndex? _similar;
+
     public FilterNode? CurrentTree()
     {
         FilterGroup root = new() { Op = BoolOp.And };
@@ -558,7 +621,7 @@ public sealed partial class AppVm : ObservableObject
     public void RefreshGrid()
     {
         var tree = CurrentTree();
-        var ctx = new FilterContext();
+        var ctx = MakeContext();
         var list = tree is null ? [.. AllImages] : ColumnEngine.Filter(AllImages, tree, ctx);
 
         if (View == ViewKind.Deleted)
@@ -867,4 +930,5 @@ public sealed partial class AppVm : ObservableObject
         else { UpdateColumn(existing.Id, name, tree); _ = RunColumnCountsAsync(); RefreshGrid(); }
     }
 }
+
 
