@@ -8,7 +8,7 @@ public sealed class Db : IDisposable
     public string FilePath { get; }
     private readonly SqliteConnection _conn;
 
-    public const int SchemaVersion = 2;
+    public const int SchemaVersion = 3;
 
     public Db(string filePath)
     {
@@ -156,6 +156,56 @@ public sealed class Db : IDisposable
             CREATE TABLE IF NOT EXISTS person_avatar (
                 tag      TEXT PRIMARY KEY,
                 image_id INTEGER NOT NULL
+            );
+            """);
+        }
+
+        if (v < 3)
+        {
+            // 人物条目：danbooru tag + 中英文名 + 作品 + 简介 + 封面
+            Exec("""
+            CREATE TABLE IF NOT EXISTS person (
+                tag       TEXT PRIMARY KEY,
+                name_zh   TEXT    NOT NULL DEFAULT '',
+                name_en   TEXT    NOT NULL DEFAULT '',
+                work      TEXT    NOT NULL DEFAULT '',
+                bio       TEXT    NOT NULL DEFAULT '',
+                avatar_id INTEGER NOT NULL DEFAULT 0,
+                source    TEXT    NOT NULL DEFAULT 'auto'
+            );
+            INSERT OR IGNORE INTO person(tag, avatar_id, source)
+                SELECT tag, image_id, 'manual' FROM person_avatar;
+
+            -- 裸名 → 正式 tag 的本地别名表（候选池「确认」后写这里）
+            CREATE TABLE IF NOT EXISTS alias (
+                key    TEXT PRIMARY KEY,
+                tag    TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'manual'
+            );
+            CREATE INDEX IF NOT EXISTS ix_alias_tag ON alias(tag);
+
+            -- 候选池：提示词里出现、但词表匹配不上的裸名
+            CREATE TABLE IF NOT EXISTS cand (
+                key     TEXT PRIMARY KEY,
+                suggest TEXT    NOT NULL DEFAULT '',
+                hits    INTEGER NOT NULL DEFAULT 0,
+                state   INTEGER NOT NULL DEFAULT 0,   -- 0 待定 / 1 已确认 / 2 已忽略
+                at      INTEGER NOT NULL DEFAULT 0
+            );
+
+            -- 快捷模板：编辑器右栏「套用」，也存「另存为模板」
+            CREATE TABLE IF NOT EXISTS tpl (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                name      TEXT NOT NULL,
+                tree_json TEXT NOT NULL DEFAULT '{}',
+                at        INTEGER NOT NULL DEFAULT 0
+            );
+
+            -- 按内容哈希判重时被跳过的文件，别再每次扫描重解析一遍
+            CREATE TABLE IF NOT EXISTS skip (
+                path TEXT PRIMARY KEY,
+                hash INTEGER NOT NULL DEFAULT 0,
+                at   INTEGER NOT NULL DEFAULT 0
             );
             """);
         }

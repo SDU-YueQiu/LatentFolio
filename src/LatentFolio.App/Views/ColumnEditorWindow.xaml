@@ -1,10 +1,11 @@
 <Window x:Class="LatentFolio.App.Views.ColumnEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="自定义栏" Height="720" Width="760"
+        xmlns:c="clr-namespace:LatentFolio.App.Controls"
+        Title="自定义栏" Height="780" Width="1060" MinWidth="880" MinHeight="560"
         WindowStartupLocation="CenterOwner" Background="{StaticResource B.Window}"
         FontFamily="{StaticResource F.UI}">
-    <Grid Margin="20">
+    <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -15,38 +16,125 @@
 
         <TextBlock Grid.Row="0" Text="新建自定义栏" x:Name="HeaderText" Style="{StaticResource T.Title}" />
 
-        <Grid Grid.Row="1" Margin="0,14,0,12">
+        <!-- 名称 + 标记色 -->
+        <Grid Grid.Row="1" Margin="0,12,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="名称" Style="{StaticResource T.Label}" VerticalAlignment="Center" Margin="0,0,10,0" />
-            <TextBox Grid.Column="1" x:Name="NameBox" MinHeight="36" FontSize="13" VerticalContentAlignment="Center" />
+            <TextBlock x:Name="NameLabel" Text="名称" Style="{StaticResource T.Label}" VerticalAlignment="Center"
+                       Margin="0,0,10,0" />
+            <TextBox Grid.Column="1" x:Name="NameBox" MinHeight="34" FontSize="13"
+                     VerticalContentAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="标记色" Style="{StaticResource T.Label}" VerticalAlignment="Center"
+                       Margin="16,0,10,0" x:Name="ColorLabel" />
+            <StackPanel Grid.Column="3" x:Name="ColorBar" Orientation="Horizontal" VerticalAlignment="Center" />
         </Grid>
 
-        <Border Grid.Row="2" BorderBrush="{StaticResource B.Border}" BorderThickness="1" CornerRadius="10"
-                Background="{StaticResource B.Panel}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
-                <StackPanel x:Name="TreeHost" />
-            </ScrollViewer>
-        </Border>
+        <!-- 条件树 + 右栏 -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="300" />
+            </Grid.ColumnDefinitions>
 
-        <Border Grid.Row="3" Margin="0,12,0,0" Background="{StaticResource B.Panel}" CornerRadius="8"
-                BorderBrush="{StaticResource B.Border}" BorderThickness="1" Padding="12,10">
+            <Border Grid.Column="0" BorderBrush="{StaticResource B.Border}" BorderThickness="1" CornerRadius="10"
+                    Background="{StaticResource B.Panel}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
+                    <StackPanel x:Name="TreeHost" />
+                </ScrollViewer>
+            </Border>
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border BorderBrush="{StaticResource B.Border}" BorderThickness="1" CornerRadius="10"
+                        Background="{StaticResource B.Panel}" Padding="12,10">
+                    <StackPanel>
+                        <TextBlock Text="可用字段" Style="{StaticResource T.Section}" />
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                            <StackPanel x:Name="FieldHost" />
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1" BorderBrush="{StaticResource B.Border}" BorderThickness="1" CornerRadius="10"
+                        Background="{StaticResource B.Panel}" Padding="12,10" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="预览" Style="{StaticResource T.Section}" />
+                        <TextBlock x:Name="PreviewText" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{StaticResource B.Accent}" Margin="0,6,0,8" />
+                        <ItemsControl x:Name="PreviewHost">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="8" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Height="34" Margin="2" Background="{StaticResource B.Tile}"
+                                            CornerRadius="4" ClipToBounds="True"
+                                            ToolTip="{Binding FileName}">
+                                        <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- 快捷模板 -->
+        <Border Grid.Row="3" Margin="0,12,0,0" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
+                CornerRadius="10" Background="{StaticResource B.Panel}" Padding="12,8">
             <StackPanel>
-                <TextBlock x:Name="PreviewText" FontSize="12" FontWeight="SemiBold"
-                           Foreground="{StaticResource B.Accent}" />
+                <TextBlock Text="快捷模板" Style="{StaticResource T.Section}" Margin="0,0,0,4" />
+                <ItemsControl x:Name="TemplateHost">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="White" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
+                                    CornerRadius="14" Padding="10,4" Margin="0,4,8,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Name}" FontSize="11.5"
+                                               Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
+                                    <Button Content="套用" Style="{StaticResource Btn.Ghost}" FontSize="11"
+                                            Padding="6,0" Height="20" Margin="8,0,0,0"
+                                            Click="OnApplyTemplate" Tag="{Binding}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
         </Border>
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button x:Name="DeleteBtn" Content="删除这一栏" Style="{StaticResource Btn.Ghost}" Height="34"
-                    Foreground="{StaticResource B.Danger}" Margin="0,0,10,0" Click="OnDelete"
-                    Visibility="Collapsed" />
-            <Button Content="取消" Style="{StaticResource Btn.Outline}" Width="88" Height="34"
-                    Click="OnCancel" Margin="0,0,10,0" />
-            <Button Content="保存" Style="{StaticResource Btn.Primary}" Width="96" Height="34" Click="OnSave" />
-        </StackPanel>
+        <Grid Grid.Row="4" Margin="0,14,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                <Button x:Name="DeleteBtn" Content="删除这一栏" Style="{StaticResource Btn.Ghost}" Height="34"
+                        Foreground="{StaticResource B.Danger}" Click="OnDelete" Visibility="Collapsed" />
+                <Button x:Name="SaveTemplateBtn" Content="存为模板" Style="{StaticResource Btn.Ghost}" Height="34"
+                        Click="OnSaveAsTemplate" Margin="4,0,0,0" />
+                <Button x:Name="SaveAsColumnBtn" Content="存为一栏" Style="{StaticResource Btn.Ghost}" Height="34"
+                        Click="OnSaveAsColumn" Margin="4,0,0,0" Visibility="Collapsed" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="取消" Style="{StaticResource Btn.Outline}" Width="88" Height="34"
+                        Click="OnCancel" Margin="0,0,10,0" />
+                <Button x:Name="OkBtn" Content="保存" Style="{StaticResource Btn.Primary}" Width="96" Height="34"
+                        Click="OnSave" />
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>
-

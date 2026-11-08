@@ -13,6 +13,9 @@ public sealed class SimilarityIndex
     public int GroupCount { get; private set; }
     public HashSet<long> InGroup { get; } = [];
 
+    /// <summary>图片 id → 所在组一共几张。给「同组 ≥N 张」条件用。</summary>
+    public Dictionary<long, int> GroupSize { get; } = [];
+
     public const int DefaultMaxDistance = 6;
 
     public static SimilarityIndex Build(IReadOnlyList<ImageItem> images, int maxDistance = DefaultMaxDistance)
@@ -81,6 +84,7 @@ public sealed class SimilarityIndex
             {
                 idx.GroupOf[items[i].Id] = gid;
                 idx.InGroup.Add(items[i].Id);
+                idx.GroupSize[items[i].Id] = kv.Value.Count;
             }
         }
         idx.GroupCount = gid;

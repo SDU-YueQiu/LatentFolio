@@ -15,6 +15,13 @@ public enum FieldType
     Folder, FileName, Date,
     Rating, Note, MyTag,
     HasPrompt, Deleted, SimilarGroup, FileState,
+
+    /// <summary>
+    /// 只能往最后追加。栏的条件树在库里存的是这个枚举的数字，
+    /// 插在中间会让所有老栏的字段整体串位（Rating 会变成 Date）。
+    /// 界面上的排法看 FieldNames.Groups，跟这里的顺序无关。
+    /// </summary>
+    Lora,
 }
 
 public enum CondOp
@@ -92,6 +99,8 @@ public sealed class FilterCond : FilterNode
                 return TextMatch(img.FileName);
             case FieldType.Artist:
                 return TagMatch(img.Artists);
+            case FieldType.Lora:
+                return TagMatch(img.Loras);
             case FieldType.Character:
                 return TagMatch(img.Chars);
             case FieldType.Tag:
@@ -139,8 +148,22 @@ public sealed class FilterCond : FilterNode
                 }
             case FieldType.SimilarGroup:
                 {
-                    bool inGroup = ctx.SimilarGroupIds?.Contains(img.Id) ?? false;
-                    return inGroup == (Op != CondOp.IsFalse);
+                    // 同组张数 = 这一组里有几张（自己算 1）。不在任何组里就是 1。
+                    int size = 1;
+                    if (ctx.GroupSize is not null && ctx.GroupSize.TryGetValue(img.Id, out var gs)) size = gs;
+                    else if (ctx.SimilarGroupIds?.Contains(img.Id) == true) size = 2;
+                    int n = int.TryParse(Value.Trim(), out var parsed) ? parsed : 2;
+                    return Op switch
+                    {
+                        CondOp.IsFalse => size < 2,
+                        CondOp.IsTrue => size >= 2,
+                        CondOp.Gte => size >= n,
+                        CondOp.Gt => size > n,
+                        CondOp.Lt => size < n,
+                        CondOp.Lte => size <= n,
+                        CondOp.Eq => size == n,
+                        _ => true,
+                    };
                 }
         }
         return true;
@@ -242,13 +265,20 @@ public sealed class FilterCond : FilterNode
     }
 
     // ---------- 表达式文本 ----------
-    public string Describe() => Op switch
-    {
-        CondOp.IsTrue => $"{FieldNames.Label(Field)} 是",
-        CondOp.IsFalse => $"{FieldNames.Label(Field)} 否",
-        CondOp.Between => $"{FieldNames.Label(Field)} 在 [{Value}, {Value2}]",
-        _ => $"{FieldNames.Label(Field)} {FieldNames.OpLabel(Op)} {Value}",
-    };
+    public string Describe() => Field == FieldType.SimilarGroup
+        ? Op switch
+        {
+            CondOp.IsFalse => "无相似图",
+            CondOp.IsTrue => "有相似图",
+            _ => $"同组 ≥ {Value} 张",
+        }
+        : Op switch
+        {
+            CondOp.IsTrue => $"{FieldNames.Label(Field)} 是",
+            CondOp.IsFalse => $"{FieldNames.Label(Field)} 否",
+            CondOp.Between => $"{FieldNames.Label(Field)} 在 [{Value}, {Value2}]",
+            _ => $"{FieldNames.Label(Field)} {FieldNames.OpLabel(Op)} {Value}",
+        };
 
     public override string ToString() => Describe();
 }
@@ -258,6 +288,7 @@ public static class FieldNames
     public static string Label(FieldType f) => f switch
     {
         FieldType.Model => "模型",
+        FieldType.Lora => "LoRA",
         FieldType.Sampler => "采样器",
         FieldType.Scheduler => "调度器",
         FieldType.Steps => "步数",
@@ -308,31 +339,55 @@ public static class FieldNames
         FieldType.Steps or FieldType.Cfg or FieldType.Seed => [CondOp.Eq, CondOp.Ne, CondOp.Gt, CondOp.Gte, CondOp.Lt, CondOp.Lte, CondOp.Between],
         FieldType.Rating => [CondOp.Eq, CondOp.Gte, CondOp.Lte, CondOp.Between],
         FieldType.Resolution => [CondOp.Eq, CondOp.Contains, CondOp.Gt, CondOp.Lt],
-        FieldType.Character or FieldType.Artist or FieldType.Tag or FieldType.MyTag
+        FieldType.Character or FieldType.Artist or FieldType.Tag or FieldType.MyTag or FieldType.Lora
             => [CondOp.Eq, CondOp.Contains, CondOp.Ne, CondOp.NotContains],
-        FieldType.HasPrompt or FieldType.Deleted or FieldType.SimilarGroup => [CondOp.IsTrue, CondOp.IsFalse],
+        FieldType.HasPrompt or FieldType.Deleted => [CondOp.IsTrue, CondOp.IsFalse],
+        // 设计稿 §12.4：相似图组要能筛「无相似图」和「堆叠 ≥N 张」
+        FieldType.SimilarGroup => [CondOp.IsFalse, CondOp.IsTrue, CondOp.Gte],
         FieldType.Date => [CondOp.Eq, CondOp.Gte, CondOp.Lte, CondOp.Between],
         _ => [CondOp.Contains, CondOp.NotContains, CondOp.Eq, CondOp.Ne, CondOp.StartsWith],
     };
 
-    public static bool NeedsValue(FieldType f) => f is not (FieldType.HasPrompt or FieldType.Deleted or FieldType.SimilarGroup);
+    /// <summary>这个算子下要不要填值（相似图组的「≥N」要，其余不要）。</summary>
+    public static bool NeedsValue(FieldType f, CondOp op)
+        => f switch
+        {
+            FieldType.HasPrompt or FieldType.Deleted => false,
+            FieldType.SimilarGroup => op is not (CondOp.IsTrue or CondOp.IsFalse),
+            _ => true,
+        };
+
     public static bool NeedsSecond(FieldType f, CondOp op) => op == CondOp.Between;
 
-    public static FieldType[] All =
+    /// <summary>编辑器右栏「可用字段」按这五组摆（设计稿 §12.4 的 22 个字段）。</summary>
+    public static readonly (string Name, FieldType[] Fields)[] Groups =
     [
-        FieldType.Model, FieldType.Sampler, FieldType.Scheduler, FieldType.Steps, FieldType.Cfg,
-        FieldType.Seed, FieldType.Resolution, FieldType.Aspect,
-        FieldType.Prompt, FieldType.Negative, FieldType.Character, FieldType.Artist, FieldType.Tag,
-        FieldType.Folder, FieldType.FileName, FieldType.Date,
-        FieldType.Rating, FieldType.Note, FieldType.MyTag,
-        FieldType.HasPrompt, FieldType.SimilarGroup, FieldType.Deleted,
+        ("内容", [FieldType.Model, FieldType.Lora, FieldType.Sampler, FieldType.Scheduler,
+                  FieldType.Steps, FieldType.Cfg, FieldType.Resolution, FieldType.Aspect]),
+        ("提示词", [FieldType.Prompt, FieldType.Negative, FieldType.Character, FieldType.Artist, FieldType.Tag]),
+        ("文件", [FieldType.Folder, FieldType.FileName, FieldType.Date]),
+        ("我的", [FieldType.Rating, FieldType.Note, FieldType.MyTag]),
+        ("状态", [FieldType.HasPrompt, FieldType.SimilarGroup, FieldType.Deleted]),
     ];
+
+    public static readonly FieldType[] All = Groups.SelectMany(g => g.Fields).ToArray();
+
+    /// <summary>字段属于哪一组，给编辑器高亮用。</summary>
+    public static string GroupOf(FieldType f)
+    {
+        foreach (var (name, fields) in Groups)
+            foreach (var x in fields) if (x == f) return name;
+        return "内容";
+    }
 }
 
 /// <summary>求值上下文：给「相似图组」这类需要外部数据的字段用。</summary>
 public sealed class FilterContext
 {
     public HashSet<long>? SimilarGroupIds { get; set; }
+
+    /// <summary>图片 id → 所在相似组的张数。给「堆叠 ≥N 张」用。</summary>
+    public Dictionary<long, int>? GroupSize { get; set; }
 }
 
 public static class FilterNodeExtensions

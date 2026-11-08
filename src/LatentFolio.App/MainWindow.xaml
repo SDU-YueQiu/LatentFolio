@@ -64,6 +64,25 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- 资源库行：折叠后整行隐藏 -->
+        <Style x:Key="FolderRow" TargetType="ListBoxItem" BasedOn="{StaticResource RowItem}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Visible}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 56px 图标轨上的一个按钮 -->
+        <Style x:Key="RailBtn" TargetType="Button" BasedOn="{StaticResource Btn.Ghost}">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Margin" Value="0,2" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -154,64 +173,75 @@
         <!-- 主体 -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="248" />
+                <ColumnDefinition Width="{Binding LeftWidth, Converter={StaticResource D2G}}" />
                 <ColumnDefinition Width="1" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- 左栏 -->
-            <Grid Grid.Column="0" Background="{StaticResource B.Panel}">
+            <!-- ── 左栏（完整态） ── -->
+            <Grid Grid.Column="0" Background="{StaticResource B.Panel}"
+                  Visibility="{Binding LeftCollapsed, Converter={StaticResource InvB2V}}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="1.15*" />
+                    <RowDefinition Height="1" />
+                    <RowDefinition Height="1*" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
+                <!-- 总览 + 统计 + 标签 -->
                 <StackPanel Grid.Row="0" Margin="8,8,8,0">
-                    <Grid>
+                    <Button Style="{StaticResource Btn.Ghost}" HorizontalContentAlignment="Stretch"
+                            Click="OnOverviewClick" Padding="10,7" AutomationProperties.Name="总览">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="&#xE8A9;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="13" Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="总览 · 全部图片" Margin="9,0,0,0" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="{Binding TotalCount, StringFormat={}{0:N0}}"
+                                       Style="{StaticResource T.Sub}" VerticalAlignment="Center" Margin="14,0,0,0" />
+                        </Grid>
+                    </Button>
+                    <Grid Margin="0,6,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <Button Style="{StaticResource Btn.Ghost}" HorizontalContentAlignment="Stretch"
-                                Click="OnOverviewClick" Padding="10,7" AutomationProperties.Name="总览">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="&#xE8A9;" FontFamily="Segoe MDL2 Assets"
-                                           FontSize="13" Foreground="{StaticResource B.Text2}" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="总览 · 全部图片" Margin="9,0,0,0" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="2" Text="{Binding TotalCount, StringFormat={}{0:N0}}"
-                                           Style="{StaticResource T.Sub}" VerticalAlignment="Center" Margin="14,0,0,0" />
-                            </Grid>
-                        </Button>
-                        <Button Grid.Column="1" Content="统计" FontSize="11.5" Padding="10,3"
-                                Style="{StaticResource Btn.Ghost}" Click="OnStatsClick"
-                                AutomationProperties.Name="统计" Margin="2,0,0,0" />
-                    </Grid>
-
-                    <Grid Margin="10,14,4,6">
-                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="6" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="我的栏" Style="{StaticResource T.Section}" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="+ 新建" Style="{StaticResource Btn.Ghost}"
-                                FontSize="11.5" Padding="7,3" Click="OnNewColumnClick"
-                                AutomationProperties.Name="新建栏" />
+                        <Button Content="统计" FontSize="11.5" Height="28"
+                                Style="{StaticResource Btn.Outline}" Click="OnStatsClick"
+                                AutomationProperties.Name="统计" />
+                        <Button Grid.Column="2" Content="标签" FontSize="11.5" Height="28"
+                                Style="{StaticResource Btn.Outline}" Click="OnTagsClick"
+                                AutomationProperties.Name="标签体系" />
                     </Grid>
                 </StackPanel>
 
-                <Grid Grid.Row="1" Margin="8,0,8,0">
+                <Grid Grid.Row="1" Margin="10,12,4,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="我的栏" Style="{StaticResource T.Section}" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="+ 新建" Style="{StaticResource Btn.Ghost}"
+                            FontSize="11.5" Padding="7,3" Click="OnNewColumnClick"
+                            AutomationProperties.Name="新建栏" />
+                </Grid>
+
+                <!-- 我的栏：自己滚动 -->
+                <Grid Grid.Row="2" Margin="8,0,8,0">
                     <ListBox x:Name="ColList" Background="Transparent" BorderThickness="0"
-                             MaxHeight="260" ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ItemsSource="{Binding Columns}" SelectionChanged="OnColumnSelected"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ItemsSource="{Binding Columns}"
                              ItemContainerStyle="{StaticResource RowItem}"
                              AllowDrop="True"
                              PreviewMouseLeftButtonDown="OnColMouseDown"
+                             PreviewMouseRightButtonUp="OnColRightUp"
                              PreviewMouseMove="OnColMouseMove"
                              DragOver="OnColDragOver"
                              DragLeave="OnColDragLeave"
@@ -224,8 +254,8 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <Ellipse Width="7" Height="7" Fill="{StaticResource B.Text3}" VerticalAlignment="Center"
-                                             Margin="1,0,8,0" />
+                                    <Ellipse Width="7" Height="7" VerticalAlignment="Center" Margin="1,0,8,0"
+                                             Fill="{Binding Color, Converter={StaticResource HexB}}" />
                                     <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" FontSize="12.5" />
                                     <TextBlock Grid.Column="2" Text="{Binding CountText}" Style="{StaticResource T.Sub}"
@@ -238,11 +268,12 @@
                             VerticalAlignment="Top" Visibility="Collapsed" IsHitTestVisible="False" />
                 </Grid>
 
-                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
-                    <StackPanel>
-                        <Border Style="{StaticResource HLine}" Margin="14,6,14,10" />
+                <Border Grid.Row="3" Background="{StaticResource B.Border}" Margin="12,4,12,0" />
 
-                        <Grid Margin="18,0,16,6">
+                <!-- 人物 + 资源库：另一块，自己滚动 -->
+                <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Grid Margin="18,10,16,6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
@@ -272,31 +303,53 @@
 
                         <Border Style="{StaticResource HLine}" Margin="14,8,14,10" />
 
-                        <Grid Margin="18,0,16,6">
+                        <Grid Margin="18,0,10,6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="资源库" Style="{StaticResource T.Section}" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Content="…"
+                            <Button Grid.Column="1" Content="{Binding FolderSortLabel}"
+                                    Style="{StaticResource Btn.Ghost}" FontSize="11" Padding="6,2"
+                                    VerticalAlignment="Center" Click="OnFolderSortMenu"
+                                    AutomationProperties.Name="资源库排序" Margin="0,0,2,0" />
+                            <Button Grid.Column="2" Content="…"
                                     Style="{StaticResource Btn.Ghost}" FontSize="13" Padding="8,2"
                                     VerticalAlignment="Center" Click="OnLibraryMenu"
                                     AutomationProperties.Name="图库目录菜单" ToolTip="{Binding LibraryRoot}" />
                         </Grid>
                         <ListBox x:Name="FolderList" Background="Transparent" BorderThickness="0" Margin="8,0,8,0"
-                                 MaxHeight="320" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
                                  ItemsSource="{Binding Folders}" SelectionChanged="OnFolderSelected"
-                                 ItemContainerStyle="{StaticResource RowItem}">
+                                 ItemContainerStyle="{StaticResource FolderRow}">
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:FolderVm}">
                                     <Grid AutomationProperties.Name="{Binding Display}">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding Display}" Margin="{Binding DepthText}" FontSize="12.5"
+                                        <Border Width="14" Margin="{Binding DepthText}" Background="Transparent"
+                                                MouseLeftButtonDown="OnFolderChevron"
+                                                Visibility="{Binding HasChildren, Converter={StaticResource B2V}}">
+                                            <TextBlock Text="▾" FontSize="8" Foreground="{StaticResource B.Text3}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Expanded}" Value="False">
+                                                                <Setter Property="Text" Value="▸" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Border>
+                                        <TextBlock Grid.Column="1" Text="{Binding Display}" FontSize="12.5"
                                                    TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="{Binding CountText}" Style="{StaticResource T.Sub}"
+                                        <TextBlock Grid.Column="2" Text="{Binding CountText}" Style="{StaticResource T.Sub}"
                                                    VerticalAlignment="Center" />
                                     </Grid>
                                 </DataTemplate>
@@ -304,12 +357,18 @@
                         </ListBox>
 
                         <Border Style="{StaticResource HLine}" Margin="14,10,14,10" />
+                    </StackPanel>
+                </ScrollViewer>
 
-                        <CheckBox Content="自动导入新图" Margin="14,0,14,10" FontSize="12" Height="24"
+                <!-- 常驻底部：自动导入 / 已删除 -->
+                <Border Grid.Row="5" Background="{StaticResource B.Panel}"
+                        BorderBrush="{StaticResource B.Border}" BorderThickness="0,1,0,0" Padding="0,8,0,8">
+                    <StackPanel>
+                        <CheckBox Content="自动导入新图" Margin="14,0,14,6" FontSize="12" Height="24"
                                   IsChecked="{Binding WatchEnabled}" />
 
                         <Button Style="{StaticResource Btn.Ghost}" HorizontalContentAlignment="Stretch"
-                                Margin="8,0,8,10" Padding="10,7" Click="OnDeletedClick"
+                                Margin="8,0,8,0" Padding="10,7" Click="OnDeletedClick"
                                 AutomationProperties.Name="已删除">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -326,7 +385,47 @@
                             </Grid>
                         </Button>
                     </StackPanel>
-                </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <!-- ── 左栏（56px 图标轨） ── -->
+            <Grid Grid.Column="0" Background="{StaticResource B.Panel}"
+                  Visibility="{Binding LeftCollapsed, Converter={StaticResource B2V}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel Margin="0,10,0,0" HorizontalAlignment="Center">
+                    <Button Style="{StaticResource RailBtn}" Click="OnOverviewClick" ToolTip="总览"
+                            AutomationProperties.Name="总览">
+                        <TextBlock Text="览" />
+                    </Button>
+                    <Button Style="{StaticResource RailBtn}" Click="OnNewColumnClick" ToolTip="新建栏"
+                            AutomationProperties.Name="新建栏">
+                        <TextBlock Text="栏" />
+                    </Button>
+                    <Button Style="{StaticResource RailBtn}" Click="OnPeopleClick" ToolTip="人物"
+                            AutomationProperties.Name="人物">
+                        <TextBlock Text="人" />
+                    </Button>
+                    <Button Style="{StaticResource RailBtn}" Click="OnLibraryMenu" ToolTip="资源库"
+                            AutomationProperties.Name="资源库">
+                        <TextBlock Text="库" />
+                    </Button>
+                    <Button Style="{StaticResource RailBtn}" Click="OnDeletedClick" ToolTip="已删除"
+                            AutomationProperties.Name="已删除">
+                        <TextBlock Text="删" />
+                    </Button>
+                    <Button Style="{StaticResource RailBtn}" Click="OnTagsClick" ToolTip="标签体系"
+                            AutomationProperties.Name="标签体系">
+                        <TextBlock Text="签" />
+                    </Button>
+                </StackPanel>
+                <Button Grid.Row="1" Style="{StaticResource RailBtn}" Margin="0,0,0,8"
+                        HorizontalAlignment="Center" Click="OnToggleLeftRail" ToolTip="展开左栏"
+                        AutomationProperties.Name="展开左栏">
+                    <TextBlock Text="›" FontSize="18" />
+                </Button>
             </Grid>
 
             <Border Grid.Column="1" Background="{StaticResource B.Border}" />
@@ -357,7 +456,10 @@
                                        Margin="10,0,0,0" VerticalAlignment="Center" />
                             <Button Content="编辑条件" Style="{StaticResource Btn.Ghost}" FontSize="12"
                                     Margin="8,0,0,0" Padding="8,3" Click="OnEditColumnClick" />
-                            <Button Style="{StaticResource Btn.Ghost}" Height="26" Margin="6,0,0,0"
+                            <Button Content="筛选" Style="{StaticResource Btn.Ghost}" FontSize="12"
+                                    Margin="4,0,0,0" Padding="8,3" Click="OnFilterClick"
+                                    AutomationProperties.Name="筛选" />
+                            <Button Style="{StaticResource Btn.Ghost}" Height="26" Margin="4,0,0,0"
                                     Padding="8,2" FontSize="11.5" Click="OnTogglePanel"
                                     ToolTip="显示/隐藏右侧详情栏" AutomationProperties.Name="详情栏开关">
                                 <TextBlock Text="详情" />
@@ -376,10 +478,32 @@
                                 <ComboBoxItem Content="分辨率 · 大在前" />
                                 <ComboBoxItem Content="文件大小 · 大在前" />
                             </ComboBox>
-                            <TextBlock Text="尺寸" Style="{StaticResource T.Label}" VerticalAlignment="Center"
-                                       Margin="14,0,6,0" />
-                            <Slider x:Name="SizeSlider" Width="80" Minimum="110" Maximum="380" Value="190"
-                                    VerticalAlignment="Center" ValueChanged="OnSizeChanged" />
+
+                            <!-- 缩略图 4 档 -->
+                            <StackPanel x:Name="SizeBar" Orientation="Horizontal" VerticalAlignment="Center"
+                                        Margin="16,0,0,0" Background="{StaticResource B.Panel}"
+                                        AutomationProperties.Name="缩略图尺寸">
+                                <Button Style="{StaticResource Btn.Ghost}" Click="OnSizeStep" Tag="0" Width="26"
+                                        Height="26" Padding="0" ToolTip="小">
+                                    <Border Width="5" Height="5" CornerRadius="1"
+                                            Background="{StaticResource B.Text2}" />
+                                </Button>
+                                <Button Style="{StaticResource Btn.Ghost}" Click="OnSizeStep" Tag="1" Width="26"
+                                        Height="26" Padding="0" ToolTip="中">
+                                    <Border Width="8" Height="8" CornerRadius="1"
+                                            Background="{StaticResource B.Text2}" />
+                                </Button>
+                                <Button Style="{StaticResource Btn.Ghost}" Click="OnSizeStep" Tag="2" Width="26"
+                                        Height="26" Padding="0" ToolTip="大">
+                                    <Border Width="11" Height="11" CornerRadius="2"
+                                            Background="{StaticResource B.Text2}" />
+                                </Button>
+                                <Button Style="{StaticResource Btn.Ghost}" Click="OnSizeStep" Tag="3" Width="26"
+                                        Height="26" Padding="0" ToolTip="特大">
+                                    <Border Width="14" Height="14" CornerRadius="2"
+                                            Background="{StaticResource B.Text2}" />
+                                </Button>
+                            </StackPanel>
                         </StackPanel>
 
                         <ItemsControl Grid.Row="1" Grid.ColumnSpan="3" ItemsSource="{Binding Chips}" Margin="0,10,0,0">
@@ -452,6 +576,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -525,7 +650,36 @@
                         </Grid>
                     </Border>
 
-                    <views:DetailPanel Grid.Row="1" Grid.Column="1" />
+                    <!-- 底部胶片条：当前这张前后共 12 张 -->
+                    <Border Grid.Row="2" Grid.Column="0" Padding="10,8,10,10"
+                            Background="{StaticResource B.Window}">
+                        <ItemsControl ItemsSource="{Binding Filmstrip}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Rows="1" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:ImageVm}">
+                                    <Border x:Name="fs" Height="54" Margin="3,0" CornerRadius="6" ClipToBounds="True"
+                                            Background="{StaticResource B.Tile}" BorderThickness="2"
+                                            BorderBrush="Transparent" Cursor="Hand"
+                                            MouseLeftButtonDown="OnFilmClick"
+                                            AutomationProperties.Name="{Binding FileName}">
+                                        <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
+                                    </Border>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                            <Setter TargetName="fs" Property="BorderBrush"
+                                                    Value="{StaticResource B.Accent}" />
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+
+                    <views:DetailPanel Grid.Row="1" Grid.RowSpan="2" Grid.Column="1" />
                 </Grid>
 
                 <!-- 统计 -->
@@ -577,8 +731,3 @@
         </Border>
     </Grid>
 </Window>
-
-
-
-
-

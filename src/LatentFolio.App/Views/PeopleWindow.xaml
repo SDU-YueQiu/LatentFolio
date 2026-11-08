@@ -11,11 +11,35 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+        <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
             <TextBlock Text="人物" Style="{StaticResource T.Title}" VerticalAlignment="Center" />
-            <TextBox x:Name="FilterBox" Width="240" Height="32" Margin="16,0,0,0"
-                     VerticalContentAlignment="Center" FontSize="12.5" TextChanged="OnFilter" />
-        </StackPanel>
+            <TextBox x:Name="FilterBox" Grid.Column="1" Width="220" Height="32" Margin="16,0,0,0"
+                     VerticalContentAlignment="Center" FontSize="12.5" TextChanged="OnFilter"
+                     AutomationProperties.Name="搜索人物" />
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                        HorizontalAlignment="Right" Margin="0,0,12,0">
+                <TextBlock Text="排序" Style="{StaticResource T.Label}" VerticalAlignment="Center"
+                           Margin="0,0,6,0" />
+                <ComboBox x:Name="SortBox" Width="130" SelectedIndex="0" SelectionChanged="OnSort">
+                    <ComboBoxItem Content="张数 · 多在前" />
+                    <ComboBoxItem Content="中文名 · A-Z" />
+                    <ComboBoxItem Content="tag · A-Z" />
+                </ComboBox>
+                <CheckBox x:Name="OnlyZhBox" Content="只看有中文名" FontSize="12" Height="24" Margin="14,0,0,0"
+                          VerticalAlignment="Center" Click="OnFilterToggle" />
+            </StackPanel>
+
+            <Button Grid.Column="3" Content="候选池" Style="{StaticResource Btn.Outline}" Height="30"
+                    Padding="12,0" Click="OnCandidates" AutomationProperties.Name="候选池" />
+        </Grid>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <ItemsControl x:Name="Host">

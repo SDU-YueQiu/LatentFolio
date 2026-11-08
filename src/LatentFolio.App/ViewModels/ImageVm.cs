@@ -116,6 +116,10 @@ public sealed partial class ImageVm : ObservableObject
     [ObservableProperty]
     private bool _thumbTried;
 
+    /// <summary>底部胶片条里高亮这一张。</summary>
+    [ObservableProperty]
+    private bool _isCurrent;
+
     public string LegacyTag => "";
 
     public void ApplyFromItem()

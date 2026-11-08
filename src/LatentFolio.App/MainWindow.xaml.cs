@@ -109,6 +109,7 @@ public partial class MainWindow : Window
             if (pe.PropertyName == nameof(AppVm.Current)) BigZoom.Reset();
         };
         await Vm.InitAsync();
+        SyncSizeButtons();
 
         var args = Environment.GetCommandLineArgs();
         if (args.Contains("--self-test"))
@@ -116,6 +117,21 @@ public partial class MainWindow : Window
             await SelfTest.RunAsync(this, Vm);
             Close();
             return;
+        }
+        if (args.Contains("--show-tags"))
+        {
+            var win = new TagsWindow(Vm) { Owner = this };
+            win.ShowDialog();
+        }
+        if (args.Contains("--show-candidates"))
+        {
+            var win = new TagsWindow(Vm, "候选") { Owner = this };
+            win.ShowDialog();
+        }
+        if (args.Contains("--show-filter"))
+        {
+            var win = new ColumnEditorWindow(null, filterMode: true) { Owner = this };
+            win.ShowDialog();
         }
         if (args.Contains("--select-first") && Vm.Items.Count > 0)
         {
@@ -134,6 +150,11 @@ public partial class MainWindow : Window
         if (args.Contains("--show-people"))
         {
             var win = new PeopleWindow(Vm) { Owner = this };
+            win.ShowDialog();
+        }
+        if (args.Contains("--show-settings"))
+        {
+            var win = new SettingsWindow(Vm) { Owner = this };
             win.ShowDialog();
         }
     }
@@ -280,7 +301,7 @@ public partial class MainWindow : Window
     private void OnNewColumnClick(object sender, RoutedEventArgs e)
     {
         var win = new ColumnEditorWindow(null) { Owner = this };
-        if (win.ShowDialog() == true) _ = Vm.AddColumnAsync(win.ColumnName, win.Tree);
+        if (win.ShowDialog() == true) _ = Vm.AddColumnAsync(win.ColumnName, win.Tree, win.ColumnColor);
     }
 
     private void OnEditColumnClick(object sender, RoutedEventArgs e)
@@ -288,22 +309,10 @@ public partial class MainWindow : Window
         var col = Vm.View == ViewKind.Column ? Vm.Columns.FirstOrDefault(c => c.Id == Vm.ViewColumnId) : null;
         if (col is null)
         {
-            MessageBox.Show("先选一个「我的栏」，或者点「+ 新建」。", "LatentFolio",
-                MessageBoxButton.OK, MessageBoxImage.Information);
+            OnNewColumnClick(sender, e);
             return;
         }
-        var win = new ColumnEditorWindow(col) { Owner = this };
-        if (win.ShowDialog() != true) return;
-
-        if (win.DeleteRequested)
-        {
-            Vm.DeleteColumn(col.Id);
-            Vm.ShowOverviewCommand.Execute(null);
-            return;
-        }
-        Vm.UpdateColumn(col.Id, win.ColumnName, win.Tree);
-        _ = Vm.RunColumnCountsAsync();
-        Vm.RefreshGrid();
+        EditColumn(col);
     }
 
     // ================= 图库目录 =================
@@ -370,9 +379,169 @@ public partial class MainWindow : Window
         Vm.SetSortCommand.Execute(key);
     }
 
-    private void OnSizeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void OnSizeStep(object sender, RoutedEventArgs e)
     {
-        if (App.Root is not null) App.Root.SetTileSize(e.NewValue);
+        if (sender is not Button b || b.Tag is not string s || !int.TryParse(s, out var i)) return;
+        Vm.TileStep = i;
+        SyncSizeButtons();
+    }
+
+    private void SyncSizeButtons()
+    {
+        if (SizeBar is null) return;
+        foreach (var child in SizeBar.Children)
+        {
+            if (child is not Button b || b.Content is not Border glyph) continue;
+            bool on = b.Tag is string s && int.TryParse(s, out var i) && i == Vm.TileStep;
+            glyph.Opacity = on ? 1.0 : 0.3;
+            b.Background = on ? (Brush)FindResource("B.Sel") : Brushes.Transparent;
+        }
+    }
+
+    // ================= 筛选 / 标签体系 =================
+
+    private void OnFilterClick(object sender, RoutedEventArgs e)
+    {
+        var win = new ColumnEditorWindow(null, filterMode: true) { Owner = this };
+        if (win.ShowDialog() != true) return;
+        Vm.SetTempFilter(win.Tree);
+    }
+
+    private void OnTagsClick(object sender, RoutedEventArgs e)
+    {
+        var win = new TagsWindow(Vm) { Owner = this };
+        win.ShowDialog();
+        Vm.RefreshGrid();
+    }
+
+    // ================= 资源库排序 / 折叠 =================
+
+    private void OnFolderSortMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        void Item(string header, AppVm.FolderSortKind kind)
+        {
+            var mi = new MenuItem { Header = header, IsChecked = Vm.FolderSort == kind };
+            mi.Click += (_, _) => Vm.FolderSort = kind;
+            menu.Items.Add(mi);
+        }
+        Item("名称", AppVm.FolderSortKind.Name);
+        Item("张数", AppVm.FolderSortKind.Count);
+        Item("日期", AppVm.FolderSortKind.Date);
+
+        menu.PlacementTarget = (UIElement)sender;
+        menu.IsOpen = true;
+    }
+
+    private void OnFolderChevron(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: FolderVm f })
+        {
+            Vm.ToggleFolder(f);
+            e.Handled = true;
+        }
+    }
+
+    private void OnToggleLeftRail(object sender, RoutedEventArgs e) => Vm.ToggleLeftRailCommand.Execute(null);
+
+    private void OnFilmClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ImageVm vm } && vm.Id != Vm.Current?.Id)
+            Vm.OpenViewerCommand.Execute(vm);
+    }
+
+    // ================= 我的栏右键菜单 =================
+
+    private ColumnVm? ColumnAt(Point p)
+    {
+        for (int i = 0; i < Vm.Columns.Count; i++)
+        {
+            if (ColList.ItemContainerGenerator.ContainerFromIndex(i) is not ListBoxItem c) continue;
+            var origin = c.TranslatePoint(new Point(0, 0), ColList);
+            if (p.Y >= origin.Y && p.Y <= origin.Y + c.ActualHeight) return c.DataContext as ColumnVm;
+        }
+        return null;
+    }
+
+    private void OnColRightUp(object sender, MouseButtonEventArgs e)
+    {
+        var col = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext as ColumnVm
+                  ?? ColumnAt(e.GetPosition(ColList));
+        if (col is null) return;
+        ColList.SelectedItem = col;
+        e.Handled = true;
+
+        var menu = new ContextMenu();
+        void Item(string header, Action action, bool enabled = true)
+        {
+            var mi = new MenuItem { Header = header, IsEnabled = enabled };
+            mi.Click += (_, _) => action();
+            menu.Items.Add(mi);
+        }
+
+        Item("编辑条件…", () => EditColumn(col));
+        Item("重命名…", () =>
+        {
+            var dlg = new PromptWindow("重命名", col.Name) { Owner = this };
+            if (dlg.ShowDialog() == true) Vm.RenameColumn(col.Id, dlg.Value);
+        });
+        Item("复制", () => Vm.DuplicateColumn(col.Id));
+        Item("另存为模板…", () =>
+        {
+            var dlg = new PromptWindow("模板名称", col.Name) { Owner = this };
+            if (dlg.ShowDialog() == true) Vm.SaveAsTemplate(dlg.Value, col.Tree);
+        });
+
+        menu.Items.Add(new Separator());
+        Item("上移", () => Vm.MoveColumnBy(col.Id, -1), Vm.Columns.IndexOf(col) > 0);
+        Item("下移", () => Vm.MoveColumnBy(col.Id, 1), Vm.Columns.IndexOf(col) < Vm.Columns.Count - 1);
+
+        menu.Items.Add(new Separator());
+        var colorMenu = new MenuItem { Header = "标记色" };
+        foreach (var (name, hex) in ColumnColors)
+        {
+            var mi = new MenuItem { Header = name, IsChecked = string.Equals(col.Color, hex, StringComparison.OrdinalIgnoreCase) };
+            mi.Click += (_, _) => Vm.SetColumnColor(col.Id, hex);
+            colorMenu.Items.Add(mi);
+        }
+        menu.Items.Add(colorMenu);
+
+        menu.Items.Add(new Separator());
+        Item("删除这一栏", () =>
+        {
+            if (MessageBox.Show($"删除「{col.Name}」这一栏？图片不会动。", "LatentFolio",
+                    MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+            Vm.DeleteColumn(col.Id);
+            Vm.ShowOverviewCommand.Execute(null);
+        });
+
+        menu.PlacementTarget = ColList;
+        menu.IsOpen = true;
+    }
+
+    private static readonly (string Name, string Hex)[] ColumnColors =
+    [
+        ("无", ""),
+        ("红", "#E5484D"),
+        ("橙", "#F5A524"),
+        ("绿", "#30A46C"),
+        ("蓝", "#3E63DD"),
+        ("紫", "#8E4EC6"),
+    ];
+
+    private void EditColumn(ColumnVm col)
+    {
+        var win = new ColumnEditorWindow(col) { Owner = this };
+        if (win.ShowDialog() != true) return;
+        if (win.DeleteRequested)
+        {
+            Vm.DeleteColumn(col.Id);
+            Vm.ShowOverviewCommand.Execute(null);
+            return;
+        }
+        Vm.UpdateColumn(col.Id, win.ColumnName, win.Tree, win.ColumnColor);
+        _ = Vm.RunColumnCountsAsync();
+        Vm.RefreshGrid();
     }
 
     private void OnTogglePanel(object sender, RoutedEventArgs e) => Vm.PanelCollapsed = !Vm.PanelCollapsed;

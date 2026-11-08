@@ -236,4 +236,200 @@ public sealed class ImageStore(Db db)
         }
         return a;
     }
+
+    // ---------------- 人物条目 / 别名 / 候选池 / 模板 / 跳过表 ----------------
+
+    public sealed class PersonRow
+    {
+        public string Tag = "";
+        public string NameZh = "";
+        public string NameEn = "";
+        public string Work = "";
+        public string Bio = "";
+        public long AvatarId;
+        public string Source = "auto";
+    }
+
+    public List<PersonRow> LoadPeople()
+    {
+        var l = new List<PersonRow>();
+        using var c = db.Cmd("SELECT tag,name_zh,name_en,work,bio,avatar_id,source FROM person");
+        using var r = c.ExecuteReader();
+        while (r.Read())
+            l.Add(new PersonRow
+            {
+                Tag = r.GetString(0),
+                NameZh = r.GetString(1),
+                NameEn = r.GetString(2),
+                Work = r.GetString(3),
+                Bio = r.GetString(4),
+                AvatarId = r.GetInt64(5),
+                Source = r.GetString(6),
+            });
+        return l;
+    }
+
+    public void SavePerson(PersonRow p)
+    {
+        using var c = db.Cmd("""
+            INSERT INTO person(tag,name_zh,name_en,work,bio,avatar_id,source)
+            VALUES($t,$zh,$en,$w,$b,$a,$s)
+            ON CONFLICT(tag) DO UPDATE SET
+                name_zh=$zh, name_en=$en, work=$w, bio=$b, avatar_id=$a, source=$s
+            """);
+        c.Parameters.AddWithValue("$t", p.Tag);
+        c.Parameters.AddWithValue("$zh", p.NameZh);
+        c.Parameters.AddWithValue("$en", p.NameEn);
+        c.Parameters.AddWithValue("$w", p.Work);
+        c.Parameters.AddWithValue("$b", p.Bio);
+        c.Parameters.AddWithValue("$a", p.AvatarId);
+        c.Parameters.AddWithValue("$s", p.Source);
+        c.ExecuteNonQuery();
+    }
+
+    public Dictionary<string, string> LoadAliases()
+    {
+        var d = new Dictionary<string, string>(StringComparer.Ordinal);
+        using var c = db.Cmd("SELECT key,tag FROM alias");
+        using var r = c.ExecuteReader();
+        while (r.Read()) d[r.GetString(0)] = r.GetString(1);
+        return d;
+    }
+
+    public void UpsertAlias(string key, string tag, string source = "manual")
+    {
+        using var c = db.Cmd("INSERT INTO alias(key,tag,source) VALUES($k,$t,$s) ON CONFLICT(key) DO UPDATE SET tag=$t, source=$s");
+        c.Parameters.AddWithValue("$k", key);
+        c.Parameters.AddWithValue("$t", tag);
+        c.Parameters.AddWithValue("$s", source);
+        c.ExecuteNonQuery();
+    }
+
+    public void DeleteAlias(string key)
+    {
+        using var c = db.Cmd("DELETE FROM alias WHERE key=$k");
+        c.Parameters.AddWithValue("$k", key);
+        c.ExecuteNonQuery();
+    }
+
+    public sealed class CandRow
+    {
+        public string Key = "";
+        public string Suggest = "";
+        public int Hits;
+        public int State;      // 0 待定 / 1 已确认 / 2 已忽略
+        public long At;
+    }
+
+    public List<CandRow> LoadCandidates(int state = 0)
+    {
+        var l = new List<CandRow>();
+        using var c = db.Cmd("SELECT key,suggest,hits,state,at FROM cand WHERE state=$s ORDER BY hits DESC,key");
+        c.Parameters.AddWithValue("$s", state);
+        using var r = c.ExecuteReader();
+        while (r.Read())
+            l.Add(new CandRow
+            {
+                Key = r.GetString(0),
+                Suggest = r.GetString(1),
+                Hits = r.GetInt32(2),
+                State = r.GetInt32(3),
+                At = r.GetInt64(4),
+            });
+        return l;
+    }
+
+    /// <summary>把一批候选写进池子；已存在的只更新命中数，不动状态。</summary>
+    public void MergeCandidates(IEnumerable<(string Key, string Suggest, int Hits)> rows)
+    {
+        using var tx = db.Connection.BeginTransaction();
+        using var c = db.Cmd("""
+            INSERT INTO cand(key,suggest,hits,state,at) VALUES($k,$s,$h,0,$at)
+            ON CONFLICT(key) DO UPDATE SET hits=$h, suggest=CASE WHEN $s<>'' THEN $s ELSE suggest END
+            """);
+        var pk = c.Parameters.Add("$k", Microsoft.Data.Sqlite.SqliteType.Text);
+        var ps = c.Parameters.Add("$s", Microsoft.Data.Sqlite.SqliteType.Text);
+        var ph = c.Parameters.Add("$h", Microsoft.Data.Sqlite.SqliteType.Integer);
+        var pa = c.Parameters.Add("$at", Microsoft.Data.Sqlite.SqliteType.Integer);
+        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        foreach (var (key, sug, hits) in rows)
+        {
+            pk.Value = key;
+            ps.Value = sug;
+            ph.Value = hits;
+            pa.Value = now;
+            c.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
+    public void SetCandidateState(string key, int state)
+    {
+        using var c = db.Cmd("UPDATE cand SET state=$s WHERE key=$k");
+        c.Parameters.AddWithValue("$s", state);
+        c.Parameters.AddWithValue("$k", key);
+        c.ExecuteNonQuery();
+    }
+
+    public int CandidateCount(int state = 0)
+        => ScalarInt("SELECT COUNT(*) FROM cand WHERE state=$s", state);
+
+    private int ScalarInt(string sql, int arg)
+    {
+        using var c = db.Cmd(sql);
+        c.Parameters.AddWithValue("$s", arg);
+        var o = c.ExecuteScalar();
+        return o is null or DBNull ? 0 : Convert.ToInt32(o);
+    }
+
+    public List<(long Id, string Name, string Json)> LoadTemplates()
+    {
+        var l = new List<(long, string, string)>();
+        using var c = db.Cmd("SELECT id,name,tree_json FROM tpl ORDER BY id");
+        using var r = c.ExecuteReader();
+        while (r.Read()) l.Add((r.GetInt64(0), r.GetString(1), r.GetString(2)));
+        return l;
+    }
+
+    public void AddTemplate(string name, string json)
+    {
+        using var c = db.Cmd("INSERT INTO tpl(name,tree_json,at) VALUES($n,$j,$a)");
+        c.Parameters.AddWithValue("$n", name);
+        c.Parameters.AddWithValue("$j", json);
+        c.Parameters.AddWithValue("$a", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        c.ExecuteNonQuery();
+    }
+
+    public void DeleteTemplate(long id)
+    {
+        using var c = db.Cmd("DELETE FROM tpl WHERE id=$id");
+        c.Parameters.AddWithValue("$id", id);
+        c.ExecuteNonQuery();
+    }
+
+    public HashSet<string> LoadSkipped()
+    {
+        var s = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using var c = db.Cmd("SELECT path FROM skip");
+        using var r = c.ExecuteReader();
+        while (r.Read()) s.Add(r.GetString(0));
+        return s;
+    }
+
+    public void AddSkipped(string path, long hash)
+    {
+        using var c = db.Cmd("INSERT OR REPLACE INTO skip(path,hash,at) VALUES($p,$h,$a)");
+        c.Parameters.AddWithValue("$p", path);
+        c.Parameters.AddWithValue("$h", hash);
+        c.Parameters.AddWithValue("$a", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        c.ExecuteNonQuery();
+    }
+
+    public void ClearSkipped() => Exec("DELETE FROM skip");
+
+    public void Exec(string sql)
+    {
+        using var c = db.Cmd(sql);
+        c.ExecuteNonQuery();
+    }
 }

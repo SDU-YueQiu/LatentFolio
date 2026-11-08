@@ -8,21 +8,45 @@ namespace LatentFolio.App.Views;
 public partial class PeopleWindow : Window
 {
     private readonly AppVm _vm;
+    private readonly bool _ready;
 
     public PeopleWindow(AppVm vm)
     {
-        InitializeComponent();
+        // 排序下拉框在 XAML 里带了 SelectedIndex，InitializeComponent 期间就会触发
+        // SelectionChanged，那时 _vm 还是 null
         _vm = vm;
-        Host.ItemsSource = vm.People;
+        InitializeComponent();
+        _ready = true;
+        Apply();
     }
 
-    private void OnFilter(object sender, TextChangedEventArgs e)
+    private void OnFilter(object sender, TextChangedEventArgs e) => Apply();
+
+    private void OnSort(object sender, SelectionChangedEventArgs e) => Apply();
+
+    private void OnFilterToggle(object sender, RoutedEventArgs e) => Apply();
+
+    private void Apply()
     {
+        if (!_ready) return;
         var q = FilterBox.Text.Trim();
-        Host.ItemsSource = q.Length == 0
-            ? _vm.People
-            : _vm.People.Where(p => p.Display.Contains(q, StringComparison.OrdinalIgnoreCase)
-                                    || p.Tag.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        bool onlyZh = OnlyZhBox.IsChecked == true;
+        var v = LatentFolio.Core.Text.Vocabulary.Instance;
+
+        IEnumerable<PersonVm> src = _vm.People;
+        if (onlyZh) src = src.Where(p => p.Display != p.Tag);
+        if (q.Length > 0)
+            src = src.Where(p => p.Display.Contains(q, StringComparison.OrdinalIgnoreCase)
+                                 || p.Tag.Contains(q, StringComparison.OrdinalIgnoreCase));
+
+        src = SortBox.SelectedIndex switch
+        {
+            1 => src.OrderBy(p => p.Display, StringComparer.CurrentCulture),
+            2 => src.OrderBy(p => p.Tag, StringComparer.Ordinal),
+            _ => src.OrderByDescending(p => p.Count),
+        };
+        _ = v;
+        Host.ItemsSource = src.ToList();
     }
 
     private void OnPick(object sender, MouseButtonEventArgs e)
@@ -57,5 +81,12 @@ public partial class PeopleWindow : Window
 
         menu.PlacementTarget = el;
         menu.IsOpen = true;
+    }
+
+    private void OnCandidates(object sender, RoutedEventArgs e)
+    {
+        var win = new TagsWindow(_vm) { Owner = this };
+        win.ShowDialog();
+        Apply();
     }
 }

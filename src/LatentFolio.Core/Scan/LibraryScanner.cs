@@ -25,6 +25,7 @@ public sealed class ScanResult
     public int Removed;
     public int Skipped;
     public int Failed;
+    public int DupSkipped;
     public List<(string Path, string Error)> Errors = [];
     public TimeSpan Elapsed;
 }
@@ -36,6 +37,9 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
 
     /// <summary>删除/丢失时是否生成归档缩略图（设置里可关）。</summary>
     public bool ArchiveThumbsEnabled { get; set; } = true;
+
+    /// <summary>内容哈希相同的文件只收一份（设计稿 §7）。</summary>
+    public bool DedupeByHash { get; set; } = true;
 
     public static bool IsImage(string path)
     {
@@ -120,13 +124,20 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
     public int ImportPaths(string root, IEnumerable<string> paths)
     {
         var existing = new Dictionary<string, ImageItem>(StringComparer.OrdinalIgnoreCase);
-        foreach (var it in store.LoadAll()) existing[it.Path] = it;
+        var byHash = new HashSet<long>();
+        foreach (var it in store.LoadAll())
+        {
+            existing[it.Path] = it;
+            if (it.Hash != 0 && it.State != FileState.Deleted) byHash.Add(it.Hash);
+        }
+        var skipped = DedupeByHash ? store.LoadSkipped() : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         int n = 0;
         using var tx = db.Connection.BeginTransaction();
         foreach (var path in paths)
         {
             if (!File.Exists(path)) continue;
+            if (skipped.Contains(path)) continue;
             var parsed = ParseOne(root, path);
             if (parsed is null) continue;
             var (item, wf) = parsed.Value;
@@ -138,9 +149,16 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
                 item.Rating = old.Rating;
                 item.Note = old.Note;
                 store.Update(item);
+                if (item.Hash != 0) byHash.Add(item.Hash);
             }
             else
             {
+                // 内容一模一样的两张只收一张（ComfyUI 重跑同种子会出完全相同的图）
+                if (DedupeByHash && item.Hash != 0 && !byHash.Add(item.Hash))
+                {
+                    store.AddSkipped(path, item.Hash);
+                    continue;
+                }
                 store.Insert(item);
             }
             if (wf is not null) store.SetWorkflow(item.Id, PngReader.Gzip(wf));
@@ -148,6 +166,96 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         }
         tx.Commit();
         return n;
+    }
+
+    /// <summary>
+    /// 补算缺失的 dHash。老库里 4,800 张的 dHash 是 0（当年读的是已有缩略图，
+    /// 只在新建缓存时才顺带算一次），相似图分组因此几乎分不出来。
+    /// 先从 320 的网格缓存算，缓存没有才回去解原图。
+    /// </summary>
+    public int BackfillDHash(IReadOnlyList<ImageItem> images)
+    {
+        var todo = images.Where(x => x.DHash == 0 && x.State != FileState.Deleted).ToList();
+        if (todo.Count == 0) return 0;
+
+        var results = new System.Collections.Concurrent.ConcurrentBag<(long Id, long Dh)>();
+        Parallel.ForEach(todo, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Max(2, Environment.ProcessorCount),
+        }, it =>
+        {
+            long dh = 0;
+            var key = ThumbCache.Key(it.Path, it.MTime, it.Size);
+            try
+            {
+                var gp = thumbs.GridPath(key);
+                if (File.Exists(gp)) dh = Thumbnailer.DHashOfFile(gp);
+            }
+            catch { }
+
+            if (dh == 0)
+            {
+                try
+                {
+                    if (File.Exists(it.Path))
+                    {
+                        var t = Thumbnailer.Make(it.Path, Thumbnailer.GridSize);
+                        dh = t.DHash;
+                        if (t.Webp is not null) thumbs.SaveGrid(key, t.Webp);
+                    }
+                }
+                catch { }
+            }
+
+            if (dh != 0)
+            {
+                it.DHash = dh;
+                results.Add((it.Id, dh));
+            }
+        });
+
+        using var tx = db.Connection.BeginTransaction();
+        using var c = db.Cmd("UPDATE image SET dhash=$d WHERE id=$id");
+        var pd = c.Parameters.Add("$d", Microsoft.Data.Sqlite.SqliteType.Integer);
+        var pi = c.Parameters.Add("$id", Microsoft.Data.Sqlite.SqliteType.Integer);
+        foreach (var (id, dh) in results)
+        {
+            pd.Value = dh;
+            pi.Value = id;
+            c.ExecuteNonQuery();
+        }
+        tx.Commit();
+        return results.Count;
+    }
+
+    /// <summary>
+    /// 全库重新识别：重算角色/画师，顺手把匹配不上的裸名收进候选池。
+    /// 确认了别名、或词表更新之后跑这个。onlyMissing=true 时只补还没打过标的。
+    /// </summary>
+    public (int Retagged, int Candidates) RetagAll(IReadOnlyList<ImageItem> images, bool onlyMissing = false)
+    {
+        var vocab = Vocabulary.Instance;
+        if (!vocab.Ready) return (0, 0);
+
+        var cand = new Dictionary<string, (string Suggest, int Hits)>(StringComparer.Ordinal);
+        int n = 0;
+        using (var tx = db.Connection.BeginTransaction())
+        {
+            foreach (var it in images)
+            {
+                if (it.Prompt.Length == 0) continue;
+                if (onlyMissing && (it.Chars.Length > 0 || it.Artists.Length > 0)) continue;
+                var (chars, artists) = vocab.Tag(it.Prompt, cand);
+                if (chars.SequenceEqual(it.Chars) && artists.SequenceEqual(it.Artists)) continue;
+                it.Chars = chars;
+                it.Artists = artists;
+                store.Update(it);
+                n++;
+            }
+            tx.Commit();
+        }
+        if (cand.Count > 0) store.MergeCandidates(cand.Select(kv => (kv.Key, kv.Value.Suggest, kv.Value.Hits)));
+        return (n, cand.Count);
     }
 
     /// <summary>
@@ -177,6 +285,9 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         var existing = new Dictionary<string, ImageItem>(StringComparer.OrdinalIgnoreCase);
         foreach (var it in store.LoadAll()) existing[it.Path] = it;
 
+        // 上次按内容判重跳过的文件，这次不用再解析一遍
+        var skipped = DedupeByHash ? store.LoadSkipped() : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         var seen = new HashSet<string>(files.Count, StringComparer.OrdinalIgnoreCase);
         var toInsert = new List<(ImageItem Item, string? Workflow)>();
         var toUpdate = new List<(ImageItem Item, string? Workflow)>();
@@ -193,6 +304,12 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         {
             try
             {
+                if (skipped.Contains(path))
+                {
+                    lock (lockObj) { seen.Add(path); result.Skipped++; Interlocked.Increment(ref done); }
+                    return ValueTask.CompletedTask;
+                }
+
                 var fi = new FileInfo(path);
                 long mtime = fi.LastWriteTimeUtc.Ticks;
                 var key = ThumbCache.Key(path, mtime, fi.Length);
@@ -263,6 +380,32 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         }
         foreach (var id in missing) store.UpdateState(new ImageItem { Id = id, State = FileState.Missing });
         if (missing.Count > 0) result.Removed = missing.Count;
+
+        // 内容判重：同样的字节只收一份，其余记进 skip 表免得下次重解析。
+        // 按「先加的、路径靠前的」保留，保证多次扫描结果一致。
+        if (DedupeByHash && toInsert.Count > 0)
+        {
+            var known = new HashSet<long>();
+            // 只拿「还在库里」的图判重：把一张图删了又重新生成到别的目录，
+            // 不应该因为老记录还留着一个同样的哈希就被跳过
+            foreach (var it in existing.Values)
+                if (it.Hash != 0 && it.State != FileState.Deleted) known.Add(it.Hash);
+
+            var keep = new List<(ImageItem Item, string? Workflow)>(toInsert.Count);
+            foreach (var t in toInsert.OrderBy(x => x.Item.AddedAt)
+                                      .ThenBy(x => x.Item.Path, StringComparer.OrdinalIgnoreCase))
+            {
+                if (t.Item.Hash != 0 && !known.Add(t.Item.Hash))
+                {
+                    store.AddSkipped(t.Item.Path, t.Item.Hash);
+                    result.DupSkipped++;
+                    continue;
+                }
+                keep.Add(t);
+            }
+            toInsert = keep;
+            result.Added = keep.Count;
+        }
 
         // 批量落库
         await Task.Run(() =>

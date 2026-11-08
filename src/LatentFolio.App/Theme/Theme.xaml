@@ -10,6 +10,8 @@
     <c:NotEmptyToVis x:Key="NE2V" />
     <c:IntToVis x:Key="I2V" />
     <c:Num x:Key="Num" />
+    <c:DoubleToGridLength x:Key="D2G" />
+    <c:HexToBrush x:Key="HexB" />
 
     <!-- ================= 颜色 ================= -->
     <Color x:Key="C.Window">#FFFFFFFF</Color>
@@ -171,7 +173,7 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="6" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"
                                           RecognizesAccessKey="False" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -190,7 +192,7 @@
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="6"
                             Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -220,7 +222,7 @@
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="7"
                             Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -243,7 +245,7 @@
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="White" BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="1" CornerRadius="7" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -509,4 +511,6 @@
     </Style>
 
 </ResourceDictionary>
+
+
 

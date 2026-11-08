@@ -53,6 +53,8 @@ public sealed partial class FolderVm : ObservableObject
     public int Depth;
     [ObservableProperty] private int _count;
     [ObservableProperty] private bool _expanded = true;
+    [ObservableProperty] private bool _visible = true;
+    [ObservableProperty] private bool _hasChildren;
     public string CountText => Count.ToString();
     public Thickness DepthText => new(Depth * 14, 0, 0, 0);
 }
@@ -73,6 +75,13 @@ public sealed partial class AppVm : ObservableObject
     public ObservableCollection<PersonVm> People { get; } = [];
     public ObservableCollection<PersonVm> PeoplePreview { get; } = [];
     public ObservableCollection<FolderVm> Folders { get; } = [];
+
+    /// <summary>胶片条：查看器底部那 12 张。</summary>
+    public ObservableCollection<ImageVm> Filmstrip { get; } = [];
+
+    /// <summary>角色/画师全量计数（人物墙只显示前 400，标签体系要全的）。</summary>
+    public Dictionary<string, int> CharCounts { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, int> ArtistCounts { get; } = new(StringComparer.Ordinal);
 
     public List<ImageVm> Selection { get; } = [];
 
@@ -95,7 +104,21 @@ public sealed partial class AppVm : ObservableObject
     [ObservableProperty] private string _statusRight = "";
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private int _totalCount;
-    [ObservableProperty] private double _tileSize = 190;    [ObservableProperty] private ViewKind _view = ViewKind.Overview;
+    [ObservableProperty] private double _tileSize = 176;
+
+    /// <summary>缩略图 4 档（设计稿 §11.1「密度可调」）。</summary>
+    public static readonly double[] TileSizes = [136, 188, 252, 330];
+
+    [ObservableProperty] private int _tileStep = 1;
+
+    partial void OnTileStepChanged(int value)
+    {
+        int i = Math.Clamp(value, 0, TileSizes.Length - 1);
+        TileSize = TileSizes[i];
+        _store.SetSetting("tile_step", i.ToString());
+    }
+
+    [ObservableProperty] private ViewKind _view = ViewKind.Overview;
     [ObservableProperty] private long _viewColumnId;
     [ObservableProperty] private string _viewFolder = "";
     [ObservableProperty] private string _viewPerson = "";
@@ -205,6 +228,7 @@ public sealed partial class AppVm : ObservableObject
             CurrentParams.Add(new("种子", value.SeedText));
         }
         IsPanelVisible = value is not null && !PanelCollapsed;
+        RebuildFilmstrip();
         CurrentChangedForViewer?.Invoke();
     }
 
@@ -270,7 +294,15 @@ public sealed partial class AppVm : ObservableObject
         VsrScale = int.TryParse(_store.GetSetting("vsr_scale"), out var vs) && vs == 4 ? 4 : 2;
         _svc.Vsr.Scale = VsrScale;
         _svc.Scanner.ArchiveThumbsEnabled = _store.GetSetting("archive_thumbs") != "0";
+        _svc.Scanner.DedupeByHash = _store.GetSetting("dedupe") != "0";
+        if (int.TryParse(_store.GetSetting("tile_step"), out var ts))
+            TileStep = Math.Clamp(ts, 0, TileSizes.Length - 1);
+        TileSize = TileSizes[TileStep];
+        if (int.TryParse(_store.GetSetting("folder_sort"), out var fs))
+            FolderSort = (FolderSortKind)Math.Clamp(fs, 0, 2);
+        LoadAliases();
         LoadPersonAvatars();
+        LoadPersonMeta();
         _ = _svc.Vsr.StartAsync().ContinueWith(_ =>
         {
             OnPropertyChanged(nameof(VsrReady));
@@ -290,6 +322,11 @@ public sealed partial class AppVm : ObservableObject
 
     public void ReloadFromDb()
     {
+        // 重建 VM 会把 Current / Selection 换成悬空引用（自动导入、重新识别都会走到这里），
+        // 按 id 接回来，否则右栏和图边条会突然只剩一张。
+        long curId = Current?.Id ?? 0;
+        var selIds = Selection.Select(x => x.Id).ToHashSet();
+
         AllImages = _store.LoadAll();
         _similar = null;
         ById.Clear();
@@ -301,6 +338,14 @@ public sealed partial class AppVm : ObservableObject
             VmById[it.Id] = vm;
         }
         TotalCount = AllImages.Count(x => x.State != FileState.Deleted);
+
+        if (selIds.Count > 0)
+        {
+            Selection.Clear();
+            foreach (var id in selIds) if (VmById.TryGetValue(id, out var vm)) Selection.Add(vm);
+        }
+        if (curId != 0 && VmById.TryGetValue(curId, out var cv)) Current = cv;
+
         LoadColumns();
     }
 
@@ -341,6 +386,9 @@ public sealed partial class AppVm : ObservableObject
     /// <summary>解析器改了就 +1，老库下次启动会强制重解析一遍元数据。</summary>
     public const int ParserVersion = 3;
 
+    /// <summary>角色/画师识别逻辑改了就 +1，老库下次启动会整库重打标并重建候选池。</summary>
+    public const int RetagVersion = 3;
+
     private async Task ScanAsyncCore(bool initial)
     {
         if (IsBusy) return;
@@ -359,10 +407,20 @@ public sealed partial class AppVm : ObservableObject
                 LibraryRoot, prog, makeThumbs: true, ct: default, force: force));
             _store.SetSetting("parser_version", ParserVersion.ToString());
 
-            // 词表是后台加载的；扫描时可能还没好，这里补一次打标
+            // 词表是后台加载的；扫描时可能还没好，这里补一次打标。
+            // 判定词/别名逻辑升过级就整库过一遍，否则只补没打过标的。
+            ReloadFromDb();
+            await BackfillDHashAsync();
+
             var vocab = Vocabulary.Instance;
             if (!vocab.Ready) await Task.Run(() => vocab.WaitReady(TimeSpan.FromMinutes(2)));
-            int tagged = await Task.Run(() => RetagMissing(vocab));
+            bool fullRetag = _store.GetSetting("retag_version") != RetagVersion.ToString();
+            int tagged = 0, candN = 0;
+            await Task.Run(() =>
+            {
+                (tagged, candN) = _svc.Scanner.RetagAll(AllImages, onlyMissing: !fullRetag);
+            });
+            if (fullRetag) _store.SetSetting("retag_version", RetagVersion.ToString());
 
             var legacy = Path.Combine(_svc.AssetsDir, "legacy_ratings.tsv");
             ReloadFromDb();
@@ -382,6 +440,7 @@ public sealed partial class AppVm : ObservableObject
             RefreshGrid();
 
             StatusLeft = $"新增 {result.Added} · 更新 {result.Updated} · 未变 {result.Skipped}"
+                         + (result.DupSkipped > 0 ? $" · 重复 {result.DupSkipped}" : "")
                          + (result.Removed > 0 ? $" · 丢失 {result.Removed}" : "")
                          + (imported > 0 ? $" · 导入旧评分 {imported}" : "");
         }
@@ -420,11 +479,12 @@ public sealed partial class AppVm : ObservableObject
         }
     }
 
-    public async Task AddColumnAsync(string name, FilterNode tree)
+    public async Task AddColumnAsync(string name, FilterNode tree, string color = "")
     {
         var json = tree.ToJson();
-        using var c = _svc.Db.Cmd("INSERT INTO col(name,color,ord,tree_json,count) VALUES($n,'',$o,$t,-1); SELECT last_insert_rowid();");
+        using var c = _svc.Db.Cmd("INSERT INTO col(name,color,ord,tree_json,count) VALUES($n,$c,$o,$t,-1); SELECT last_insert_rowid();");
         c.Parameters.AddWithValue("$n", name);
+        c.Parameters.AddWithValue("$c", color);
         c.Parameters.AddWithValue("$o", Columns.Count);
         c.Parameters.AddWithValue("$t", json);
         var id = (long)c.ExecuteScalar()!;
@@ -432,11 +492,12 @@ public sealed partial class AppVm : ObservableObject
         await RunColumnCountsAsync();
     }
 
-    public void UpdateColumn(long id, string name, FilterNode tree)
+    public void UpdateColumn(long id, string name, FilterNode tree, string? color = null)
     {
-        using var c = _svc.Db.Cmd("UPDATE col SET name=$n, tree_json=$t, count=-1 WHERE id=$id");
+        using var c = _svc.Db.Cmd("UPDATE col SET name=$n, tree_json=$t, color=COALESCE($c,color), count=-1 WHERE id=$id");
         c.Parameters.AddWithValue("$n", name);
         c.Parameters.AddWithValue("$t", tree.ToJson());
+        c.Parameters.AddWithValue("$c", (object?)color ?? DBNull.Value);
         c.Parameters.AddWithValue("$id", id);
         c.ExecuteNonQuery();
         LoadColumns();
@@ -505,6 +566,19 @@ public sealed partial class AppVm : ObservableObject
         await Task.CompletedTask;
     }
 
+    /// <summary>老库的 dHash 是 0，相似图分不出来。这里补一遍，补完重建相似索引。</summary>
+    private async Task BackfillDHashAsync()
+    {
+        int missing = AllImages.Count(x => x.DHash == 0 && x.State != FileState.Deleted);
+        if (missing == 0) return;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        BusyText = $"补算相似指纹 · {missing:N0} 张";
+        int n = await Task.Run(() => _svc.Scanner.BackfillDHash(AllImages));
+        _similar = null;
+        if (n > 0)
+            StatusLeft = $"补算相似指纹 {n:N0} 张 · {sw.Elapsed.TotalSeconds:F0} 秒";
+    }
+
     public long DataVersion()
     {
         long h = AllImages.Count;
@@ -514,28 +588,6 @@ public sealed partial class AppVm : ObservableObject
 
     // ================= 人物 / 文件夹 =================
 
-    /// <summary>给「有提示词但还没打过角色/画师标」的图补打标并落库。</summary>
-    private int RetagMissing(Vocabulary vocab)
-    {
-        if (!vocab.Ready) return 0;
-        int n = 0;
-        var all = _store.LoadAll();
-        using var tx = _svc.Db.Connection.BeginTransaction();
-        foreach (var it in all)
-        {
-            if (it.Prompt.Length == 0) continue;
-            if (it.Chars.Length > 0 || it.Artists.Length > 0) continue;
-            var (chars, artists) = vocab.Tag(it.Prompt);
-            if (chars.Length == 0 && artists.Length == 0) continue;
-            it.Chars = chars;
-            it.Artists = artists;
-            _store.Update(it);
-            n++;
-        }
-        tx.Commit();
-        return n;
-    }
-
     /// <summary>角色 tag → 头像用的图片 id（自定义优先，否则最高分那张）。</summary>
     public long AvatarFor(string tag)
         => People.FirstOrDefault(p => p.Tag == tag)?.AvatarImageId ?? 0;
@@ -543,11 +595,14 @@ public sealed partial class AppVm : ObservableObject
     private void BuildPeople()
     {
         var map = new Dictionary<string, (int Count, long BestId, int BestRating)>(StringComparer.Ordinal);
+        CharCounts.Clear();
+        ArtistCounts.Clear();
         foreach (var it in AllImages)
         {
             if (it.State == FileState.Deleted) continue;
             foreach (var c in it.Chars)
             {
+                CharCounts[c] = CharCounts.GetValueOrDefault(c) + 1;
                 if (map.TryGetValue(c, out var cur))
                 {
                     map[c] = (cur.Count + 1, cur.BestRating >= it.Rating ? cur.BestId : it.Id,
@@ -555,6 +610,7 @@ public sealed partial class AppVm : ObservableObject
                 }
                 else map[c] = (1, it.Id, it.Rating);
             }
+            foreach (var a in it.Artists) ArtistCounts[a] = ArtistCounts.GetValueOrDefault(a) + 1;
         }
 
         var list = map.Select(kv => (Tag: kv.Key, kv.Value.Count, kv.Value.BestId, kv.Value.BestRating))
@@ -564,12 +620,14 @@ public sealed partial class AppVm : ObservableObject
         var vocab = Vocabulary.Instance;
         foreach (var x in list)
         {
+            var meta = PersonMeta.GetValueOrDefault(x.Tag);
             People.Add(new PersonVm
             {
                 Tag = x.Tag,
-                Display = vocab.Display(x.Tag),
+                Display = meta is { NameZh.Length: > 0 } ? meta.NameZh : vocab.Display(x.Tag),
                 Count = x.Count,
-                AvatarImageId = PersonAvatars.TryGetValue(x.Tag, out var custom) ? custom : x.BestId,
+                AvatarImageId = PersonAvatars.TryGetValue(x.Tag, out var custom) ? custom
+                    : meta is { AvatarId: > 0 } ? meta.AvatarId : x.BestId,
             });
         }
         PeoplePreview.Clear();
@@ -619,6 +677,17 @@ public sealed partial class AppVm : ObservableObject
             p.AvatarImageId = imageId > 0 ? imageId : FallbackAvatar(tag);
         foreach (var p in PeoplePreview.Where(p => p.Tag == tag))
             p.AvatarImageId = imageId > 0 ? imageId : FallbackAvatar(tag);
+
+        // 人物条目里也存一份，标签体系按人物查封面时用它
+        try
+        {
+            using var c2 = _svc.Db.Cmd("UPDATE person SET avatar_id=$i WHERE tag=$t");
+            c2.Parameters.AddWithValue("$i", imageId > 0 ? imageId : FallbackAvatar(tag));
+            c2.Parameters.AddWithValue("$t", tag);
+            c2.ExecuteNonQuery();
+        }
+        catch { }
+
         StatusLeft = imageId > 0 ? "已设为头像" : "已恢复默认头像";
     }
 
@@ -681,11 +750,40 @@ public sealed partial class AppVm : ObservableObject
 
         nodes.Sort((a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase));
 
+        // 谁有子目录 → 才显示折叠三角
+        var parents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var n in nodes)
+        {
+            int i = n.Path.LastIndexOf('/');
+            parents.Add(i < 0 ? "" : n.Path[..i]);
+        }
+        foreach (var n in nodes) n.HasChildren = parents.Contains(n.Path);
+
+        switch (FolderSort)
+        {
+            case FolderSortKind.Count:
+                nodes.Sort((a, b) => b.Count != a.Count ? b.Count.CompareTo(a.Count)
+                    : string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase));
+                break;
+            case FolderSortKind.Date:
+                nodes.Sort((a, b) => string.Compare(b.Path, a.Path, StringComparison.OrdinalIgnoreCase));
+                break;
+        }
+
         Folders.Clear();
         foreach (var n in nodes) Folders.Add(n);
+        ApplyFolderVisibility();
         OnPropertyChanged(nameof(LibrarySummary));
         OnPropertyChanged(nameof(DeletedCount));
+        OnPropertyChanged(nameof(FolderSortLabel));
     }
+
+    public string FolderSortLabel => FolderSort switch
+    {
+        FolderSortKind.Count => "张数 ▾",
+        FolderSortKind.Date => "日期 ▾",
+        _ => "名称 ▾",
+    };
 
     public int DeletedCount => AllImages.Count(x => x.State == FileState.Deleted);
 
@@ -701,6 +799,7 @@ public sealed partial class AppVm : ObservableObject
         ViewerOpen = false;
         ViewerImage = null;
         VsrBadge = "";
+        LeftCollapsed = false;
         Current = null;
     }
 
@@ -768,6 +867,10 @@ public sealed partial class AppVm : ObservableObject
 
     public IEnumerable<FilterNode> ActiveChips()
     {
+        if (TempFilter is FilterGroup tg)
+            foreach (var c in tg.Children) yield return c;
+        else if (TempFilter is not null) yield return TempFilter;
+
         if (View == ViewKind.Column)
         {
             var col = Columns.FirstOrDefault(c => c.Id == ViewColumnId);
@@ -780,7 +883,7 @@ public sealed partial class AppVm : ObservableObject
     public FilterContext MakeContext()
     {
         _similar ??= SimilarityIndex.Build(AllImages);
-        return new FilterContext { SimilarGroupIds = _similar.InGroup };
+        return new FilterContext { SimilarGroupIds = _similar.InGroup, GroupSize = _similar.GroupSize };
     }
 
     private SimilarityIndex? _similar;
@@ -822,6 +925,8 @@ public sealed partial class AppVm : ObservableObject
                 root.Children.Add(new FilterCond { Field = FieldType.Deleted, Op = CondOp.IsTrue });
                 break;
         }
+
+        if (TempFilter is not null) root.Children.Add(TempFilter);
 
         if (!string.IsNullOrWhiteSpace(SearchText))
         {
@@ -867,6 +972,7 @@ public sealed partial class AppVm : ObservableObject
         IsEmpty = Items.Count == 0;
         IsLibraryEmpty = TotalCount == 0;
         EmptyText = IsLibraryEmpty ? "图库还是空的，先把 ComfyUI 的 output 目录指过来" : "这里一张都没有";
+        RebuildFilmstrip();
         OnPropertyChanged(nameof(Chips));
         GridReloaded?.Invoke();
         RefreshStatus();
@@ -965,6 +1071,7 @@ public sealed partial class AppVm : ObservableObject
         if (vm is null) return;
         Current = vm;
         ViewerOpen = true;
+        LeftCollapsed = true;
         ShowOriginal = false;
         VsrBadge = "";
         WorkflowText = "";
@@ -1119,6 +1226,7 @@ public sealed partial class AppVm : ObservableObject
         ViewerOpen = false;
         ViewerImage = null;
         VsrBadge = "";
+        LeftCollapsed = false;
         // 退出放大回到网格：把右栏还给「当前选中的那张」，不然面板会莫名其妙空着
         Current = Selection.Count > 0 ? Selection[^1] : null;
         ViewerClosed?.Invoke();
@@ -1185,14 +1293,236 @@ public sealed partial class AppVm : ObservableObject
     public void SetTileSize(double v) => TileSize = Math.Clamp(v, 100, 420);
 
     [RelayCommand]
+    private void SetTileStep(string key)
+    {
+        if (int.TryParse(key, out var i)) TileStep = i;
+    }
+
+    // ================= 左栏（查看器里收成 56px 图标轨） =================
+
+    [ObservableProperty] private bool _leftCollapsed;
+
+    public double LeftWidth => LeftCollapsed ? 56 : 248;
+
+    partial void OnLeftCollapsedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(LeftWidth));
+    }
+
+    [RelayCommand]
+    private void ToggleLeftRail() => LeftCollapsed = !LeftCollapsed;
+
+    // ================= 临时筛选（顶部「筛选」按钮） =================
+
+    [ObservableProperty] private FilterNode? _tempFilter;
+
+    public bool HasTempFilter => TempFilter is not null;
+
+    partial void OnTempFilterChanged(FilterNode? value)
+    {
+        OnPropertyChanged(nameof(HasTempFilter));
+        RefreshGrid();
+    }
+
+    public void SetTempFilter(FilterNode? tree) => TempFilter = tree;
+
+    [RelayCommand]
+    private void ClearFilter() => TempFilter = null;
+
+    // ================= 标签体系 =================
+
+    /// <summary>人物条目（中文名/英文名/作品/简介/封面），tag → 行。</summary>
+    public Dictionary<string, ImageStore.PersonRow> PersonMeta { get; } = new(StringComparer.Ordinal);
+
+    public void LoadPersonMeta()
+    {
+        PersonMeta.Clear();
+        foreach (var p in _store.LoadPeople()) PersonMeta[p.Tag] = p;
+        var v = Vocabulary.Instance;
+        v.NameOverride.Clear();
+        foreach (var p in PersonMeta.Values)
+            if (p.NameZh.Length > 0) v.NameOverride[p.Tag] = p.NameZh;
+    }
+
+    public void SavePersonMeta(ImageStore.PersonRow row)
+    {
+        row.Source = "manual";
+        _store.SavePerson(row);
+        PersonMeta[row.Tag] = row;
+        var v = Vocabulary.Instance;
+        if (row.NameZh.Length > 0) v.NameOverride[row.Tag] = row.NameZh;
+        else v.NameOverride.Remove(row.Tag);
+
+        foreach (var p in People.Where(p => p.Tag == row.Tag)) p.Display = v.Display(row.Tag);
+        foreach (var p in PeoplePreview.Where(p => p.Tag == row.Tag)) p.Display = v.Display(row.Tag);
+        foreach (var vm in VmById.Values) vm.RefreshTags(AvatarFor);
+    }
+
+    /// <summary>把别名表灌进词表，并读出被忽略的裸名。</summary>
+    public void LoadAliases()
+    {
+        var v = Vocabulary.Instance;
+        v.Alias.Clear();
+        foreach (var kv in _store.LoadAliases()) v.Alias[kv.Key] = kv.Value;
+        v.Ignored.Clear();
+        foreach (var c in _store.LoadCandidates(2)) v.Ignored.Add(c.Key);
+    }
+
+    /// <summary>确认一个候选裸名：写别名表 → 全库重打标 → 池子里标成已确认。</summary>
+    public void ConfirmCandidate(string key, string tag)
+    {
+        if (key.Length == 0 || tag.Length == 0) return;
+        _store.UpsertAlias(key, tag);
+        Vocabulary.Instance.Alias[key] = tag;
+        Vocabulary.Instance.Ignored.Remove(key);
+        _store.SetCandidateState(key, 1);
+        RetagAll();
+    }
+
+    public void IgnoreCandidate(string key)
+    {
+        if (key.Length == 0) return;
+        _store.SetCandidateState(key, 2);
+        Vocabulary.Instance.Ignored.Add(key);
+        RetagAll();
+    }
+
+    /// <summary>
+    /// 全库重新识别。确认别名、改词表之后跑。
+    /// 会重建所有 ImageVm，所以选中项和当前图按 id 接回来，不然右栏会突然空掉。
+    /// </summary>
+    public void RetagAll()
+    {
+        var selIds = Selection.Select(x => x.Id).ToHashSet();
+        long curId = Current?.Id ?? 0;
+        bool viewer = ViewerOpen;
+
+        var (n, c) = _svc.Scanner.RetagAll(AllImages);
+        ReloadFromDb();
+        foreach (var vm in VmById.Values) vm.RefreshTags(AvatarFor);
+        _engine.Invalidate();
+        _ = RunColumnCountsAsync();
+        BuildPeople();
+        BuildFolders();
+        RefreshGrid();
+
+        Selection.Clear();
+        foreach (var id in selIds) if (VmById.TryGetValue(id, out var vm)) Selection.Add(vm);
+        if (curId != 0 && VmById.TryGetValue(curId, out var cv)) Current = cv;
+        if (viewer) ViewerOpen = true;
+        RefreshSelectionStatus();
+        StatusLeft = $"重新识别 {n:N0} 张 · 候选 {c:N0} 种";
+    }
+
+    // ================= 我的栏：改名/标记色/复制/上移下移/模板 =================
+
+    public void RenameColumn(long id, string name)
+    {
+        if (name.Length == 0) return;
+        using var c = _svc.Db.Cmd("UPDATE col SET name=$n WHERE id=$id");
+        c.Parameters.AddWithValue("$n", name);
+        c.Parameters.AddWithValue("$id", id);
+        c.ExecuteNonQuery();
+        LoadColumns();
+        if (View == ViewKind.Column && ViewColumnId == id) Title = name;
+    }
+
+    public void SetColumnColor(long id, string color)
+    {
+        using var c = _svc.Db.Cmd("UPDATE col SET color=$c WHERE id=$id");
+        c.Parameters.AddWithValue("$c", color);
+        c.Parameters.AddWithValue("$id", id);
+        c.ExecuteNonQuery();
+        LoadColumns();
+    }
+
+    public void DuplicateColumn(long id)
+    {
+        var col = Columns.FirstOrDefault(x => x.Id == id);
+        if (col is null) return;
+        _ = AddColumnAsync(col.Name + " 副本", col.Tree.Clone());
+    }
+
+    public void MoveColumnBy(long id, int delta)
+    {
+        int i = Columns.ToList().FindIndex(c => c.Id == id);
+        if (i < 0) return;
+        int to = i + delta;
+        if (to < 0 || to >= Columns.Count) return;
+        MoveColumn(i, delta > 0 ? to + 1 : to);
+    }
+
+    public void SaveAsTemplate(string name, FilterNode tree)
+    {
+        if (name.Length == 0) return;
+        _store.AddTemplate(name, tree.ToJson());
+        StatusLeft = $"已存模板「{name}」";
+    }
+
+    public List<(long Id, string Name, string Json)> LoadTemplates() => _store.LoadTemplates();
+
+    /// <summary>缩略图 12 张：以当前这张为中心取前后各 6 张。</summary>
+    private void RebuildFilmstrip()
+    {
+        foreach (var vm in Filmstrip) vm.IsCurrent = false;
+        Filmstrip.Clear();
+        if (Current is null) return;
+        int i = Items.IndexOf(Current);
+        if (i < 0) { Current.IsCurrent = true; Filmstrip.Add(Current); return; }
+        int start = Math.Max(0, Math.Min(i - 6, Items.Count - 12));
+        for (int k = start; k < Math.Min(start + 12, Items.Count); k++) Filmstrip.Add(Items[k]);
+        Current.IsCurrent = true;
+    }
+
+    // ================= 资源库：排序 / 折叠 =================
+
+    public enum FolderSortKind { Name, Count, Date }
+
+    [ObservableProperty] private FolderSortKind _folderSort = FolderSortKind.Name;
+
+    partial void OnFolderSortChanged(FolderSortKind value)
+    {
+        _store.SetSetting("folder_sort", ((int)value).ToString());
+        BuildFolders();
+    }
+
+    private readonly HashSet<string> _collapsedFolders = new(StringComparer.OrdinalIgnoreCase);
+
+    public void ToggleFolder(FolderVm f)
+    {
+        if (!f.HasChildren) return;
+        if (!_collapsedFolders.Remove(f.Path)) _collapsedFolders.Add(f.Path);
+        f.Expanded = !_collapsedFolders.Contains(f.Path);
+        ApplyFolderVisibility();
+    }
+
+    private void ApplyFolderVisibility()
+    {
+        foreach (var f in Folders)
+        {
+            bool hidden = false;
+            var p = f.Path;
+            while (p.Length > 0)
+            {
+                int i = p.LastIndexOf('/');
+                p = i < 0 ? "" : p[..i];
+                if (p.Length == 0) break;
+                if (_collapsedFolders.Contains(p)) { hidden = true; break; }
+            }
+            f.Visible = !hidden;
+            f.Expanded = !_collapsedFolders.Contains(f.Path);
+        }
+    }
+
+    [RelayCommand]
     private void OpenColumnEditor(ColumnVm? col) => ColumnEditorRequested?.Invoke(col);
 
     public event Action<ColumnVm?>? ColumnEditorRequested;
 
-    public void SaveColumnFromEditor(ColumnVm? existing, string name, FilterNode tree)
+    public void SaveColumnFromEditor(ColumnVm? existing, string name, FilterNode tree, string color = "")
     {
-        if (existing is null) _ = AddColumnAsync(name, tree);
-        else { UpdateColumn(existing.Id, name, tree); _ = RunColumnCountsAsync(); RefreshGrid(); }
+        if (existing is null) _ = AddColumnAsync(name, tree, color);
+        else { UpdateColumn(existing.Id, name, tree, color); _ = RunColumnCountsAsync(); RefreshGrid(); }
     }
 }
 

@@ -139,5 +139,16 @@ public static class Thumbnailer
         }
     }
 
+    /// <summary>从已有的缩略图文件直接算 dHash（比重新解原图快两个数量级）。</summary>
+    public static long DHashOfFile(string path)
+    {
+        try
+        {
+            using var bmp = SKBitmap.Decode(path);
+            return bmp is null ? 0 : DHashOf(bmp);
+        }
+        catch { return 0; }
+    }
+
     public static int Hamming(long a, long b) => System.Numerics.BitOperations.PopCount((ulong)(a ^ b));
 }

@@ -39,10 +39,11 @@ public partial class SettingsWindow : Window
         catch { }
         ArchiveText.Text = $"{archiveCount:N0} 张";
         ArchiveBox.IsChecked = App.Services.Store.GetSetting("archive_thumbs") != "0";
+        DedupeBox.IsChecked = App.Services.Store.GetSetting("dedupe") != "0";
 
         GpuText.Text = _vm.VsrReady
             ? "显卡可用 · RTX Video Super Resolution 已就绪"
-            : "不可用：" + _vm.VsrStatus;
+            : _vm.VsrStatus.Length == 0 ? "检测中…" : "不可用：" + _vm.VsrStatus;
 
         BuildChips();
     }
@@ -124,8 +125,22 @@ public partial class SettingsWindow : Window
         App.Services.Scanner.ArchiveThumbsEnabled = on;
     }
 
-    private void OnClearCache(object sender, RoutedEventArgs e)
+    private void OnDedupeChanged(object sender, RoutedEventArgs e)
     {
+        if (_loading) return;
+        var on = DedupeBox.IsChecked == true;
+        App.Services.Store.SetSetting("dedupe", on ? "1" : "0");
+        App.Services.Scanner.DedupeByHash = on;
+        if (!on) App.Services.Store.ClearSkipped();
+    }
+
+    private void OnClearSkip(object sender, RoutedEventArgs e)
+    {
+        App.Services.Store.ClearSkipped();
+        _vm.StatusLeft = "判重记录已清空，下次扫描会重新收一遍重复图";
+    }
+
+    private void OnClearCache(object sender, RoutedEventArgs e)    {
         try
         {
             App.Services.ThumbService.ClearMemory();

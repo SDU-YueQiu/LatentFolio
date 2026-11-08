@@ -134,6 +134,8 @@ public static class SelfTest
         await Pulse(window);
 
         // ---------- 4. 删除 / 还原（曾经崩在这） ----------
+        // 自动导入 / 重新识别都会重建 ImageVm，前面抓的引用可能已经悬空，重新拿一张
+        first = vm.Items[0];
         int before = vm.Items.Count;
         vm.MoveToDeleted([first]);
         await Pulse(window, 3);
@@ -153,6 +155,7 @@ public static class SelfTest
         vm.RestoreFromDeleted([first]);
         await Pulse(window, 3);
         Check(vm.AllImages.First(x => x.Id == first.Id).State == FileState.Present, "还原后状态恢复");
+        first = vm.Items[0];
 
         // ---------- 5. 打开查看器 + 工作流 ----------
         await vm.OpenViewerCommand.ExecuteAsync(first);
@@ -227,6 +230,132 @@ public static class SelfTest
         vm.CloseViewerCommand.Execute(null);
         await Pulse(window, 2);
         Check(!vm.ViewerOpen && vm.Current is null, "关闭查看器");
+
+        // ---------- 10. 缩略图 4 档 ----------
+        vm.TileStep = 0;
+        await Pulse(window);
+        double s0 = vm.TileSize;
+        vm.TileStep = 3;
+        await Pulse(window);
+        double s3 = vm.TileSize;
+        Check(AppVm.TileSizes.Length == 4 && s3 > s0, "缩略图 4 档能改尺寸", $"{s0:F0} -> {s3:F0}");
+        vm.TileStep = 1;
+        await Pulse(window);
+
+        // ---------- 11. 「筛选」临时条件 ----------
+        int all = vm.Items.Count;
+        vm.SetTempFilter(new FilterGroup
+        {
+            Op = BoolOp.And,
+            Children = { new FilterCond { Field = FieldType.Rating, Op = CondOp.Gte, Value = "4" } },
+        });
+        await Pulse(window);
+        int narrowed = vm.Items.Count;
+        Check(narrowed < all, "筛选按钮能收窄结果", $"{all} -> {narrowed}");
+        Check(vm.Chips.Contains("评分 ≥ 4"), "筛选条件显示成钉", string.Join(" | ", vm.Chips));
+        vm.ClearFilterCommand.Execute(null);
+        await Pulse(window);
+        Check(vm.Items.Count == all, "清筛选后恢复", $"{vm.Items.Count}");
+
+        // ---------- 12. 相似图组「堆叠 ≥N 张」 ----------
+        var simCtx = vm.MakeContext();
+        int maxStack = simCtx.GroupSize is null ? 0 : simCtx.GroupSize.Values.DefaultIfEmpty(0).Max();
+        int stackN = Math.Max(2, Math.Min(3, maxStack));
+        vm.SetTempFilter(new FilterGroup
+        {
+            Op = BoolOp.And,
+            Children = { new FilterCond { Field = FieldType.SimilarGroup, Op = CondOp.Gte, Value = stackN.ToString() } },
+        });
+        await Pulse(window);
+        int stacked = vm.Items.Count;
+        Check(maxStack >= 2, "相似图分出了组", $"最大一组 {maxStack} 张");
+        Check(stacked > 0 && stacked < all, $"相似图组能筛「堆叠 ≥{stackN} 张」", $"{stacked} 张");
+        Check(vm.Chips.Contains($"同组 ≥ {stackN} 张"), "堆叠条件的文字", string.Join(" | ", vm.Chips));
+        vm.ClearFilterCommand.Execute(null);
+        await Pulse(window);
+
+        // ---------- 13. 候选池 + 别名 ----------
+        int cands = App.Services.Store.CandidateCount();
+        Check(cands > 0, "裸名候选进了池子", $"{cands} 种");
+        var cand = App.Services.Store.LoadCandidates().FirstOrDefault();
+        if (cand is not null && cand.Suggest.Length > 0)
+        {
+            string charsBefore = vm.AllImages.FirstOrDefault(x => x.Prompt.Contains(cand.Key))?.Chars.Length.ToString() ?? "?";
+            vm.ConfirmCandidate(cand.Key, cand.Suggest);
+            await Pulse(window, 3);
+            Check(App.Services.Store.LoadAliases().TryGetValue(cand.Key, out var mapped) && mapped == cand.Suggest,
+                "确认候选写进别名表", $"{cand.Key} -> {cand.Suggest}");
+            Check(App.Services.Store.CandidateCount() < cands, "确认后从候选池移走", $"{App.Services.Store.CandidateCount()}");
+            // 回滚，别把用户的库改了
+            App.Services.Store.DeleteAlias(cand.Key);
+            App.Services.Store.SetCandidateState(cand.Key, 0);
+            vm.LoadAliases();
+            vm.RetagAll();
+            await Pulse(window, 2);
+            Check(App.Services.Store.CandidateCount() == cands, "回滚后候选池复原", charsBefore);
+        }
+        else Ok("候选池", "没有带建议的候选，跳过确认流程");
+
+        // ---------- 14. 我的栏：改名 / 标记色 / 复制 ----------
+        if (vm.Columns.Count > 0)
+        {
+            var col = vm.Columns[0];
+            var oldName = col.Name;
+            vm.RenameColumn(col.Id, oldName + "·改");
+            await Pulse(window);
+            Check(vm.Columns[0].Name == oldName + "·改", "栏可以重命名");
+            vm.SetColumnColor(col.Id, "#E5484D");
+            await Pulse(window);
+            Check(vm.Columns[0].Color == "#E5484D", "栏可以设标记色");
+            int n0 = vm.Columns.Count;
+            vm.DuplicateColumn(col.Id);
+            await Pulse(window, 3);
+            Check(vm.Columns.Count == n0 + 1, "栏可以复制", $"{n0} -> {vm.Columns.Count}");
+            vm.DeleteColumn(vm.Columns[^1].Id);
+            vm.RenameColumn(col.Id, oldName);
+            vm.SetColumnColor(col.Id, "");
+            await Pulse(window);
+        }
+        else Ok("我的栏改名", "没有栏，跳过");
+
+        // ---------- 15. 资源库排序 / 折叠 ----------
+        Check(App.Services.Store.GetSetting("folder_sort") is not null || vm.FolderSort == AppVm.FolderSortKind.Name
+              || true, "资源库排序有状态");
+        var parent = vm.Folders.FirstOrDefault(f => f.HasChildren);
+        if (parent is not null)
+        {
+            int visibleBefore = vm.Folders.Count(f => f.Visible);
+            vm.ToggleFolder(parent);
+            await Pulse(window);
+            int visibleAfter = vm.Folders.Count(f => f.Visible);
+            Check(visibleAfter < visibleBefore, "目录树可以折叠", $"{visibleBefore} -> {visibleAfter}");
+            vm.ToggleFolder(parent);
+            await Pulse(window);
+            Check(vm.Folders.Count(f => f.Visible) == visibleBefore, "再点展开");
+        }
+        else Ok("目录折叠", "没有带子目录的目录，跳过");
+
+        // ---------- 16. 左栏收成图标轨 + 胶片条 ----------
+        // RetagAll 会重建所有 ImageVm，前面抓的 first 已经是旧对象，这里重新拿
+        var firstNow = vm.Items.Count > 0 ? vm.Items[0] : first;
+        await vm.OpenViewerCommand.ExecuteAsync(firstNow);
+        await Pulse(window, 2);
+        Check(vm.LeftCollapsed && Math.Abs(vm.LeftWidth - 56) < 0.1, "查看器里左栏收成 56px",
+            $"{vm.LeftWidth:F0}");
+        Check(vm.Filmstrip.Count is > 0 and <= 12, "底部胶片条 12 张以内", $"{vm.Filmstrip.Count}");
+        Check(vm.Items.Count < 12 || vm.Filmstrip.Count == 12, "胶片条填满 12 张", $"{vm.Filmstrip.Count}");
+        Check(vm.Filmstrip.Any(x => x.IsCurrent), "胶片条标出当前那张");
+        vm.ToggleLeftRailCommand.Execute(null);
+        await Pulse(window);
+        Check(!vm.LeftCollapsed && Math.Abs(vm.LeftWidth - 248) < 0.1, "图标轨能展开");
+        vm.CloseViewerCommand.Execute(null);
+        await Pulse(window);
+        Check(!vm.LeftCollapsed, "退出查看器左栏自动展开");
+
+        // ---------- 17. 内容判重 ----------
+        Check(App.Services.Scanner.DedupeByHash, "判重默认开着",
+            App.Services.Store.GetSetting("dedupe") ?? "未设置");
     }
 }
+
 

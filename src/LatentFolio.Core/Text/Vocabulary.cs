@@ -13,6 +13,15 @@ public sealed class Vocabulary
     public bool Ready { get; private set; }
     public string? Error { get; private set; }
 
+    /// <summary>用户在标签体系里确认过的别名：裸名/别的写法 → 正式 tag。</summary>
+    public Dictionary<string, string> Alias { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>用户明确忽略的裸名，不再进候选池、也不参与匹配。</summary>
+    public HashSet<string> Ignored { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>人物条目里手填的中文名，覆盖词表默认值。</summary>
+    public Dictionary<string, string> NameOverride { get; } = new(StringComparer.Ordinal);
+
     private readonly object _lock = new();
     private Task? _task;
 
@@ -70,26 +79,39 @@ public sealed class Vocabulary
     }
 
     public string Display(string tag)
-        => ZhNames.TryGetValue(tag, out var zh) && zh.Length > 0 ? zh : tag;
+        => NameOverride.TryGetValue(tag, out var o) && o.Length > 0 ? o
+         : ZhNames.TryGetValue(tag, out var zh) && zh.Length > 0 ? zh
+         : tag;
 
-    /// <summary>匹配角色：只认 exact / 去系列后缀；裸名进候选池。</summary>
+    /// <summary>匹配角色：先看本地别名，再看 exact / 去系列后缀；裸名进候选池。</summary>
     public (string? Tag, string? Candidate) MatchCharacter(string token)
     {
+        if (Alias.TryGetValue(token, out var aliased)) return (aliased, null);
         if (CharTags.Contains(token)) return (token, null);
 
-        var t = token;
+        // ComfyUI 里两种写法都常见：fluorite_(arknights) 和 fluorite (arknights)。
+        // 词表是下划线式，带空格的那批以前一个都认不出来。
+        var spacey = token.Contains(' ') && !token.Contains('_') ? token.Replace(' ', '_') : null;
+        if (spacey is not null)
+        {
+            if (Alias.TryGetValue(spacey, out var a0)) return (a0, null);
+            if (CharTags.Contains(spacey)) return (spacey, null);
+        }
+
+        var t = spacey ?? token;
         for (int i = 0; i < 3; i++)
         {
             var m = System.Text.RegularExpressions.Regex.Match(t, @"_\([^()]*\)$");
             if (!m.Success) break;
             var t2 = t[..m.Index] + t[(m.Index + m.Length)..];
+            if (Alias.TryGetValue(t2, out var a2)) return (a2, null);
             if (CharTags.Contains(t2)) return (t2, null);
             t = t2;
         }
 
-        if (!token.Contains('('))
+        if (!token.Contains('(') && !Ignored.Contains(token))
         {
-            var baseName = BaseName(token);
+            var baseName = BaseName(t);
             if (CharByName.TryGetValue(baseName, out var sug)) return (null, sug);
         }
         return (null, null);
@@ -121,8 +143,8 @@ public sealed class Vocabulary
         return l;
     }
 
-    /// <summary>对一条提示词做角色/画师识别。</summary>
-    public (string[] Chars, string[] Artists) Tag(string prompt)
+    /// <summary>对一条提示词做角色/画师识别。传了 cand 就把匹配不上的裸名收集进去。</summary>
+    public (string[] Chars, string[] Artists) Tag(string prompt, Dictionary<string, (string Suggest, int Hits)>? cand = null)
     {
         if (string.IsNullOrWhiteSpace(prompt)) return ([], []);
         var (tokens, artists) = GraphParser.Tokenize(prompt);
@@ -133,8 +155,17 @@ public sealed class Vocabulary
         {
             if (CharTags.Count > 0)
             {
-                var (c, _) = MatchCharacter(t);
-                if (c is not null && !chars.Contains(c)) chars.Add(c);
+                var (c, sug) = MatchCharacter(t);
+                if (c is not null)
+                {
+                    if (!chars.Contains(c)) chars.Add(c);
+                }
+                else if (cand is not null && sug is not null && t.Length > 1)
+                {
+                    // 同一张图里同一个裸名只记一次
+                    if (cand.TryGetValue(t, out var cur)) cand[t] = (cur.Suggest, cur.Hits + 1);
+                    else cand[t] = (sug, 1);
+                }
             }
             if (Artists.Contains(t) && !arts.Contains(t)) arts.Add(t);
         }

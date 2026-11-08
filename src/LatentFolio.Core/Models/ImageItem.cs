@@ -59,6 +59,26 @@ public sealed class ImageItem
     public long Hash;
     public long DHash;
 
+    private string[]? _loras;
+
+    /// <summary>从提示词里的 &lt;lora:名字:权重&gt; 就地提取，不落库也不占扫描时间。</summary>
+    public string[] Loras
+    {
+        get
+        {
+            if (_loras is not null) return _loras;
+            if (Prompt.Length == 0) return _loras = [];
+            var list = new List<string>(2);
+            foreach (System.Text.RegularExpressions.Match m in
+                     System.Text.RegularExpressions.Regex.Matches(Prompt, @"<lora:([^:>]+)"))
+            {
+                var n = m.Groups[1].Value.Trim();
+                if (n.Length > 0 && !list.Contains(n)) list.Add(n);
+            }
+            return _loras = list.ToArray();
+        }
+    }
+
     public AspectBucket Aspect;
     public DateTime Added => DateTimeOffset.FromUnixTimeMilliseconds(AddedAt).LocalDateTime;
 

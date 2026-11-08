@@ -31,6 +31,17 @@
                         </StackPanel>
                         <CheckBox x:Name="WatchBox" Content="自动导入新图（目录监视）" Margin="0,12,0,0"
                                   FontSize="12.5" Click="OnWatchChanged" />
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <CheckBox x:Name="DedupeBox" Content="同样的图只收一份（按内容哈希）"
+                                      FontSize="12.5" Click="OnDedupeChanged" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Content="清空判重记录" Style="{StaticResource Btn.Ghost}"
+                                    FontSize="11.5" Padding="8,2" Click="OnClearSkip"
+                                    VerticalAlignment="Center" />
+                        </Grid>
                     </StackPanel>
                 </Border>
 
