@@ -93,14 +93,14 @@ public sealed partial class ImageVm : ObservableObject
     public bool HasPeople => People.Count > 0;
     public bool HasArtists => Artists.Count > 0;
 
-    public void RefreshTags()
+    public void RefreshTags(Func<string, long>? avatarOf = null)
     {
         var v = Vocabulary.Instance;
         var chars = new List<PersonChip>(4);
         foreach (var c in Item.Chars)
         {
             var zh = v.Display(c);
-            chars.Add(new PersonChip(c, zh, zh != c));
+            chars.Add(new PersonChip(c, zh, zh != c, avatarOf?.Invoke(c) ?? 0));
         }
         People = chars;
         Artists = Item.Artists;
@@ -139,5 +139,6 @@ public sealed partial class ImageVm : ObservableObject
     }
 }
 
-public sealed record PersonChip(string Tag, string Display, bool IsLocalized);
+public sealed record PersonChip(string Tag, string Display, bool IsLocalized, long AvatarImageId);
+
 

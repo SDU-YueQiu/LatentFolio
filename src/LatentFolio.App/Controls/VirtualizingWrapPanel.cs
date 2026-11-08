@@ -74,6 +74,26 @@ public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
         InvalidateMeasure();
     }
 
+    // ---------------- 自检用 ----------------
+
+    /// <summary>当前第一个已实例化容器对应的数据索引，-1 表示一个都没有。</summary>
+    internal int FirstRealizedIndex
+    {
+        get
+        {
+            if (InternalChildren.Count == 0) return -1;
+            try { return ItemContainerGenerator.IndexFromGeneratorPosition(new GeneratorPosition(0, 0)); }
+            catch { return -1; }
+        }
+    }
+
+    internal int RealizedCount => InternalChildren.Count;
+
+    /// <summary>第一个已实例化容器在面板坐标系里的 Y。正常应该落在视口范围内。</summary>
+    internal double FirstChildTop => InternalChildren.Count > 0
+        ? InternalChildren[0].TranslatePoint(new Point(0, 0), this).Y
+        : double.NaN;
+
     // ---------------- 测量 ----------------
 
     protected override Size MeasureOverride(Size availableSize)
@@ -134,13 +154,14 @@ public sealed class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
 
         CleanUpItems(first, last);
 
+        // GeneratorPositionFromIndex 对「尚未实例化」的项返回 (最近容器的 child 索引, 前进多少项)。
+        // 这个 Offset 就是用来 seek 的，不能被抹掉 —— 之前把 Offset 归零，
+        // 于是滚动之后仍然从第 0 项开始生成，容器全排在视口上方，看起来就是「滚下去是空白」。
         var startPos = gen.GeneratorPositionFromIndex(first);
-        if (startPos.Offset != 0) startPos = new GeneratorPosition(startPos.Index, 0);
-
-        int childIndex = startPos.Index;
+        int childIndex = startPos.Offset == 0 ? startPos.Index : startPos.Index + 1;
         if (childIndex < 0) childIndex = 0;
 
-        using (gen.StartAt(new GeneratorPosition(childIndex - 1, 1), GeneratorDirection.Forward, true))
+        using (gen.StartAt(startPos, GeneratorDirection.Forward, true))
         {
             for (int i = first; i <= last; i++, childIndex++)
             {

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 using LatentFolio.App.ViewModels;
 using LatentFolio.Core.Models;
@@ -44,6 +45,19 @@ public static class SelfTest
         }
     }
 
+    private static T? FindChild<T>(DependencyObject? root) where T : DependencyObject
+    {
+        if (root is null) return null;
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            if (c is T hit) return hit;
+            if (FindChild<T>(c) is { } deep) return deep;
+        }
+        return null;
+    }
+
     public static async Task RunAsync(Window window, AppVm vm)
     {
         Log.AppendLine($"LatentFolio 自检  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
@@ -79,7 +93,30 @@ public static class SelfTest
         Check(vm.IsPanelVisible, "单选后右侧详情栏出现");
         Check(vm.CurrentParams.Count == 6, "详情栏采样参数 6 行", $"{vm.CurrentParams.Count}");
 
-        // ---------- 2. 评分（星星） ----------
+        // ---------- 2. 滚动要能换出新的一批格子 ----------
+        if (window is MainWindow mw0)
+        {
+            var panel = FindChild<Controls.VirtualizingWrapPanel>(mw0.GridListForTest);
+            if (panel is null) Bad("找到虚拟化面板", "没找到");
+            else
+            {
+                int firstBefore = panel.FirstRealizedIndex;
+                panel.SetVerticalOffset(1800);
+                for (int i = 0; i < 6; i++) await Pulse(window);
+                int firstAfter = panel.FirstRealizedIndex;
+                Check(panel.VerticalOffset > 100, "滚动位移生效", $"{panel.VerticalOffset:F0}");
+                Check(firstAfter > firstBefore, "滚动后实例化的是后面那批图",
+                    $"第一个容器索引 {firstBefore} -> {firstAfter}");
+                Check(panel.RealizedCount > 0 && panel.FirstChildTop > -panel.ItemHeight
+                      && panel.FirstChildTop < panel.ViewportHeight,
+                    "滚动后视野里真的有格子（不是空白）",
+                    $"首个容器 Y={panel.FirstChildTop:F0}，视口高 {panel.ViewportHeight:F0}，共 {panel.RealizedCount} 个");
+                panel.SetVerticalOffset(0);
+                for (int i = 0; i < 4; i++) await Pulse(window);
+            }
+        }
+
+        // ---------- 3. 评分（星星） ----------
         var was = first.Rating;
         first.Rating = 3;
         await Pulse(window);
@@ -192,3 +229,4 @@ public static class SelfTest
         Check(!vm.ViewerOpen && vm.Current is null, "关闭查看器");
     }
 }
+

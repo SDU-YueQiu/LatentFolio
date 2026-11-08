@@ -78,7 +78,6 @@ public partial class ColumnEditorWindow : Window
 
     private void RefreshFooter()
     {
-        ExprText.Text = Tree.ToExpression();
         var images = App.Root.AllImages.Where(x => x.State != FileState.Deleted).ToList();
         var hits = ColumnEngine.Filter(images, Tree, new FilterContext());
         double pct = images.Count == 0 ? 0 : hits.Count * 100.0 / images.Count;
@@ -297,4 +296,5 @@ public partial class ColumnEditorWindow : Window
 
     private void OnCancel(object sender, RoutedEventArgs e) => DialogResult = false;
 }
+
 

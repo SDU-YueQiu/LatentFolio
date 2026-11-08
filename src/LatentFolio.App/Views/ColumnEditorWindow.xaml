@@ -34,9 +34,7 @@
         <Border Grid.Row="3" Margin="0,12,0,0" Background="{StaticResource B.Panel}" CornerRadius="8"
                 BorderBrush="{StaticResource B.Border}" BorderThickness="1" Padding="12,10">
             <StackPanel>
-                <TextBlock x:Name="ExprText" TextWrapping="Wrap" FontSize="11.5"
-                           Foreground="{StaticResource B.Text2}" />
-                <TextBlock x:Name="PreviewText" Margin="0,6,0,0" FontSize="12" FontWeight="SemiBold"
+                <TextBlock x:Name="PreviewText" FontSize="12" FontWeight="SemiBold"
                            Foreground="{StaticResource B.Accent}" />
             </StackPanel>
         </Border>

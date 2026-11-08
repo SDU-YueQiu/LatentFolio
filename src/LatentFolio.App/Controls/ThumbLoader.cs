@@ -34,6 +34,15 @@ public static class ThumbLoader
                     if (ReferenceEquals(GetSourceItem(img), vm) && bmp is not null) img.Source = bmp;
                     break;
                 }
+            case LatentFolio.App.ViewModels.PersonChip chip:
+                {
+                    if (chip.AvatarImageId == 0) return;
+                    if (!App.Root.ById.TryGetValue(chip.AvatarImageId, out var item)) return;
+                    if (svc.Peek(item.Id) is { } h3) { img.Source = h3; return; }
+                    var bmp3 = await svc.LoadAsync(item.Id, item.Path, item.MTime, item.Size);
+                    if (ReferenceEquals(GetSourceItem(img), chip) && bmp3 is not null) img.Source = bmp3;
+                    break;
+                }
             case PersonVm p:
                 {
                     if (p.AvatarImageId == 0) return;
@@ -46,3 +55,4 @@ public static class ThumbLoader
         }
     }
 }
+

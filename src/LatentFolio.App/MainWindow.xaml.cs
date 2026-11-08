@@ -15,6 +15,7 @@ public partial class MainWindow : Window
 
     /// <summary>自检要用它检查缩放状态。</summary>
     internal Controls.ZoomBox BigZoomControl => BigZoom;
+    internal ListBox GridListForTest => GridList;
 
     public MainWindow()
     {
@@ -149,6 +150,12 @@ public partial class MainWindow : Window
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
     private async void OnScanClick(object sender, RoutedEventArgs e) => await Vm.ScanCommand.ExecuteAsync(null);
+
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        var win = new SettingsWindow(Vm) { Owner = this };
+        win.ShowDialog();
+    }
 
     // ================= 导航 =================
 
@@ -561,7 +568,14 @@ public partial class MainWindow : Window
     private void OnPreviewKey(object sender, KeyEventArgs e)
     {
         if (!Vm.ViewerOpen) return;
-        if (e.Key == Key.Escape) { Vm.CloseViewerCommand.Execute(null); e.Handled = true; }
+        if (e.Key == Key.Escape)
+        {
+            // 正在看 VSR 结果时 Esc 先切回原图（设计稿 §12.1「显示原图 Esc 同效」），
+            // 已经在看原图再按才退出放大。
+            if (!Vm.ShowOriginal) Vm.ToggleOriginalCommand.Execute(null);
+            else Vm.CloseViewerCommand.Execute(null);
+            e.Handled = true;
+        }
         else if (e.Key == Key.Left) { Vm.PrevImageCommand.Execute(null); e.Handled = true; }
         else if (e.Key == Key.Right) { Vm.NextImageCommand.Execute(null); e.Handled = true; }
     }
@@ -578,3 +592,4 @@ public partial class MainWindow : Window
 
     private void OnCloseStats(object sender, RoutedEventArgs e) => StatsPane.Visibility = Visibility.Collapsed;
 }
+

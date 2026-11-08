@@ -53,20 +53,28 @@
             <StackPanel Visibility="{Binding Current.HasPeople, Converter={StaticResource B2V}}">
                 <TextBlock Text="人物" Style="{StaticResource T.Section}" Margin="0,0,0,8" />
                 <ItemsControl ItemsSource="{Binding Current.People}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Background="{StaticResource B.AccentSoft}" CornerRadius="12" Padding="9,4"
-                                    Margin="0,0,6,6" Cursor="Hand"
-                                    MouseLeftButtonDown="OnPersonChipClick"
-                                    MouseRightButtonDown="OnPersonChipRightDown">
-                                <TextBlock Text="{Binding Display}" FontSize="11.5"
-                                           Foreground="{StaticResource B.Accent}" />
-                            </Border>
+                            <Grid Margin="0,0,0,8" Cursor="Hand" Background="Transparent"
+                                  MouseLeftButtonDown="OnPersonRowClick"
+                                  MouseRightButtonDown="OnPersonRowRightDown"
+                                  AutomationProperties.Name="{Binding Display}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="34" Height="34" CornerRadius="7" ClipToBounds="True"
+                                        Background="{StaticResource B.Tile}">
+                                    <Image c:ThumbLoader.SourceItem="{Binding}" Stretch="UniformToFill" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Display}" FontSize="12.5"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Tag}" FontSize="10.5"
+                                               Foreground="{StaticResource B.Text3}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -156,15 +164,24 @@
             <Border Style="{StaticResource HLine}" Margin="0,10,0,10" />
 
             <!-- 工作流 -->
-            <Expander x:Name="WorkflowExpander" Header="工作流" FontSize="12" Foreground="{StaticResource B.Text2}"
-                      Expanded="OnWorkflowExpanded">
+            <Expander x:Name="WorkflowExpander" Header="{Binding WorkflowHeader}" FontSize="12"
+                      Foreground="{StaticResource B.Text2}" Expanded="OnWorkflowExpanded">
                 <Border Background="White" BorderBrush="{StaticResource B.Border}" BorderThickness="1"
                         CornerRadius="8" Padding="8" Margin="0,6,0,0">
-                    <TextBox x:Name="WorkflowBox" Text="{Binding WorkflowText, Mode=OneWay}" IsReadOnly="True"
-                             BorderThickness="0" Background="Transparent"
-                             FontFamily="{StaticResource F.Mono}" FontSize="10.5" TextWrapping="NoWrap"
-                             MaxHeight="420" HorizontalScrollBarVisibility="Auto"
-                             VerticalScrollBarVisibility="Auto" />
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Button Content="复制工作流" Style="{StaticResource Btn.Ghost}" FontSize="11"
+                                Padding="6,2" HorizontalAlignment="Right" Margin="0,0,0,6"
+                                Click="OnCopyWorkflow" AutomationProperties.Name="复制工作流" />
+                        <TextBox Grid.Row="1" Text="{Binding WorkflowText, Mode=OneWay}" IsReadOnly="True"
+                                 BorderThickness="0" Background="Transparent"
+                                 FontFamily="{StaticResource F.Mono}" FontSize="10.5" TextWrapping="NoWrap"
+                                 MaxHeight="420" HorizontalScrollBarVisibility="Auto"
+                                 VerticalScrollBarVisibility="Auto" />
+                    </Grid>
                 </Border>
             </Expander>
         </StackPanel>

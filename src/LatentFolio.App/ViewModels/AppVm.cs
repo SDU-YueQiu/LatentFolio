@@ -140,10 +140,12 @@ public sealed partial class AppVm : ObservableObject
         {
             var selected = Selection.Select(x => x.Id).ToHashSet();
             ReloadFromDb();
-            foreach (var vm in VmById.Values) vm.RefreshTags();
+            foreach (var vm in VmById.Values) vm.RefreshTags(AvatarFor);
             _engine.Invalidate();
             _ = RunColumnCountsAsync();
             BuildPeople();
+            // 头像表要先生成好，RefreshTags 才能拿到每个角色的头像
+            foreach (var vm in VmById.Values) vm.RefreshTags(AvatarFor);
             BuildFolders();
             RefreshGrid();
             Selection.Clear();
@@ -208,8 +210,24 @@ public sealed partial class AppVm : ObservableObject
 
     [ObservableProperty] private string _promptEditorText = "";
     [ObservableProperty] private string _workflowText = "";
+    [ObservableProperty] private string _workflowHeader = "工作流";
 
     // ================= 右侧详情栏 =================
+
+    /// <summary>统计门槛：条目至少出现这么多张才参与排名，0 = 全部。</summary>
+    [ObservableProperty] private int _statsThreshold = 5;
+
+    partial void OnStatsThresholdChanged(int value)
+        => _store.SetSetting("stats_threshold", value.ToString());
+
+    /// <summary>VSR 默认放大倍数，2 或 4（4 是跑两遍 2×）。</summary>
+    [ObservableProperty] private int _vsrScale = 2;
+
+    partial void OnVsrScaleChanged(int value)
+    {
+        _store.SetSetting("vsr_scale", value.ToString());
+        if (_svc is not null) _svc.Vsr.Scale = value;
+    }
 
     [ObservableProperty] private bool _panelCollapsed;
     [ObservableProperty] private bool _isPanelVisible;
@@ -248,6 +266,10 @@ public sealed partial class AppVm : ObservableObject
         AlwaysVsr = _store.GetSetting("always_vsr") == "1";
         WatchEnabled = _store.GetSetting("watch") != "0";
         PanelCollapsed = _store.GetSetting("panel_collapsed") == "1";
+        StatsThreshold = int.TryParse(_store.GetSetting("stats_threshold"), out var st) ? st : 5;
+        VsrScale = int.TryParse(_store.GetSetting("vsr_scale"), out var vs) && vs == 4 ? 4 : 2;
+        _svc.Vsr.Scale = VsrScale;
+        _svc.Scanner.ArchiveThumbsEnabled = _store.GetSetting("archive_thumbs") != "0";
         LoadPersonAvatars();
         _ = _svc.Vsr.StartAsync().ContinueWith(_ =>
         {
@@ -259,6 +281,7 @@ public sealed partial class AppVm : ObservableObject
         await EnsureSeed();
         await RunColumnCountsAsync();
         BuildPeople();
+        foreach (var vm in VmById.Values) vm.RefreshTags(AvatarFor);
         BuildFolders();
         await ScanAsync(initial: true);
         RefreshGrid();
@@ -351,7 +374,7 @@ public sealed partial class AppVm : ObservableObject
                 if (imported > 0) ReloadFromDb();
             }
 
-            foreach (var vm in VmById.Values) vm.RefreshTags();
+            foreach (var vm in VmById.Values) vm.RefreshTags(AvatarFor);
             _engine.Invalidate();
             await RunColumnCountsAsync();
             BuildPeople();
@@ -512,6 +535,10 @@ public sealed partial class AppVm : ObservableObject
         tx.Commit();
         return n;
     }
+
+    /// <summary>角色 tag → 头像用的图片 id（自定义优先，否则最高分那张）。</summary>
+    public long AvatarFor(string tag)
+        => People.FirstOrDefault(p => p.Tag == tag)?.AvatarImageId ?? 0;
 
     private void BuildPeople()
     {
@@ -838,12 +865,16 @@ public sealed partial class AppVm : ObservableObject
 
         HitCount = Items.Count;
         IsEmpty = Items.Count == 0;
+        IsLibraryEmpty = TotalCount == 0;
+        EmptyText = IsLibraryEmpty ? "图库还是空的，先把 ComfyUI 的 output 目录指过来" : "这里一张都没有";
         OnPropertyChanged(nameof(Chips));
         GridReloaded?.Invoke();
         RefreshStatus();
     }
 
     [ObservableProperty] private bool _isEmpty;
+    [ObservableProperty] private bool _isLibraryEmpty;
+    [ObservableProperty] private string _emptyText = "这里一张都没有";
 
     public List<string> Chips
     {
@@ -889,6 +920,12 @@ public sealed partial class AppVm : ObservableObject
     public void MoveToDeleted(IEnumerable<ImageVm> vms)
     {
         var list = vms.ToList();
+        // 删之前先留一张 256 的归档缩略图，之后原图没了也还能看见
+        if (_svc.Scanner.ArchiveThumbsEnabled)
+        {
+            foreach (var vm in list) ArchiveThumbs.Ensure(_svc.Thumbs, vm.Item);
+        }
+
         using var tx = _svc.Db.Connection.BeginTransaction();
         foreach (var vm in list)
         {
@@ -954,6 +991,9 @@ public sealed partial class AppVm : ObservableObject
     }
 
     [ObservableProperty] private bool _alwaysVsr;
+    /// <summary>状态胶囊只写"RTX VSR 2×"，别堆分辨率耗时（设计稿 §12.7 明确要求）。</summary>
+    private string VsrBadgeText() => (AlwaysVsr ? "☑ " : "") + $"RTX VSR {VsrScale}×";
+
     [ObservableProperty] private bool _vsrBusy;
 
     partial void OnAlwaysVsrChanged(bool value) => _svc.Store.SetSetting("always_vsr", value ? "1" : "0");
@@ -975,12 +1015,12 @@ public sealed partial class AppVm : ObservableObject
         {
             ViewerImage = new ImageSourceHolder(cached);
             ShowOriginal = false;
-            VsrBadge = $"RTX VSR · 2× · {cached.PixelWidth}×{cached.PixelHeight}";
+            VsrBadge = VsrBadgeText();
             return;
         }
 
         VsrBusy = true;
-        VsrBadge = "RTX VSR 处理中…";
+        VsrBadge = "处理中…";
         try
         {
             var vm = Current;
@@ -993,7 +1033,7 @@ public sealed partial class AppVm : ObservableObject
             }
             ViewerImage = new ImageSourceHolder(bmp);
             ShowOriginal = false;
-            VsrBadge = $"RTX VSR · 2× · {bmp.PixelWidth}×{bmp.PixelHeight} · {_svc.Vsr.Engine.LastRunMs:F0} ms";
+            VsrBadge = VsrBadgeText();
         }
         finally
         {
@@ -1024,7 +1064,35 @@ public sealed partial class AppVm : ObservableObject
             return PngReader.Gunzip(gz) ?? "";
         });
         if (Current?.Id != vm.Id) return;
-        WorkflowText = raw.Length == 0 ? "这张图没有内嵌工作流。" : Pretty(raw);
+        if (raw.Length == 0)
+        {
+            WorkflowText = "这张图没有内嵌工作流。";
+            WorkflowHeader = "工作流";
+            return;
+        }
+        WorkflowHeader = $"工作流 · {CountNodes(raw):N0} 个节点";
+        WorkflowText = Pretty(raw);
+    }
+
+    /// <summary>UI 格式数 nodes 数组，API 格式数顶层键。</summary>
+    private static int CountNodes(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                if (root.TryGetProperty("nodes", out var nodes)
+                    && nodes.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    return nodes.GetArrayLength();
+                int n = 0;
+                foreach (var _ in root.EnumerateObject()) n++;
+                return n;
+            }
+        }
+        catch { }
+        return 0;
     }
 
     private static string Pretty(string json)
@@ -1037,6 +1105,12 @@ public sealed partial class AppVm : ObservableObject
                 new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
         }
         catch { return json; }
+    }
+
+    public void CopyWorkflow()
+    {
+        if (WorkflowText.Length == 0 || WorkflowText.StartsWith("这张图没有")) return;
+        CopyText(WorkflowText);
     }
 
     [RelayCommand]
@@ -1121,6 +1195,12 @@ public sealed partial class AppVm : ObservableObject
         else { UpdateColumn(existing.Id, name, tree); _ = RunColumnCountsAsync(); RefreshGrid(); }
     }
 }
+
+
+
+
+
+
 
 
 

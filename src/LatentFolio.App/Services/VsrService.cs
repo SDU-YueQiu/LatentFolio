@@ -34,6 +34,9 @@ public sealed class VsrService : IDisposable
         lock (_cache) _cache.Clear();
     }
 
+    /// <summary>放大倍数：2 或 4。4× 就是跑两遍 2×。</summary>
+    public int Scale { get; set; } = 2;
+
     /// <summary>处理一张图，返回超分后的位图；失败返回 null。</summary>
     public async Task<BitmapSource?> ProcessAsync(ImageItem item)
     {
@@ -69,7 +72,7 @@ public sealed class VsrService : IDisposable
             if (w <= 0 || h <= 0) return null;
 
             // 输出超上限就先缩输入，保证内存不炸
-            long outPx = (long)w * 2 * h * 2;
+            long outPx = (long)w * Scale * h * Scale;
             if (outPx > VsrEngine.MaxOutputPixels)
             {
                 double k = Math.Sqrt((double)VsrEngine.MaxOutputPixels / outPx);
@@ -107,8 +110,15 @@ public sealed class VsrService : IDisposable
                         Buffer.BlockCopy(buf, y * pitch, packed, y * row, row);
                 }
 
-                var res = Engine.Process(packed, w, h);
+                // 4× 就是连跑两遍 2×；中间那遍超上限就停在上一次的结果
+                VsrEngine.Result? res = Engine.Process(packed, w, h);
                 if (res is null) return null;
+
+                if (Scale >= 4)
+                {
+                    var second = Engine.Process(res.Bgra, res.Width, res.Height);
+                    if (second is not null) res = second;
+                }
 
                 var outBmp = BitmapSource.Create(res.Width, res.Height, 96, 96,
                     PixelFormats.Bgra32, null, res.Bgra, res.Width * 4);

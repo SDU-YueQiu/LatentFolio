@@ -34,6 +34,9 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
 {
     private static readonly string[] Exts = [".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif"];
 
+    /// <summary>删除/丢失时是否生成归档缩略图（设置里可关）。</summary>
+    public bool ArchiveThumbsEnabled { get; set; } = true;
+
     public static bool IsImage(string path)
     {
         var e = Path.GetExtension(path);
@@ -250,7 +253,13 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         foreach (var kv in existing)
         {
             if (seen.Contains(kv.Key)) continue;
-            if (kv.Value.State == FileState.Present) { kv.Value.State = FileState.Missing; missing.Add(kv.Value.Id); }
+            if (kv.Value.State == FileState.Present)
+            {
+                // 文件没了也要留一张 256 的归档缩略图，否则图墙里只剩一个空白格
+                if (ArchiveThumbsEnabled) ArchiveThumbs.Ensure(thumbs, kv.Value);
+                kv.Value.State = FileState.Missing;
+                missing.Add(kv.Value.Id);
+            }
         }
         foreach (var id in missing) store.UpdateState(new ImageItem { Id = id, State = FileState.Missing });
         if (missing.Count > 0) result.Removed = missing.Count;
@@ -369,3 +378,4 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         return applied;
     }
 }
+
