@@ -6,6 +6,7 @@ ComfyUI 出图的本地图库：自动入库，按人物、标签、评分和提
 ![.NET](https://img.shields.io/badge/.NET-10-512BD4)
 ![offline](https://img.shields.io/badge/network-offline-6E7781)
 ![self-test](https://img.shields.io/badge/self--test-127%20passed-2DA44E)
+![license](https://img.shields.io/badge/license-MIT-2DA44E)
 
 [功能](#功能) · [快速开始](#快速开始) · [常用操作](#常用操作) · [界面](#界面) · [实测](#实测) · [文档](#文档)
 
@@ -114,3 +115,7 @@ LatentFolio.exe --self-test     # 127 条交互回归，不抢前台，结果写
 三个工程：`LatentFolio.Core`（解析 / 扫描 / 筛选，无 UI 依赖）、`LatentFolio.App`（WPF）、`LatentFolio.Vsr`（P/Invoke NVIDIA Video Effects）。
 
 </details>
+
+## 许可
+
+[MIT](LICENSE) © 2026 SDU-YueQiu

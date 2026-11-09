@@ -30,6 +30,8 @@ jobs:
         shell: pwsh
         run: |
           Get-ChildItem dist -Recurse -Filter *.pdb | Remove-Item -Force
+          # MIT 要求分发时带上版权声明
+          if (Test-Path LICENSE) { Copy-Item LICENSE dist\LICENSE }
           $ver = "${{ inputs.tag }}".TrimStart('v')
           $asset = "LatentFolio-$ver-win-x64.zip"
           tar -a -c -f $asset -C dist .
