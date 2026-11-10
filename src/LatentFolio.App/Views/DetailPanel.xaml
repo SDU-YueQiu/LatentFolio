@@ -28,6 +28,21 @@
             <Setter Property="TextAlignment" Value="Left" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
+        <!-- ===== 可选中版本（TextBlock 换 TextBox）：右栏所有静态文字都能拖选/复制 ===== -->
+        <Style x:Key="P.Detail.SelHead" TargetType="{x:Type c:SelectableText}" BasedOn="{StaticResource S.Section}">
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="P.Detail.SelLabel" TargetType="{x:Type c:SelectableText}" BasedOn="{StaticResource S.Sub}">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style x:Key="P.Detail.SelValue" TargetType="{x:Type c:SelectableText}" BasedOn="{StaticResource S.Value}">
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="P.Detail.SelMono" TargetType="{x:Type c:SelectableText}" BasedOn="{StaticResource S.Mono}">
+            <Setter Property="Foreground" Value="{StaticResource B.Text}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
         <!-- 顶部模型行：没解析出模型时整行隐藏（ModelText 用 — 兜底） -->
         <Style x:Key="P.Detail.ModelRow" TargetType="Grid">
             <Style.Triggers>
@@ -260,26 +275,22 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" Background="Transparent" FocusVisualStyle="{x:Null}">
         <StackPanel Margin="16,16,16,24">
             <!-- ===== 顶部：文件名最多两行，下面一行元信息 ===== -->
-            <TextBlock Text="{Binding Current.FileName}" Style="{StaticResource T.Title}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" LineHeight="20" LineStackingStrategy="BlockLineHeight" MaxHeight="40" ToolTip="{Binding Current.FileName}" />
-            <TextBlock Style="{StaticResource T.Sub}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis">
-                <Run Text="{Binding Current.Resolution, Mode=OneWay}" FontFamily="{StaticResource F.Mono}" />
-                <Run Text=" · " />
-                <Run Text="{Binding Current.SizeText, Mode=OneWay}" FontFamily="{StaticResource F.Mono}" />
-                <Run Text=" · " />
-                <Run Text="{Binding Current.ExtText, Mode=OneWay}" />
-            </TextBlock>
+            <c:SelectableText Text="{Binding Current.FileName, Mode=OneWay}" Style="{StaticResource S.Title}"
+                              TextWrapping="Wrap" MaxHeight="40" ToolTip="{Binding Current.FileName}" />
+            <c:SelectableText Text="{Binding Current.MetaText, Mode=OneWay}" Style="{StaticResource S.Sub}" Margin="0,4,0,0" />
             <Grid Style="{StaticResource P.Detail.ModelRow}" Margin="0,4,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="模型" Style="{StaticResource T.Sub}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                <TextBlock Grid.Column="1" Text="{Binding Current.ModelText}" Style="{StaticResource T.Mono}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Current.ModelText}" />
+                <c:SelectableText Text="模型" Style="{StaticResource P.Detail.SelLabel}" />
+                <c:SelectableText Grid.Column="1" Text="{Binding Current.ModelText, Mode=OneWay}"
+                                  Style="{StaticResource P.Detail.SelMono}" ToolTip="{Binding Current.ModelText}" />
             </Grid>
             <!-- ===== 评分与备注 ===== -->
             <StackPanel Margin="0,14,0,0">
                 <Grid Style="{StaticResource P.Detail.SectionHead}">
-                    <TextBlock Text="评分与备注" Style="{StaticResource P.Detail.Section}" />
+                    <c:SelectableText Text="评分与备注" Style="{StaticResource P.Detail.SelHead}" />
                 </Grid>
                 <c:RatingBar Value="{Binding Current.Rating, Mode=TwoWay}" StarSize="20" Gap="4" Height="24" HorizontalAlignment="Left" />
                 <TextBox Style="{StaticResource P.Detail.Note}" Margin="0,8,0,0" Text="{Binding Current.Note, UpdateSourceTrigger=PropertyChanged, Delay=400}" />
@@ -287,23 +298,24 @@
             <!-- ===== 文件 ===== -->
             <StackPanel Margin="0,14,0,0">
                 <Grid Style="{StaticResource P.Detail.SectionHead}">
-                    <TextBlock Text="文件" Style="{StaticResource P.Detail.Section}" />
+                    <c:SelectableText Text="文件" Style="{StaticResource P.Detail.SelHead}" />
                 </Grid>
                 <Grid Style="{StaticResource P.Detail.Row}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="84" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="文件夹" Style="{StaticResource P.Detail.FieldLabel}" />
-                    <TextBlock Grid.Column="1" Text="{Binding Current.Folder}" Style="{StaticResource P.Detail.FieldMono}" ToolTip="{Binding Current.Folder}" />
+                    <c:SelectableText Text="文件夹" Style="{StaticResource P.Detail.SelLabel}" />
+                    <c:SelectableText Grid.Column="1" Text="{Binding Current.Folder, Mode=OneWay}"
+                                      Style="{StaticResource P.Detail.SelMono}" ToolTip="{Binding Current.Folder}" />
                 </Grid>
                 <Grid Style="{StaticResource P.Detail.Row}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="84" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="日期" Style="{StaticResource P.Detail.FieldLabel}" />
-                    <TextBlock Grid.Column="1" Text="{Binding Current.DateText}" Style="{StaticResource P.Detail.FieldValue}" />
+                    <c:SelectableText Text="日期" Style="{StaticResource P.Detail.SelLabel}" />
+                    <c:SelectableText Grid.Column="1" Text="{Binding Current.DateText, Mode=OneWay}" Style="{StaticResource P.Detail.SelValue}" />
                 </Grid>
             </StackPanel>
             <!-- ===== 人物（角色 + 画师）：任一有内容就显示；都没有时整块隐藏 ===== -->
@@ -322,7 +334,7 @@
                     </Style>
                 </StackPanel.Style>
                 <Grid Style="{StaticResource P.Detail.SectionHead}">
-                    <TextBlock Text="人物" Style="{StaticResource P.Detail.Section}" />
+                    <c:SelectableText Text="人物" Style="{StaticResource P.Detail.SelHead}" />
                 </Grid>
                 <ItemsControl ItemsSource="{Binding Current.People}" Visibility="{Binding Current.HasPeople, Converter={StaticResource B2V}}">
                     <ItemsControl.ItemTemplate>
@@ -365,7 +377,7 @@
             <!-- ===== 正向提示词 ===== -->
             <StackPanel Margin="0,14,0,0">
                 <Grid Style="{StaticResource P.Detail.SectionHead}">
-                    <TextBlock Text="正向提示词" Style="{StaticResource P.Detail.Section}" />
+                    <c:SelectableText Text="正向提示词" Style="{StaticResource P.Detail.SelHead}" />
                     <Button Style="{StaticResource P.Detail.CopyText}" Content="复制" Click="OnCopyPrompt" />
                 </Grid>
                 <Border Style="{StaticResource P.Detail.InsetBlock}" MaxHeight="260">
@@ -375,10 +387,13 @@
             <!-- ===== 负面提示词 ===== -->
             <StackPanel Margin="0,14,0,0" Visibility="{Binding Current.HasNegative, Converter={StaticResource B2V}}">
                 <Grid Style="{StaticResource P.Detail.SectionHead}">
-                    <TextBlock Text="负面提示词" Style="{StaticResource P.Detail.Section}" />
+                    <c:SelectableText Text="负面提示词" Style="{StaticResource P.Detail.SelHead}" />
                     <Button Style="{StaticResource P.Detail.CopyText}" Content="复制" Click="OnCopyNegative" />
                 </Grid>
-                <TextBlock Text="{Binding Current.NegHint}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource B.Danger}" Margin="0,0,0,6" Visibility="{Binding Current.NegHint, Converter={StaticResource NE2V}}" />
+                <c:SelectableText Text="{Binding Current.NegHint, Mode=OneWay}" TextWrapping="Wrap" FontSize="11"
+                                  Foreground="{StaticResource B.Danger}" Margin="0,0,0,6"
+                                  VerticalContentAlignment="Top"
+                                  Visibility="{Binding Current.NegHint, Converter={StaticResource NE2V}}" />
                 <Border Style="{StaticResource P.Detail.InsetBlock}" MaxHeight="140">
                     <TextBox Style="{StaticResource P.Detail.PromptBox}" Text="{Binding Current.Negative, Mode=OneWay}" />
                 </Border>
@@ -386,7 +401,7 @@
             <!-- ===== 采样参数 ===== -->
             <StackPanel Margin="0,14,0,0">
                 <Grid Style="{StaticResource P.Detail.SectionHead}">
-                    <TextBlock Text="采样参数" Style="{StaticResource P.Detail.Section}" />
+                    <c:SelectableText Text="采样参数" Style="{StaticResource P.Detail.SelHead}" />
                 </Grid>
                 <ItemsControl ItemsSource="{Binding CurrentParams}">
                     <ItemsControl.ItemTemplate>
@@ -396,8 +411,9 @@
                                     <ColumnDefinition Width="84" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Key}" Style="{StaticResource P.Detail.FieldLabel}" />
-                                <TextBlock Grid.Column="1" Text="{Binding Value}" Style="{StaticResource P.Detail.FieldMono}" ToolTip="{Binding Value}" />
+                                <c:SelectableText Text="{Binding Key, Mode=OneWay}" Style="{StaticResource P.Detail.SelLabel}" />
+                                <c:SelectableText Grid.Column="1" Text="{Binding Value, Mode=OneWay}"
+                                                  Style="{StaticResource P.Detail.SelMono}" ToolTip="{Binding Value}" />
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

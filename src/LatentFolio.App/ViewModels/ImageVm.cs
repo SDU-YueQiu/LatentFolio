@@ -49,6 +49,9 @@ public sealed partial class ImageVm : ObservableObject, Controls.IAspectItem
     public string ExtText => Item.Ext.ToUpperInvariant();
     public string DateText => Item.Added.ToString("yyyy-MM-dd HH:mm");
 
+    /// <summary>标题下面那行：分辨率 · 体积 · 格式。</summary>
+    public string MetaText => $"{Resolution} · {SizeText} · {ExtText}";
+
     [ObservableProperty]
     private int _rating;
 

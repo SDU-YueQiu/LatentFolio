@@ -344,11 +344,18 @@ public static class SelfTest
         // 用来抓「画出来的位置和能点的位置不重合」——被别的层盖住、或者布局偏了都会失败
         if (window is MainWindow mwHit)
         {
+            // 前面关查看器把 Current 清空了，右栏是收着的；先点一张图让它出来，
+            // 否则下面的命中测试会把「一个控件都没有」当成通过
+            vm.SelectSingle(vm.Items[0]);
+            await Pulse(window, 2);
+
+            int buttons = 0;
             int bad = 0;
             string firstBad = "";
             foreach (var b in AllDescendants<System.Windows.Controls.Button>(mwHit.DetailHostForTest))
             {
                 if (!b.IsVisible || b.ActualWidth < 4 || b.ActualHeight < 4) continue;
+                buttons++;
                 var pt = b.TranslatePoint(new Point(b.ActualWidth / 2, b.ActualHeight / 2), mwHit);
                 if (pt.X < 0 || pt.Y < 0 || pt.X > mwHit.ActualWidth || pt.Y > mwHit.ActualHeight) continue;
                 var hit = mwHit.InputHitTest(pt) as DependencyObject;
@@ -360,7 +367,21 @@ public static class SelfTest
                         firstBad = $"{b.Content ?? b.Name} 命中 {hit?.GetType().Name ?? "null"} @{pt.X:F0},{pt.Y:F0}";
                 }
             }
-            Check(bad == 0, "右栏按钮的点击区域没被遮住", bad == 0 ? "" : $"{bad} 个异常（{firstBad}）");
+            Check(buttons > 0 && bad == 0, "右栏按钮的点击区域没被遮住",
+                bad > 0 ? $"{bad}/{buttons} 个异常（{firstBad}）" : $"{buttons} 个按钮");
+
+            // 右栏的静态文字全都能选中/复制（TextBlock 换成了只读 TextBox）
+            var sels = AllDescendants<Controls.SelectableText>(mwHit.DetailHostForTest)
+                .Where(x => x.IsVisible && x.Text.Length > 2).ToList();
+            Check(sels.Count >= 10, "右栏静态文字都是可选中控件", $"{sels.Count} 处");
+            var pick = sels.FirstOrDefault(x => x.Text.Length > 6);
+            if (pick is not null)
+            {
+                pick.SelectAll();
+                Check(pick.IsReadOnly && pick.SelectedText == pick.Text, "选中的文本拿得到",
+                    $"{pick.Text.Length} 字符");
+            }
+            else Check(false, "右栏静态文字都是可选中控件", "没有非空文本");
         }
 
         // 统计页点词条跳搜索结果（走的是 StatsBuilder 里那条真实路径）

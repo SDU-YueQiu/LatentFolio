@@ -194,6 +194,73 @@
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
     </Style>
 
+    <!-- ================= 可选中文本 ================= -->
+    <!-- TextBlock 不能选，TextBox 又自带边框 / 底色 / 光标 / Tab 停靠。
+         模板只留一个内容宿主，看着就是普通文字，但能拖选、Ctrl+C、右键复制。 -->
+    <Style TargetType="{x:Type c:SelectableText}">
+        <Setter Property="FontFamily" Value="{StaticResource F.UI}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{StaticResource B.Text}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+        <Setter Property="HorizontalScrollBarVisibility" Value="Hidden" />
+        <Setter Property="VerticalScrollBarVisibility" Value="Hidden" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:SelectableText}">
+                    <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                  HorizontalScrollBarVisibility="Hidden"
+                                  VerticalScrollBarVisibility="Hidden" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="S.Title" TargetType="{x:Type c:SelectableText}"
+           BasedOn="{StaticResource {x:Type c:SelectableText}}">
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource B.Text}" />
+    </Style>
+
+    <Style x:Key="S.Sub" TargetType="{x:Type c:SelectableText}"
+           BasedOn="{StaticResource {x:Type c:SelectableText}}">
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="Foreground" Value="{StaticResource B.Text3}" />
+    </Style>
+
+    <Style x:Key="S.Label" TargetType="{x:Type c:SelectableText}"
+           BasedOn="{StaticResource {x:Type c:SelectableText}}">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
+    </Style>
+
+    <Style x:Key="S.Section" TargetType="{x:Type c:SelectableText}"
+           BasedOn="{StaticResource {x:Type c:SelectableText}}">
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource B.Text3}" />
+    </Style>
+
+    <Style x:Key="S.Value" TargetType="{x:Type c:SelectableText}"
+           BasedOn="{StaticResource {x:Type c:SelectableText}}">
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Foreground" Value="{StaticResource B.Text}" />
+    </Style>
+
+    <Style x:Key="S.Mono" TargetType="{x:Type c:SelectableText}"
+           BasedOn="{StaticResource {x:Type c:SelectableText}}">
+        <Setter Property="FontFamily" Value="{StaticResource F.Mono}" />
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="Foreground" Value="{StaticResource B.Text2}" />
+    </Style>
+
     <!-- ================= 滚动条 ================= -->
     <!-- 不再用 Track：它按比例算滑块长度（几千张图时只剩十几像素），而且排布时
          会覆盖 Thumb.MinHeight，「最小长度」在它身上根本做不到。

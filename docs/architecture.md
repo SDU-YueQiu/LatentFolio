@@ -164,6 +164,7 @@ src/LatentFolio.App             WPF
   Controls/JustifiedGridPanel.cs       等高虚拟化网格
   Controls/SlimThumb.cs                自绘滚动条滑块
   Controls/RatingBar.cs                5 点评分条
+  Controls/SelectableText.cs           只读但可选中的文本（右栏文字用它替 TextBlock）
   ViewModels/AppVm.cs                  全部状态与命令
   Views/                               详情栏 / 自定义栏编辑器 / 人物墙 / 标签 / 统计
 
