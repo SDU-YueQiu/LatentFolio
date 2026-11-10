@@ -431,7 +431,7 @@ public partial class App : Application
                     sb.AppendLine("JSON PARSE FAIL: " + ex.Message);
                 }
 
-                var r = GraphParser.ParseWorkflowApiJson(pj);
+                var r = GraphParser.ParseWorkflowApiJson(pj, meta.Workflow);
                 sb.AppendLine($"method={r.Method} split={r.Split}");
                 sb.AppendLine($"posClasses={string.Join(",", r.PosClasses)}");
                 sb.AppendLine($"negClasses={string.Join(",", r.NegClasses)}");

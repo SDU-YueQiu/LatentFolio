@@ -55,7 +55,8 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
         {
             var fi = new FileInfo(path);
             var meta = PngReader.Read(path);
-            var parsed = meta.Prompt is null ? null : GraphParser.ParseWorkflowApiJson(meta.Prompt);
+            // workflow 段要一起给：prompt 段里 ShowText 的 text_0 是上一轮的文字（见 GraphParser）
+            var parsed = meta.Prompt is null ? null : GraphParser.ParseWorkflowApiJson(meta.Prompt, meta.Workflow);
 
             var item = new ImageItem
             {

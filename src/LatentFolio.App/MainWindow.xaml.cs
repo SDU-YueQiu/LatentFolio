@@ -326,6 +326,20 @@ public partial class MainWindow : Window
             Vm.SelectSingle(Vm.Items[0]);
         }
         if (args.Contains("--expand-workflow")) Vm.EnsureWorkflow(Vm.Items[0]);
+        // 开发诊断：--open-name <文件名片段> 直接选中某一张，方便截图核对
+        int nameArg = Array.IndexOf(args, "--open-name");
+        if (nameArg >= 0 && nameArg + 1 < args.Length)
+        {
+            var q = args[nameArg + 1];
+            var hit = Vm.Items.FirstOrDefault(x => x.FileName.Contains(q, StringComparison.OrdinalIgnoreCase));
+            if (hit is not null)
+            {
+                Vm.SelectSingle(hit);
+                GridList.SelectedItem = hit;
+                GridList.ScrollIntoView(hit);
+                Vm.EnsureWorkflow(hit);
+            }
+        }
         if (args.Contains("--open-first") && Vm.Items.Count > 0)
             Vm.OpenViewerCommand.Execute(Vm.Items[0]);
         if (args.Contains("--show-stats")) ShowStats();

@@ -675,7 +675,7 @@ public static class SelfTest
         if (System.IO.File.Exists(probe))
         {
             var meta = LatentFolio.Core.Comfy.PngReader.Read(probe);
-            var parsed = meta.Prompt is null ? null : LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(meta.Prompt);
+            var parsed = meta.Prompt is null ? null : LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(meta.Prompt, meta.Workflow);
             Check(parsed is not null, "能解析零化负面的工作流");
             if (parsed is not null)
             {
@@ -718,6 +718,24 @@ public static class SelfTest
         """;
         var c4Res = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(c4Json);
         Check(c4Res.Positive == "1,2,3,4,", "四段拼接（text_c/text_d）也接上", c4Res.Positive);
+
+        // prompt 段里 ShowText 的 text_0 是上一轮的文字，workflow 段才是这次画的。两边都在时以 workflow 为准。
+        const string staleJson = """
+        {
+          "1": {"class_type":"KSampler","inputs":{"positive":["2",0],"negative":["5",0]}},
+          "2": {"class_type":"CLIPTextEncode","inputs":{"text":["3",0]}},
+          "3": {"class_type":"StringConcatenate","inputs":{"string_a":"a,","string_b":"b,","delimiter":","}},
+          "4": {"class_type":"ShowText|pysssss","inputs":{"text_0":"上一轮的文字","text":["3",0]}},
+          "5": {"class_type":"CLIPTextEncode","inputs":{"text":"worst quality"}}
+        }
+        """;
+        const string freshWorkflow = """
+        { "nodes": [ { "id": 4, "type": "ShowText|pysssss", "widgets_values": ["这一轮的文字"] } ], "links": [] }
+        """;
+        var staleOnly = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(staleJson);
+        Check(staleOnly.Positive == "上一轮的文字", "只有 prompt 段时退回 text_0", staleOnly.Positive);
+        var freshRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(staleJson, freshWorkflow);
+        Check(freshRes.Positive == "这一轮的文字", "有 workflow 段时以它为准", freshRes.Positive);
 
         // ---------- 21. 左栏可拖宽 ----------
         double w0 = vm.LeftWidth;

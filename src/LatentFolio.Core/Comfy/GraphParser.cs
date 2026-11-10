@@ -165,6 +165,81 @@ public static partial class GraphParser
         }
     }
 
+    /// <summary>
+    /// prompt 段里的 text_0 是「排队那一刻控件上显示的文字」，也就是上一张的取值：
+    /// 通配符/随机分支要到真正执行时才抽，抽完才写回控件，而 workflow 段正好是保存时控件的样子。
+    /// 实测 Krea2-turbo_00047_：prompt 写着上一轮的 arched bangs/trilby/harness，
+    /// 画出来的却是 workflow 里那身 silvery white/teal/behive hairdo/kimono skirt。
+    /// 所以 workflow 段能对上节点 id 的，一律以它为准。
+    /// </summary>
+    private static void ApplyWorkflowTexts(Eval e, string? workflowJson)
+    {
+        if (string.IsNullOrWhiteSpace(workflowJson)) return;
+
+        var doc = TryParse(workflowJson);
+        if (doc is null)
+        {
+            var fixedJson = NaNRe().Replace(workflowJson, "null");
+            if (!ReferenceEquals(fixedJson, workflowJson)) doc = TryParse(fixedJson);
+        }
+        if (doc is null) return;
+
+        using (doc)
+        {
+            var texts = new Dictionary<string, string>(64, StringComparer.Ordinal);
+            CollectWorkflowTexts(doc.RootElement, texts, 0);
+            if (texts.Count == 0) return;
+
+            foreach (var node in e.G.Values)
+            {
+                if (!node.ClassType.Contains("ShowText", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!node.Inputs.TryGetValue("text", out var v) || v is not Link l) continue;
+                if (!texts.TryGetValue(node.Id, out var t) || t.Length == 0) continue;
+                e.Snapshot[l.NodeId] = t;  // 覆盖 prompt 段里那份过期的
+            }
+        }
+    }
+
+    /// <summary>UI 图里每个节点都带 id + widgets_values，把有文字的那些收成 id → 文字。</summary>
+    private static void CollectWorkflowTexts(System.Text.Json.JsonElement el, Dictionary<string, string> into, int depth)
+    {
+        if (depth > 8) return;
+
+        if (el.ValueKind == System.Text.Json.JsonValueKind.Object
+            && el.TryGetProperty("id", out var idEl)
+            && el.TryGetProperty("widgets_values", out var wv)
+            && idEl.ValueKind is System.Text.Json.JsonValueKind.String or System.Text.Json.JsonValueKind.Number)
+        {
+            var key = idEl.ValueKind == System.Text.Json.JsonValueKind.String ? idEl.GetString() : idEl.GetRawText();
+            var txt = FirstString(wv);
+            if (!string.IsNullOrEmpty(key) && txt is not null && txt.Trim().Length > 0 && !into.ContainsKey(key))
+                into[key] = txt;
+        }
+
+        if (el.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            foreach (var p in el.EnumerateObject()) CollectWorkflowTexts(p.Value, into, depth + 1);
+        }
+        else if (el.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var it in el.EnumerateArray()) CollectWorkflowTexts(it, into, depth + 1);
+        }
+    }
+
+    private static string? FirstString(System.Text.Json.JsonElement v)
+    {
+        if (v.ValueKind == System.Text.Json.JsonValueKind.String) return v.GetString();
+        if (v.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var it in v.EnumerateArray())
+            {
+                var s = FirstString(it);
+                if (s is not null) return s;
+            }
+        }
+        return null;
+    }
+
     private static string ResolveValue(Eval e, object? v, int depth, HashSet<string> seen)
     {
         if (v is string s) return s;
@@ -255,7 +330,7 @@ public static partial class GraphParser
         }
     }
 
-    public static ParseResult ParseWorkflowApiJson(string promptJson)
+    public static ParseResult ParseWorkflowApiJson(string promptJson, string? workflowJson = null)
     {
         var res = new ParseResult();
         if (string.IsNullOrWhiteSpace(promptJson)) return res;
@@ -279,6 +354,7 @@ public static partial class GraphParser
             if (g.Count == 0) return res;
             var e = new Eval(g);
             CollectSnapshots(e);
+            ApplyWorkflowTexts(e, workflowJson);
             Fill(e, res);
         }
         return res;
