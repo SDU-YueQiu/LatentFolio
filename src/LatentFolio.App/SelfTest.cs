@@ -380,6 +380,25 @@ public static class SelfTest
                 pick.SelectAll();
                 Check(pick.IsReadOnly && pick.SelectedText == pick.Text, "选中的文本拿得到",
                     $"{pick.Text.Length} 字符");
+
+                // 双击整段选中：只读字段双击选一个词没意义，还得再 Ctrl+A 一次
+                pick.Select(0, 0);
+                bool dblWide = false;
+                string via = "真事件";
+                try
+                {
+                    var ev = new System.Windows.Input.MouseButtonEventArgs(
+                        System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
+                    {
+                        RoutedEvent = System.Windows.Input.Mouse.PreviewMouseDownEvent,
+                    };
+                    typeof(System.Windows.Input.MouseButtonEventArgs)
+                        .GetProperty("ClickCount")!.SetValue(ev, 2);
+                    pick.RaiseEvent(ev);
+                    dblWide = pick.SelectedText == pick.Text && pick.Text.Length > 0;
+                }
+                catch { via = "直接调方法"; pick.SelectAllOnDoubleClick(); dblWide = pick.SelectedText == pick.Text; }
+                Check(dblWide, "双击右栏文字整段选中", $"{via} · {pick.SelectionLength}/{pick.Text.Length}");
             }
             else Check(false, "右栏静态文字都是可选中控件", "没有非空文本");
         }
