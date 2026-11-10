@@ -14,7 +14,7 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyName>LatentFolio</AssemblyName>
     <RootNamespace>LatentFolio.App</RootNamespace>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
     <InvariantGlobalization>false</InvariantGlobalization>
     <!-- WFO0003：WinForms 分析器让把 DPI 设置从 manifest 挪到 WinForms API。
