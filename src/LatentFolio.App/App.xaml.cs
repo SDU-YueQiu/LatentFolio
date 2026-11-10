@@ -22,10 +22,16 @@ public partial class App : Application
     private static extern IntPtr FindWindow(string? cls, string title);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hwnd);
+    private static extern bool PostMessage(IntPtr hwnd, int msg, IntPtr w, IntPtr l);
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool ShowWindow(IntPtr hwnd, int cmd);
+    /// <summary>
+    /// 第二个实例用来叫醒已经在托盘里的那个窗口。
+    /// 不能直接对别人的窗口 ShowWindow —— 那只改了 WS_VISIBLE，WPF 自己的渲染目标没重建，窗口会一片黑。
+    /// </summary>
+    public static readonly int WmShowFromTray = 0x8000 + 0x4C46;   // WM_APP + 'LF'
+
+    /// <summary>自检用：像第二个实例那样叫醒窗口。</summary>
+    internal static void PostShowFromTrayForTest(IntPtr hwnd) => PostMessage(hwnd, WmShowFromTray, IntPtr.Zero, IntPtr.Zero);
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -47,7 +53,7 @@ public partial class App : Application
             if (!isNew)
             {
                 var hwnd = FindWindow(null, "LatentFolio");
-                if (hwnd != IntPtr.Zero) { ShowWindow(hwnd, 9); SetForegroundWindow(hwnd); }
+                if (hwnd != IntPtr.Zero) PostMessage(hwnd, WmShowFromTray, IntPtr.Zero, IntPtr.Zero);
                 Shutdown(0);
                 return;
             }
@@ -154,6 +160,31 @@ public partial class App : Application
                 var bmp2 = Services.Vsr.ProcessAsync(new Core.Models.ImageItem { Id = 2, Path = path }).GetAwaiter().GetResult();
                 t1.Stop();
                 sb.AppendLine(bmp2 is null ? "2nd FAILED" : $"2nd run {t1.ElapsedMilliseconds} ms");
+
+                // 逐个档位跑一遍：确认换档能动、同分辨率档位出的是原尺寸、放大档位出的是 2×
+                Services.Vsr.Scale = 2;
+                foreach (var q in new[] { 1, 2, 3, 4, 8, 11, 12, 15, 16, 17, 18, 19, 21, 23 })
+                {
+                    var tq = System.Diagnostics.Stopwatch.StartNew();
+                    Services.Vsr.Quality = q;
+                    tq.Stop();
+                    var t2 = System.Diagnostics.Stopwatch.StartNew();
+                    var b = Services.Vsr.ProcessAsync(new Core.Models.ImageItem { Id = 1000 + q, Path = path })
+                        .GetAwaiter().GetResult();
+                    t2.Stop();
+                    string size = b is null ? "FAILED" : $"{b.PixelWidth}x{b.PixelHeight}";
+                    string sum = "";
+                    if (b is not null)
+                    {
+                        var buf = new byte[(long)b.PixelWidth * b.PixelHeight * 4];
+                        b.CopyPixels(buf, b.PixelWidth * 4, 0);
+                        ulong h = 1469598103934665603UL;
+                        for (int i = 0; i < buf.Length; i += 1021) { h ^= buf[i]; h *= 1099511628211UL; }
+                        sum = h.ToString("x8");
+                    }
+                    sb.AppendLine($"Q{q,-3} {LatentFolio.Vsr.VsrEngine.QualityName(q),-20} "
+                                  + $"switch {tq.ElapsedMilliseconds,5} ms  run {t2.ElapsedMilliseconds,5} ms  -> {size}  {sum}");
+                }
             }
         }
         catch (Exception ex)

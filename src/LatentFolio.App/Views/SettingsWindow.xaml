@@ -41,11 +41,6 @@
             </Style.Triggers>
         </Style>
 
-        <!-- 能力胶囊里的字 -->
-        <Style x:Key="P.Set.CapText" TargetType="TextBlock" BasedOn="{StaticResource T.Sub}">
-            <Setter Property="Foreground" Value="{StaticResource B.Accent}" />
-        </Style>
-
         <!-- 分段项（未选中）：透明底 + 次要字，悬停加深字色 -->
         <Style x:Key="P.Set.Seg" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
             <Setter Property="Height" Value="26" />
@@ -246,17 +241,26 @@
                         </Grid>
                         <StackPanel Margin="0,12,0,0">
                             <Grid Style="{StaticResource P.Set.Row}">
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                            VerticalAlignment="Center">
-                                    <Border Style="{StaticResource Pill.Accent}">
-                                        <TextBlock Text="HIGHBITRATE" Style="{StaticResource P.Set.CapText}" />
-                                    </Border>
-                                    <Border Style="{StaticResource Pill.Accent}" Margin="6,0,0,0">
-                                        <TextBlock Text="ULTRA" Style="{StaticResource P.Set.CapText}" />
-                                    </Border>
-                                    <TextBlock Text="已锁定" Style="{StaticResource T.Sub}"
-                                               VerticalAlignment="Center" Margin="10,0,0,0" />
-                                </StackPanel>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="模式" Style="{StaticResource P.Set.Label}" />
+                                <Border Grid.Column="1" Style="{StaticResource Seg.Track}"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <StackPanel x:Name="ModeBar" Orientation="Horizontal" />
+                                </Border>
+                            </Grid>
+                            <Grid Style="{StaticResource P.Set.Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="档位" Style="{StaticResource P.Set.Label}" />
+                                <Border Grid.Column="1" Style="{StaticResource Seg.Track}"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <StackPanel x:Name="LevelBar" Orientation="Horizontal" />
+                                </Border>
                             </Grid>
                             <Grid Style="{StaticResource P.Set.Row}">
                                 <Grid.ColumnDefinitions>

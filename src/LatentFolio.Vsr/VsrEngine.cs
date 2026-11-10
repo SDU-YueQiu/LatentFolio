@@ -17,6 +17,50 @@ public sealed unsafe class VsrEngine : IDisposable
 {
     public const int QualityHighBitrateUltra = 19;
 
+    /// <summary>档位分组（值来自 NVIDIA Video Effects SDK 的 QualityLevel）。</summary>
+    public static readonly (string Name, int[] Values)[] QualityGroups =
+    [
+        ("放大", [1, 2, 3, 4]),           // LOW / MEDIUM / HIGH / ULTRA
+        ("降噪", [8, 9, 10, 11]),         // DENOISE_*
+        ("去模糊", [12, 13, 14, 15]),     // DEBLUR_*
+        ("高清放大", [16, 17, 18, 19]),   // HIGHBITRATE_*：干净/无损源，不压细节
+        ("直播", [-1, -1, 21, 23]),       // 只有 MEDIUM / ULTRA
+    ];
+
+    public static string QualityName(int level) => level switch
+    {
+        0 => "BICUBIC",
+        1 => "LOW",
+        2 => "MEDIUM",
+        3 => "HIGH",
+        4 => "ULTRA",
+        8 => "DENOISE_LOW",
+        9 => "DENOISE_MEDIUM",
+        10 => "DENOISE_HIGH",
+        11 => "DENOISE_ULTRA",
+        12 => "DEBLUR_LOW",
+        13 => "DEBLUR_MEDIUM",
+        14 => "DEBLUR_HIGH",
+        15 => "DEBLUR_ULTRA",
+        16 => "HIGHBITRATE_LOW",
+        17 => "HIGHBITRATE_MEDIUM",
+        18 => "HIGHBITRATE_HIGH",
+        19 => "HIGHBITRATE_ULTRA",
+        21 => "STREAMING_MEDIUM",
+        23 => "STREAMING_ULTRA",
+        _ => $"LEVEL_{level}",
+    };
+
+    /// <summary>
+    /// 降噪 / 去模糊是「同分辨率」处理（输出尺寸 = 输入尺寸），
+    /// 放大 / 高清放大 / 直播是 2× 放大。
+    /// </summary>
+    public static bool IsSameRes(int level) => level is >= 8 and <= 15;
+
+    /// <summary>与输入相同的倍数（同分辨率模式返回 1，其余 2）。</summary>
+    public static int BaseOutScale(int level) => IsSameRes(level) ? 1 : 2;
+
+
     // NvCVImage_PixelFormat / ComponentType / memory space
     private const int NVCV_RGBA = 6;
     private const int NVCV_BGRA = 7;
@@ -95,12 +139,31 @@ public sealed unsafe class VsrEngine : IDisposable
     private NvCVImage* _dst;
     private uint _srcW, _srcH, _dstW, _dstH;
     private bool _loaded;
+    private bool _reloadPending;
 
     public bool Available { get; private set; }
     public string Status { get; private set; } = "未初始化";
     public string LibDir { get; set; } = "";
     public double LastRunMs { get; private set; }
     public int ProcessedCount { get; private set; }
+
+    /// <summary>当前档位（QualityLevel）。默认 19 = HIGHBITRATE_ULTRA，对干净的 AI 图不涂抹。</summary>
+    public int Quality { get; private set; } = QualityHighBitrateUltra;
+
+    /// <summary>
+    /// 换档位。模型是按档位挑的，所以要让 SDK 再 Load 一次（实测 3.6 s）；
+    /// 这一步放到下一次 Process 的后台线程里做，设置界面的点击不能卡住 3.6 秒。
+    /// </summary>
+    public bool SetQuality(int level)
+    {
+        if (Quality == level) return true;
+        Quality = level;
+        if (!_loaded || _effect == IntPtr.Zero) return true;
+        if (_setU32(_effect, "QualityLevel", (uint)level) != NVCV_SUCCESS) return false;
+        _reloadPending = true;
+        Status = $"就绪 · 档位 {QualityName(level)}";
+        return true;
+    }
 
     /// <summary>输出的最大像素数，防止 8K 图把内存撑爆。</summary>
     public const long MaxOutputPixels = 36_000_000;
@@ -220,7 +283,7 @@ public sealed unsafe class VsrEngine : IDisposable
                 return false;
             }
 
-            _setU32(_effect, "QualityLevel", QualityHighBitrateUltra);
+            _setU32(_effect, "QualityLevel", (uint)Quality);
             _setU32(_effect, "ImageEncodingMode", 0);   // 8-bit RGBA/BGRA
             _setF32(_effect, "Strength", 1.0f);
 
@@ -246,7 +309,7 @@ public sealed unsafe class VsrEngine : IDisposable
 
             _loaded = true;
             Available = true;
-            Status = $"就绪 · 预热 {t0.ElapsedMilliseconds} ms · 档位 HIGHBITRATE_ULTRA";
+            Status = $"就绪 · 预热 {t0.ElapsedMilliseconds} ms · 档位 {QualityName(Quality)}";
             sw.Stop();
             return true;
         }
@@ -284,7 +347,8 @@ public sealed unsafe class VsrEngine : IDisposable
     public sealed record Result(byte[] Bgra, int Width, int Height, double Ms);
 
     /// <summary>
-    /// 2 倍超分。输入 BGRA8888，返回新缓冲。
+    /// 处理一张图。8 位 BGRA8888 进、出新缓冲。
+    /// 降噪 / 去模糊是同分辨率（输出 = 输入尺寸），其余是 2×。
     /// 线程安全（内部串行）。
     /// </summary>
     public Result? Process(byte[] bgra, int width, int height)
@@ -292,12 +356,26 @@ public sealed unsafe class VsrEngine : IDisposable
         if (!_loaded || !Available) return null;
         if (width <= 0 || height <= 0) return null;
 
-        int outW = width * 2, outH = height * 2;
+        int k = BaseOutScale(Quality);
+        int outW = width * k, outH = height * k;
         if ((long)outW * outH > MaxOutputPixels) return null;
 
         _gate.Wait();
         try
         {
+            // 换过档位：模型得重新 Load，放在这里做（调用方是后台线程）
+            if (_reloadPending)
+            {
+                _reloadPending = false;
+                int rst = _load(_effect);
+                if (rst != NVCV_SUCCESS)
+                {
+                    Available = false;
+                    Status = $"换档位后 Load 失败 ({rst})";
+                    return null;
+                }
+            }
+
             if (!Realloc(ref _src, (uint)width, (uint)height, ref _srcW, ref _srcH)) return null;
             if (!Realloc(ref _dst, (uint)outW, (uint)outH, ref _dstW, ref _dstH)) return null;
 

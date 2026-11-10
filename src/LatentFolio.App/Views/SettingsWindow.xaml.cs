@@ -39,12 +39,115 @@ public partial class SettingsWindow : Window
         TrayBox.IsChecked = App.Services.Store.GetSetting("close_to_tray") != "0";
 
         GpuText.Text = _vm.VsrStarted
-            ? "显卡可用 · RTX Video Super Resolution 已就绪"
+            ? $"显卡可用 · RTX VSR 已就绪 · {_vm.VsrQualityName}"
             : _vm.VsrReady
                 ? "显卡可用 · RTX VSR 正在加载…"
                 : _vm.VsrStatus.Length == 0 ? "检测中…" : "不可用：" + _vm.VsrStatus;
 
         BuildChips();
+        BuildVsrChips();
+    }
+
+    private static readonly string[] LevelLabels = ["低", "中", "高", "极"];
+
+    private static readonly string[] ModeLabels = ["放大", "降噪", "锐化", "高清", "直播"];
+
+    private static readonly string[] ModeTips =
+    [
+        "超分放大，2× / 4×（对压缩视频源的通用模型）",
+        "同分辨率去噪，去掉压缩噪点和大块伪影",
+        "同分辨率去模糊，把糊的地方拉清晰",
+        "干净源（无损 / 高码率）专用放大，不压细节",
+        "直播画面用的放大模型",
+    ];
+
+    /// <summary>档位属于哪一组（-1 = 这组没有这个强度）。</summary>
+    private static int GroupIndex(int quality)
+    {
+        var groups = LatentFolio.Vsr.VsrEngine.QualityGroups;
+        for (int i = 0; i < groups.Length; i++)
+            if (Array.IndexOf(groups[i].Values, quality) >= 0) return i;
+        return 3;   // 认不出来就归到「高清放大」
+    }
+
+    /// <summary>档位在这一组里的位置；这组没有这个强度就返回 -1。</summary>
+    private static int LevelIndex(int quality, int group)
+    {
+        int i = Array.IndexOf(LatentFolio.Vsr.VsrEngine.QualityGroups[group].Values, quality);
+        return i;
+    }
+
+    private void BuildVsrChips()
+    {
+        ModeBar.Children.Clear();
+        LevelBar.Children.Clear();
+        ScaleBar.Children.Clear();
+
+        int group = GroupIndex(_vm.VsrQuality);
+        var groups = LatentFolio.Vsr.VsrEngine.QualityGroups;
+        for (int i = 0; i < groups.Length; i++)
+        {
+            int gi = i;
+            var b = new Button
+            {
+                Content = ModeLabels[i],
+                ToolTip = ModeTips[i],
+                Style = (Style)FindResource(gi == group ? "P.Set.SegOn" : "P.Set.Seg"),
+            };
+            b.Click += (_, _) =>
+            {
+                // 换组时保留当前强度，这组没有就看第一个可用的
+                int level = LevelIndex(_vm.VsrQuality, gi);
+                var vals = groups[gi].Values;
+                if (level < 0 || vals[level] < 0)
+                {
+                    level = 0;
+                    while (level < vals.Length && vals[level] < 0) level++;
+                }
+                if (level < vals.Length && vals[level] > 0)
+                {
+                    _vm.VsrQuality = vals[level];
+                    BuildVsrChips();
+                }
+            };
+            ModeBar.Children.Add(b);
+        }
+
+        int cur = LevelIndex(_vm.VsrQuality, group);
+        for (int i = 0; i < LevelLabels.Length; i++)
+        {
+            int li = i;
+            int value = groups[group].Values[i];
+            var b = new Button
+            {
+                Content = LevelLabels[i],
+                Style = (Style)FindResource(li == cur ? "P.Set.SegOn" : "P.Set.Seg"),
+                IsEnabled = value > 0,
+            };
+            b.Click += (_, _) =>
+            {
+                int v = groups[group].Values[li];
+                if (v <= 0) return;
+                _vm.VsrQuality = v;
+                BuildVsrChips();
+            };
+            LevelBar.Children.Add(b);
+        }
+
+        bool scaleApplies = _vm.VsrScaleApplies;
+        foreach (var (value, label) in new[] { (2, "2×"), (4, "4×") })
+        {
+            int v = value;
+            var b = new Button
+            {
+                Content = label,
+                Style = (Style)FindResource(_vm.VsrScale == v ? "P.Set.SegOn" : "P.Set.Seg"),
+                IsEnabled = scaleApplies,
+                ToolTip = scaleApplies ? null : "降噪 / 去模糊是同分辨率处理，不放大",
+            };
+            b.Click += (_, _) => { _vm.VsrScale = v; BuildVsrChips(); };
+            ScaleBar.Children.Add(b);
+        }
     }
 
     private void BuildChips()
@@ -60,19 +163,6 @@ public partial class SettingsWindow : Window
             };
             b.Click += (_, _) => { _vm.StatsThreshold = v; BuildChips(); };
             ThresholdBar.Children.Add(b);
-        }
-
-        ScaleBar.Children.Clear();
-        foreach (var (value, label) in new[] { (2, "2×"), (4, "4×") })
-        {
-            int v = value;
-            var b = new Button
-            {
-                Content = label,
-                Style = (Style)FindResource(_vm.VsrScale == v ? "P.Set.SegOn" : "P.Set.Seg"),
-            };
-            b.Click += (_, _) => { _vm.VsrScale = v; BuildChips(); };
-            ScaleBar.Children.Add(b);
         }
     }
 

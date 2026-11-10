@@ -70,8 +70,23 @@ public sealed class VsrService : IDisposable
         lock (_cache) { _cache.Clear(); _order.Clear(); }
     }
 
-    /// <summary>放大倍数：2 或 4。4× 就是跑两遍 2×。</summary>
+    /// <summary>放大倍数：2 或 4。4× 就是跑两遍 2×（同分辨率档位不放大）。</summary>
     public int Scale { get; set; } = 2;
+
+    /// <summary>档位（SDK 的 QualityLevel）：19 = HIGHBITRATE_ULTRA。</summary>
+    public int Quality
+    {
+        get => Engine.Quality;
+        set
+        {
+            if (Engine.Quality == value) return;
+            Engine.SetQuality(value);
+            Clear();   // 换了档位，之前算好的不是这个效果
+        }
+    }
+
+    /// <summary>这张图实际会放大到几倍（同分辨率档位是 1）。</summary>
+    public int EffectiveScale => VsrEngine.IsSameRes(Quality) ? 1 : Scale;
 
     /// <summary>处理一张图，返回超分后的位图；失败返回 null。</summary>
     public async Task<BitmapSource?> ProcessAsync(ImageItem item)
@@ -120,7 +135,8 @@ public sealed class VsrService : IDisposable
             if (w <= 0 || h <= 0) return null;
 
             // 输出超上限就先缩输入，保证内存不炸
-            long outPx = (long)w * Scale * h * Scale;
+            int scale = EffectiveScale;
+            long outPx = (long)w * scale * h * scale;
             if (outPx > VsrEngine.MaxOutputPixels)
             {
                 double k = Math.Sqrt((double)VsrEngine.MaxOutputPixels / outPx);
@@ -162,7 +178,7 @@ public sealed class VsrService : IDisposable
                 VsrEngine.Result? res = Engine.Process(packed, w, h);
                 if (res is null) return null;
 
-                if (Scale >= 4)
+                if (scale >= 4)
                 {
                     var second = Engine.Process(res.Bgra, res.Width, res.Height);
                     if (second is not null) res = second;

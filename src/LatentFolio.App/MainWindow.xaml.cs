@@ -173,6 +173,17 @@ public partial class MainWindow : Window
         Topmost = false;
     }
 
+    /// <summary>再点一次桌面上的图标：第二个实例会 PostMessage 过来，走和托盘一样的显示路径。</summary>
+    private IntPtr OnTrayMessage(IntPtr hwnd, int msg, IntPtr w, IntPtr l, ref bool handled)
+    {
+        if (msg == App.WmShowFromTray)
+        {
+            Dispatcher.BeginInvoke(new Action(ShowFromTray));
+            handled = true;
+        }
+        return IntPtr.Zero;
+    }
+
     internal void OpenLibraryFolder()
     {
         try
@@ -233,6 +244,8 @@ public partial class MainWindow : Window
 
         var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
         System.Windows.Interop.HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
+        // 桌面图标再点一次 = 第二个实例 PostMessage 过来，走和托盘一样的显示路径
+        System.Windows.Interop.HwndSource.FromHwnd(hwnd)?.AddHook(OnTrayMessage);
     }
 
     private void FitToMonitor()

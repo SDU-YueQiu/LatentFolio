@@ -309,14 +309,31 @@ public sealed partial class AppVm : ObservableObject
     partial void OnStatsThresholdChanged(int value)
         => _store.SetSetting("stats_threshold", value.ToString());
 
-    /// <summary>VSR 默认放大倍数，2 或 4（4 是跑两遍 2×）。</summary>
+    /// <summary>VSR 默认放大倍数，2 或 4（4 是跑两遍 2×；降噪/去模糊档位不放大）。</summary>
     [ObservableProperty] private int _vsrScale = 2;
 
     partial void OnVsrScaleChanged(int value)
     {
         _store.SetSetting("vsr_scale", value.ToString());
         if (_svc is not null) _svc.Vsr.Scale = value;
+        _svc?.Vsr.Clear();   // 旧结果不是这个倍数
     }
+
+    /// <summary>VSR 档位（SDK 的 QualityLevel），默认 19 = HIGHBITRATE_ULTRA。</summary>
+    [ObservableProperty] private int _vsrQuality = LatentFolio.Vsr.VsrEngine.QualityHighBitrateUltra;
+
+    partial void OnVsrQualityChanged(int value)
+    {
+        _store.SetSetting("vsr_quality", value.ToString());
+        if (_svc is not null) _svc.Vsr.Quality = value;
+        OnPropertyChanged(nameof(VsrQualityName));
+        OnPropertyChanged(nameof(VsrScaleApplies));
+    }
+
+    public string VsrQualityName => LatentFolio.Vsr.VsrEngine.QualityName(VsrQuality);
+
+    /// <summary>降噪/去模糊是同分辨率处理，倍数那一栏对它们没意义。</summary>
+    public bool VsrScaleApplies => !LatentFolio.Vsr.VsrEngine.IsSameRes(VsrQuality);
 
     [ObservableProperty] private bool _panelCollapsed;
     [ObservableProperty] private bool _isPanelVisible;
@@ -406,6 +423,10 @@ public sealed partial class AppVm : ObservableObject
         StatsThreshold = int.TryParse(_store.GetSetting("stats_threshold"), out var st) ? st : 5;
         VsrScale = int.TryParse(_store.GetSetting("vsr_scale"), out var vs) && vs == 4 ? 4 : 2;
         _svc.Vsr.Scale = VsrScale;
+        VsrQuality = int.TryParse(_store.GetSetting("vsr_quality"), out var vq) && vq > 0
+            ? vq
+            : LatentFolio.Vsr.VsrEngine.QualityHighBitrateUltra;
+        _svc.Vsr.Quality = VsrQuality;
         _svc.Scanner.ArchiveThumbsEnabled = _store.GetSetting("archive_thumbs") != "0";
         _svc.Scanner.DedupeByHash = _store.GetSetting("dedupe") != "0";
         if (int.TryParse(_store.GetSetting("tile_step"), out var ts))
@@ -1398,7 +1419,13 @@ public sealed partial class AppVm : ObservableObject
 
     [ObservableProperty] private bool _alwaysVsr;
     /// <summary>状态胶囊只写"RTX VSR 2×"，别堆分辨率耗时（设计稿 §12.7 明确要求）。</summary>
-    private string VsrBadgeText() => (AlwaysVsr ? "☑ " : "") + $"RTX VSR {VsrScale}×";
+    private string VsrBadgeText()
+    {
+        string kind = LatentFolio.Vsr.VsrEngine.IsSameRes(VsrQuality)
+            ? (VsrQuality <= 11 ? "降噪" : "去模糊")
+            : $"{VsrScale}×";
+        return (AlwaysVsr ? "☑ " : "") + $"RTX VSR {kind}";
+    }
 
     [ObservableProperty] private bool _vsrBusy;
 

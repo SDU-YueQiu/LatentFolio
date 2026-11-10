@@ -646,10 +646,13 @@ public static class SelfTest
                 Check(Math.Abs(panel.FirstChildTop - top0) < panel.ItemHeight * 0.7,
                     "列数变了之后视口锚在原处", $"Y {top0:F0} -> {panel.FirstChildTop:F0}");
                 int idx1 = panel.FirstRealizedIndex;
-                // 列数一变，换行位置就跟着变：这里锚的是像素位置（顶部那行留在原处），
-                // 原来顶行的第一张可能刚好被挤到下一行，所以容一行误差
-                Check(Math.Abs(idx0 - idx1) <= panel.Columns, "重排后顶部那行只挪了不到一行",
-                    $"索引 {idx0} -> {idx1}（{panel.Columns} 列）");
+                // 列数一变，换行位置就跟着变：这里锚的是像素位置（顶部那行留在原处）。
+                // 比「第几行」而不是「第几个」—— 列数从 9 变 8 时，同一个像素位置对应的索引能差出
+                // 一整列去，但行没变，那还是锚住了。
+                int row0 = idx0 / Math.Max(1, cols0);
+                int row1 = idx1 / Math.Max(1, panel.Columns);
+                Check(Math.Abs(row0 - row1) <= 1, "重排后顶部那行只挪了不到一行",
+                    $"第 {row0} 行 -> 第 {row1} 行（{cols0} 列 -> {panel.Columns} 列）");
                 panel.SetVerticalOffset(0);
                 for (int i = 0; i < 4; i++) await Pulse(window);
             }
@@ -1079,12 +1082,37 @@ public static class SelfTest
             mwTray.CloseToTray = true;
             var ce = mwTray.ClosingForTest();
             Check(ce.Cancel && !mwTray.IsVisible, "点关闭只是收到托盘", $"cancel={ce.Cancel} 可见={mwTray.IsVisible}");
+
+            // 再点一次桌面图标 = 第二个实例 PostMessage 叫醒（以前是外部 ShowWindow，窗口一片黑）
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(mwTray).Handle;
+            App.PostShowFromTrayForTest(hwnd);
+            await Pulse(window, 4);
+            Check(mwTray.IsVisible, "第二个实例能叫醒托盘里的窗口");
+
             mwTray.ShowFromTray();
             await Pulse(window);
             Check(mwTray.IsVisible, "从托盘点回来能重新显示");
             mwTray.RequestExit();
             Check(mwTray.ExitForRealForTest, "托盘「退出」走的是真退出");
         }
+
+        // ---------- 23f. RTX VSR 档位 ----------
+        Check(LatentFolio.Vsr.VsrEngine.IsSameRes(8) && LatentFolio.Vsr.VsrEngine.IsSameRes(15)
+              && !LatentFolio.Vsr.VsrEngine.IsSameRes(1) && !LatentFolio.Vsr.VsrEngine.IsSameRes(19),
+            "降噪/去模糊是同分辨率档位", "8–15");
+        int levelCount = LatentFolio.Vsr.VsrEngine.QualityGroups.Sum(g => g.Values.Count(v => v > 0));
+        Check(levelCount == 18, "档位表覆盖 18 个可用档位", $"{levelCount}");
+        Check(LatentFolio.Vsr.VsrEngine.QualityName(19) == "HIGHBITRATE_ULTRA"
+              && LatentFolio.Vsr.VsrEngine.QualityName(23) == "STREAMING_ULTRA",
+            "档位名对得上", LatentFolio.Vsr.VsrEngine.QualityName(19));
+
+        int q0 = vm.VsrQuality;
+        vm.VsrQuality = 9;
+        Check(vm.VsrQualityName == "DENOISE_MEDIUM" && !vm.VsrScaleApplies,
+            "切到降噪档位后倍数不再适用", vm.VsrQualityName);
+        Check(App.Services.Store.GetSetting("vsr_quality") == "9", "档位记进设置",
+            App.Services.Store.GetSetting("vsr_quality") ?? "未设置");
+        vm.VsrQuality = q0;
 
         // ---------- 性能 / 内存 ----------
         // 自检一路上会重建好几次 VM、跑 VSR、开查看器，先收一遍垃圾再读数，
