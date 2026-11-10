@@ -36,6 +36,7 @@ public partial class SettingsWindow : Window
         ArchiveText.Text = $"{archiveCount:N0} 张";
         ArchiveBox.IsChecked = App.Services.Store.GetSetting("archive_thumbs") != "0";
         DedupeBox.IsChecked = App.Services.Store.GetSetting("dedupe") != "0";
+        TrayBox.IsChecked = App.Services.Store.GetSetting("close_to_tray") != "0";
 
         GpuText.Text = _vm.VsrStarted
             ? "显卡可用 · RTX Video Super Resolution 已就绪"
@@ -113,6 +114,14 @@ public partial class SettingsWindow : Window
         App.Services.Store.SetSetting("dedupe", on ? "1" : "0");
         App.Services.Scanner.DedupeByHash = on;
         if (!on) App.Services.Store.ClearSkipped();
+    }
+
+    private void OnTrayCloseChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        var on = TrayBox.IsChecked == true;
+        App.Services.Store.SetSetting("close_to_tray", on ? "1" : "0");
+        if (Owner is MainWindow mw) mw.CloseToTray = on;
     }
 
     private void OnClearSkip(object sender, RoutedEventArgs e)

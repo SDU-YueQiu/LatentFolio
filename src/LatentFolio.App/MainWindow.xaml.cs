@@ -13,11 +13,27 @@ public partial class MainWindow : Window
 {
     private AppVm Vm => App.Root;
 
+    private Services.TrayIcon? _tray;
+    private bool _exitForReal;
+
+    /// <summary>点关闭时收到托盘而不是退出（设置里可关）。</summary>
+    public bool CloseToTray { get; set; } = true;
+
     /// <summary>自检要用它检查缩放状态。</summary>
     internal Controls.ZoomBox BigZoomControl => BigZoom;
     internal ListBox GridListForTest => GridList;
     internal Button LeftTabForTest => LeftTab;
     internal Button DetailTabForTest => DetailTab;
+    // 托盘相关（自检要能真的走一遍「关窗口只是收起来」）
+    internal Services.TrayIcon? TrayForTest => _tray;
+    internal bool CloseToTrayForTest => CloseToTray;
+    internal bool ExitForRealForTest => _exitForReal;
+    internal System.ComponentModel.CancelEventArgs ClosingForTest()
+    {
+        var e = new System.ComponentModel.CancelEventArgs();
+        OnClosing(e);
+        return e;
+    }
     // 自检要能验证「点我的栏会切过去」和「鼠标侧键前进后退」这两条 UI 接线，
     // 光测 VM 测不出来（上一轮就是 VM 对了、XAML 里事件没接）
     internal System.Windows.Controls.ListBox ColListForTest => ColList;
@@ -121,6 +137,65 @@ public partial class MainWindow : Window
         Width = Math.Min(1680, Math.Max(960, wa.Width - 24));
         Height = Math.Min(1060, Math.Max(640, wa.Height - 24));
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
+    }
+
+    // ================= 托盘 =================
+
+    private void MakeTray()
+    {
+        if (_tray is not null) return;
+        try
+        {
+            _tray = new Services.TrayIcon("LatentFolio", ShowFromTray, OpenLibraryFolder, ExitFromTray);
+        }
+        catch
+        {
+            _tray = null;   // 托盘挂了也不该拖住整个程序
+        }
+    }
+
+    /// <summary>真正退出（托盘菜单 / 自检收尾 / 诊断开关）——绕过「收到托盘」。</summary>
+    public void RequestExit() => _exitForReal = true;
+
+    private void ExitFromTray()
+    {
+        RequestExit();
+        Close();
+    }
+
+    internal void ShowFromTray()
+    {
+        Show();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+        // 从托盘点回来时窗口在别的程序后面，先顶到最前再放开 Topmost
+        Topmost = true;
+        Topmost = false;
+    }
+
+    internal void OpenLibraryFolder()
+    {
+        try
+        {
+            if (Directory.Exists(Vm.LibraryRoot))
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Vm.LibraryRoot)
+                { UseShellExecute = true });
+        }
+        catch { }
+    }
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (!_exitForReal && CloseToTray)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+
+        _tray?.Dispose();
+        _tray = null;
+        base.OnClosing(e);
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -266,6 +341,9 @@ public partial class MainWindow : Window
         };
         await Vm.InitAsync();
         SyncSizeButtons();
+        // 关窗口收到托盘（诊断/自检里不这么干，否则收尾的 Close() 会把进程留在托盘里）
+        CloseToTray = !App.SuppressTray && App.Services.Store.GetSetting("close_to_tray") != "0";
+        MakeTray();
         // 排序、尺寸这些"上次留下的状态"在 InitAsync 里已经读回来了，这里把控件摆成一致的样子
         if (SortBox.SelectedIndex != Vm.SortKeyIndex) SortBox.SelectedIndex = Vm.SortKeyIndex;
         if (Vm.LastScanLost > 0) AskAboutLostFiles(Vm.LastScanLost);
@@ -744,16 +822,7 @@ public partial class MainWindow : Window
             menu.Items.Add(mi);
         }
 
-        Item("打开图库目录", () =>
-        {
-            try
-            {
-                if (Directory.Exists(Vm.LibraryRoot))
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Vm.LibraryRoot)
-                    { UseShellExecute = true });
-            }
-            catch { }
-        });
+        Item("打开图库目录", OpenLibraryFolder);
         Item("更换图库目录…", async () =>
         {
             var dlg = new Microsoft.Win32.OpenFolderDialog

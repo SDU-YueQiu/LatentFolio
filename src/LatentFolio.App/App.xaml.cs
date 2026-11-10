@@ -13,6 +13,9 @@ public partial class App : Application
     public static AppServices Services { get; private set; } = null!;
     public static AppVm Root { get; private set; } = null!;
 
+    /// <summary>诊断/自检模式：关窗口就真退出，不往托盘里收（否则自检收尾的 Close() 会把进程留在托盘）。</summary>
+    public static bool SuppressTray { get; private set; }
+
     private Mutex? _instanceMutex;
 
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
@@ -37,6 +40,7 @@ public partial class App : Application
                                           or "--show-people" or "--show-tags" or "--show-candidates"
                                           or "--show-filter" or "--show-settings" or "--mem-report" or "--retag"
                                           or "--bench-decode" or "--sort-rating");
+        SuppressTray = diagnostic;
         if (!diagnostic)
         {
             _instanceMutex = new Mutex(true, @"Local\LatentFolio.SingleInstance", out bool isNew);
@@ -99,8 +103,9 @@ public partial class App : Application
 
         var win = new MainWindow();
         MainWindow = win;
-        win.Show();
-    }
+        // 注销/关机时别被「收到托盘」挡住
+        SessionEnding += (_, _) => win.RequestExit();
+        win.Show();    }
 
     private static void Log(string text)
     {

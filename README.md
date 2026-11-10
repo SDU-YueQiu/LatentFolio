@@ -5,7 +5,7 @@ ComfyUI 出图的本地图库：自动入库，按人物、标签、评分和提
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
 ![.NET](https://img.shields.io/badge/.NET-10-512BD4)
 ![offline](https://img.shields.io/badge/network-offline-6E7781)
-![self-test](https://img.shields.io/badge/self--test-132%20passed-2DA44E)
+![self-test](https://img.shields.io/badge/self--test-138%20passed-2DA44E)
 ![license](https://img.shields.io/badge/license-MIT-2DA44E)
 
 [功能](#功能) · [快速开始](#快速开始) · [常用操作](#常用操作) · [界面](#界面) · [实测](#实测) · [文档](#文档)
@@ -28,6 +28,7 @@ LatentFolio 以 `ComfyUI/output` 为数据源：扫描每张 PNG 里嵌入的提
 - **大库流畅** — 自写的等高虚拟化网格，只实例化视口内的格子；4,900 张刷新一次 1–3 ms。
 - **查看器** — 双击进入：滚轮切换、Ctrl+滚缩放、1:1、底部胶片条，可选 RTX VSR 2× 超分。
 - **可还原的删除** — 文件消失或被删只改状态，评分、备注、标签都保留，随时还原。
+- **托盘常驻** — 点关闭只是收到托盘，图标点回来继续；托盘菜单里退出。
 
 ## 快速开始
 
@@ -76,7 +77,7 @@ dotnet build LatentFolio.slnx -c Release
 | 全量读库 | 43–70 ms |
 | 刷新网格 | 1–3 ms |
 | 提示词解析率 | 94.0% |
-| 内置自检 | 132 条 |
+| 内置自检 | 138 条 |
 
 `--bench 50000` 会在临时目录生成 5 万张合成图（不触碰真实图库），Core 侧结果：
 
@@ -109,7 +110,7 @@ dotnet build LatentFolio.slnx -c Release
 
 ```powershell
 .\tools\link-release.ps1        # 编译 Release + 更新根目录快捷方式
-LatentFolio.exe --self-test     # 132 条交互回归，不抢前台，结果写 %TEMP%\lf-selftest.txt
+LatentFolio.exe --self-test     # 138 条交互回归，不抢前台，结果写 %TEMP%\lf-selftest.txt
 ```
 
 三个工程：`LatentFolio.Core`（解析 / 扫描 / 筛选，无 UI 依赖）、`LatentFolio.App`（WPF）、`LatentFolio.Vsr`（P/Invoke NVIDIA Video Effects）。

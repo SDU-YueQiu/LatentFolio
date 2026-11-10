@@ -199,6 +199,19 @@
                     </StackPanel>
                 </Border>
 
+                <!-- 窗口 -->
+                <Border Style="{StaticResource P.Set.Card}">
+                    <StackPanel>
+                        <TextBlock Text="窗口" Style="{StaticResource T.CardTitle}" />
+                        <Border Style="{StaticResource Card.Inset}" Padding="10,8" Margin="-10,12,-10,0">
+                            <Grid MinHeight="40">
+                                <CheckBox x:Name="TrayBox" Content="关闭窗口时缩到托盘，不退出"
+                                          VerticalAlignment="Center" Click="OnTrayCloseChanged" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
                 <!-- 统计 -->
                 <Border Style="{StaticResource P.Set.Card}">
                     <StackPanel>

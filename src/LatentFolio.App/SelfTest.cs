@@ -45,6 +45,19 @@ public static class SelfTest
         }
     }
 
+    /// <summary>往控件上发一次真的左键按下（ClickCount 由外面指定，模拟系统递进来的连击数）。</summary>
+    private static void Down(UIElement el, int clickCount)
+    {
+        var ev = new System.Windows.Input.MouseButtonEventArgs(
+            System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
+        {
+            RoutedEvent = System.Windows.Input.Mouse.PreviewMouseDownEvent,
+        };
+        typeof(System.Windows.Input.MouseButtonEventArgs).GetProperty("ClickCount")!
+            .SetValue(ev, clickCount);
+        el.RaiseEvent(ev);
+    }
+
     private static IEnumerable<T> AllDescendants<T>(DependencyObject? root) where T : DependencyObject
     {
         if (root is null) yield break;
@@ -382,23 +395,24 @@ public static class SelfTest
                     $"{pick.Text.Length} 字符");
 
                 // 双击整段选中：只读字段双击选一个词没意义，还得再 Ctrl+A 一次
-                pick.Select(0, 0);
-                bool dblWide = false;
-                string via = "真事件";
-                try
+                // 但「先在上一行点一下、再在下一行点一下」不能算双击 —— 那正是上一版被骂的地方
+                var other = sels.LastOrDefault(x => !ReferenceEquals(x, pick));
+                if (other is not null)
                 {
-                    var ev = new System.Windows.Input.MouseButtonEventArgs(
-                        System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
-                    {
-                        RoutedEvent = System.Windows.Input.Mouse.PreviewMouseDownEvent,
-                    };
-                    typeof(System.Windows.Input.MouseButtonEventArgs)
-                        .GetProperty("ClickCount")!.SetValue(ev, 2);
-                    pick.RaiseEvent(ev);
-                    dblWide = pick.SelectedText == pick.Text && pick.Text.Length > 0;
+                    pick.Select(0, 0);
+                    other.Select(0, 0);
+                    Down(pick, 1);          // 上一行单击
+                    Down(other, 2);         // 下一行紧跟一下：ClickCount 已经是 2，但不是同一个控件
+                    Check(other.SelectionLength < other.Text.Length,
+                        "连点两行不算双击（不会莫名整行选中）",
+                        $"{other.SelectionLength}/{other.Text.Length}");
                 }
-                catch { via = "直接调方法"; pick.SelectAllOnDoubleClick(); dblWide = pick.SelectedText == pick.Text; }
-                Check(dblWide, "双击右栏文字整段选中", $"{via} · {pick.SelectionLength}/{pick.Text.Length}");
+
+                pick.Select(0, 0);
+                Down(pick, 1);
+                Down(pick, 2);
+                Check(pick.SelectedText == pick.Text && pick.Text.Length > 0,
+                    "同一个控件双击整段选中", $"{pick.SelectionLength}/{pick.Text.Length}");
             }
             else Check(false, "右栏静态文字都是可选中控件", "没有非空文本");
         }
@@ -1051,6 +1065,25 @@ public static class SelfTest
             vm.RefreshGrid();
             await Pulse(window);
             Check(vm.MissingCount == 0 && vm.Items.Any(x => x.Id == victim.Id), "标记回来就回图墙");
+        }
+
+        // ---------- 23e. 关窗口收到托盘 ----------
+        if (window is MainWindow mwTray)
+        {
+            var tray = mwTray.TrayForTest;
+            Check(tray is { Visible: true }, "托盘图标挂上了");
+            Check(tray is not null && tray.Menu.Items.Count >= 5,
+                "托盘菜单有「显示窗口 / 打开图库目录 / 退出」", $"{tray?.Menu.Items.Count ?? 0} 项");
+
+            // 自检本身是诊断模式，默认不进托盘；这里手动打开再验证机制
+            mwTray.CloseToTray = true;
+            var ce = mwTray.ClosingForTest();
+            Check(ce.Cancel && !mwTray.IsVisible, "点关闭只是收到托盘", $"cancel={ce.Cancel} 可见={mwTray.IsVisible}");
+            mwTray.ShowFromTray();
+            await Pulse(window);
+            Check(mwTray.IsVisible, "从托盘点回来能重新显示");
+            mwTray.RequestExit();
+            Check(mwTray.ExitForRealForTest, "托盘「退出」走的是真退出");
         }
 
         // ---------- 性能 / 内存 ----------

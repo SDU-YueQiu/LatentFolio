@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- 只为了托盘图标的 Shell 集成（NotifyIcon）；界面全部还是 WPF -->
+    <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -15,7 +17,17 @@
     <Version>1.0.2</Version>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- WFO0003：WinForms 分析器让把 DPI 设置从 manifest 挪到 WinForms API。
+         我们的 DPI 感知是 WPF 用的（PerMonitorV2），manifest 不能动 -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms 只用来挂托盘图标。别让它把 System.Windows.Forms / System.Drawing 灌进全局 using：
+         Application、Button、Point、Size、Brush、MouseEventArgs 全都会和 WPF 撞名 -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

@@ -169,6 +169,7 @@ src/LatentFolio.App             WPF
   Controls/SlimThumb.cs                自绘滚动条滑块
   Controls/RatingBar.cs                5 点评分条
   Controls/SelectableText.cs           只读但可选中的文本（右栏文字用它替 TextBlock）
+  Services/TrayIcon.cs                 托盘图标（WinForms 的 NotifyIcon + WPF 菜单）
   ViewModels/AppVm.cs                  全部状态与命令
   Views/                               详情栏 / 自定义栏编辑器 / 人物墙 / 标签 / 统计
 
