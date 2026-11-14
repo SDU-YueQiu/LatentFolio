@@ -101,6 +101,24 @@
     <DropShadowEffect x:Key="Fx.Image" BlurRadius="34" ShadowDepth="8" Direction="270"
                       Opacity="0.16" Color="#FF0B1220" />
 
+    <!-- ================= 焦点框 ================= -->
+    <!-- WPF 自带的焦点虚线框：列表/滚动区拿到键盘焦点时会在整个区域外面画一圈虚线，
+         查看器打开时那一圈正好盖在大图上，看着像框住了一块。全站关掉它：
+         选中态我们自己用蓝框/主色表示。这里兜住模板内部生成的 ScrollViewer
+         （ListBox 模板里的滚动区也是它，样式表各控件里已经逐个关过了）。 -->
+    <Style TargetType="{x:Type ScrollViewer}" BasedOn="{StaticResource {x:Type ScrollViewer}}">
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    </Style>
+    <Style TargetType="{x:Type ListBox}" BasedOn="{StaticResource {x:Type ListBox}}">
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    </Style>
+    <Style TargetType="{x:Type ItemsControl}" BasedOn="{StaticResource {x:Type ItemsControl}}">
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    </Style>
+    <Style TargetType="{x:Type GridSplitter}" BasedOn="{StaticResource {x:Type GridSplitter}}">
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    </Style>
+
     <!-- ================= 文字 ================= -->
     <Style TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource F.UI}" />

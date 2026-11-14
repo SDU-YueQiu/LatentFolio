@@ -56,6 +56,8 @@
         <Style x:Key="TileBox" TargetType="ListBoxItem">
             <Setter Property="Margin" Value="0" />
             <Setter Property="Padding" Value="0" />
+            <!-- 选中有蓝框，不要再画虚线焦点框 -->
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -821,10 +823,13 @@
                                 <ColumnDefinition Width="{Binding DetailWidth, Converter={StaticResource D2G}}" />
                             </Grid.ColumnDefinitions>
 
+                            <!-- 选中已经有蓝框了；WPF 默认那个虚线焦点框会画在整个列表外面，
+                                 查看器打开时它盖在大图上，像框住了一块区域 -->
                             <ListBox x:Name="GridList" Background="Transparent" BorderThickness="0"
                                      ItemsSource="{Binding Items}" SelectionMode="Extended"
                                      ItemContainerStyle="{StaticResource TileBox}"
                                      ItemTemplate="{StaticResource TileTpl}"
+                                     FocusVisualStyle="{x:Null}"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                      ScrollViewer.CanContentScroll="True"

@@ -26,6 +26,9 @@ public sealed class ZoomBox : ContentControl
     {
         ClipToBounds = true;
         Focusable = true;
+        // 要能拿键盘焦点（滚轮/方向键），但不要 WPF 那个虚线焦点框：
+        // 它会把整个大图区框成一整圈，看着像选中了什么东西
+        FocusVisualStyle = null;
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
         _group.Children.Add(_st);

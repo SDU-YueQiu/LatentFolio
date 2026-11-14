@@ -248,6 +248,19 @@ public static class SelfTest
         await Pulse(window, 3);
         Check(vm.ViewerOpen, "查看器打开");
         Check(vm.ViewerImage?.Source is not null, "大图解码成功");
+        // 查看器开着时图墙还拿着键盘焦点，它那个虚线焦点框会画在大图上面（一整圈方框）
+        if (window is MainWindow mwF)
+        {
+            Check(mwF.GridListForTest.FocusVisualStyle is null,
+                "图墙没有虚线焦点框（不会盖在大图上）",
+                $"焦点在 {System.Windows.Input.Keyboard.FocusedElement?.GetType().Name ?? "无"}");
+            // 兜底：整个窗口里不应该再有任何「能获得焦点、还带虚线焦点框」的元素
+            var focusy = AllDescendants<FrameworkElement>(mwF)
+                .Where(x => x.Focusable && x.FocusVisualStyle is not null && x.IsVisible)
+                .Select(x => x.GetType().Name).Distinct().ToList();
+            Check(focusy.Count == 0, "全窗口没有虚线焦点框",
+                focusy.Count == 0 ? "" : string.Join(" / ", focusy));
+        }
 
         vm.EnsureWorkflow(first);
         for (int i = 0; i < 40 && vm.WorkflowText.Length < 10; i++) await Task.Delay(50);
