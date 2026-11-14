@@ -38,6 +38,10 @@
 `src/LatentFolio.Core/Comfy/GraphParser.cs`，行为对齐 `tools/ref/prompt_parse2.py`：
 
 - 从任意带 `positive` / `negative` 输入的节点出发，反向走图找文本源
+- 只从**这张图真正走过的那一支**收：一次排队同时跑好几个模型时，图里有好几套 `CLIPTextEncode`，
+  别的分支可能挂着同一段提示词的变体，全图收一遍就会拼成两遍（实测 `anima-pre_00005_`：
+  正文后面又多了 `masterpiece…` + `(flat color),(anime coloring )` 那一段）。分支认不出来时
+  才退回全图，扫一遍更保险
 - 穿过中间节点时**只跟同角色的那一口**（否则 `ToBasicPipe` 这类会把正负两份都收进同一个角色，
   实测 2,495 张被这样搞错）
 - 支持 `StringConcatenate` / `Text Concatenate` 这类拼接节点（`text_a`–`text_d` 都认）、

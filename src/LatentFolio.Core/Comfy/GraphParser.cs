@@ -405,7 +405,7 @@ public static partial class GraphParser
             var e = new Eval(g);
             CollectSnapshots(e);
             ApplyWorkflowTexts(e, workflowJson);
-            Fill(e, res);
+            Fill(e, res, imagePath);
             FillTechnical(e, res, imagePath);
         }
         return res;
@@ -420,7 +420,31 @@ public static partial class GraphParser
     [GeneratedRegex(@"(?<=[:\[,\s])-?(?:Infinity|NaN)(?=\s*[,\}\]])")]
     private static partial Regex NaNRe();
 
-    private static void Fill(Eval e, ParseResult res)
+    /// <summary>
+    /// 提示词也只从这张图真正走过的那一支里取。
+    /// 一次排队同时跑好几个模型时，图里会有好几套 CLIPTextEncode（有时还接不同的文本变体），
+    /// 全图收一遍就会把别的分支的提示词也拼进来 —— 实测 anima-pre_00005_ 把同一段提示词显示两遍
+    /// （其中一遍还多出 (flat color),(anime coloring )）。
+    /// 认不出分支（文件改名、多个保存点冲突）时才退回全图。
+    /// </summary>
+    private static void Fill(Eval e, ParseResult res, string? imagePath)
+    {
+        var branch = BranchSet(e, imagePath);
+        if (!FillFrom(e, res, branch) && branch is not null)
+            FillFrom(e, res, null);
+    }
+
+    private static HashSet<string>? BranchSet(Eval e, string? imagePath)
+    {
+        var outs = PickOutputs(e, imagePath);
+        if (outs.Count == 0) return null;
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in outs) set.UnionWith(Ancestors(e, id));
+        return set;
+    }
+
+    /// <summary>收一遍提示词；limit 非空时只看这一支里的节点。返回是否找到了正向文本。</summary>
+    private static bool FillFrom(Eval e, ParseResult res, HashSet<string>? limit)
     {
         var found = new List<(string Id, string Role, string Text, string Cls)>(8);
         var seedsPos = new List<string>();
@@ -428,6 +452,7 @@ public static partial class GraphParser
 
         foreach (var node in e.G.Values)
         {
+            if (limit is not null && !limit.Contains(node.Id)) continue;
             foreach (var (k, v) in node.Inputs)
             {
                 var kl = k.ToLowerInvariant();
@@ -462,6 +487,7 @@ public static partial class GraphParser
             var cands = new List<(string Id, string Cls, string Text)>();
             foreach (var node in e.G.Values)
             {
+                if (limit is not null && !limit.Contains(node.Id)) continue;
                 var t = ResolveNodeText(e, node, 0, []);
                 if (!string.IsNullOrWhiteSpace(t)) cands.Add((node.Id, node.ClassType, t));
             }
@@ -504,6 +530,8 @@ public static partial class GraphParser
             .Where(x => x.Length > 0).Distinct().OrderBy(x => x).ToArray();
         res.NegClasses = found.Where(x => x.Role == "negative").Select(x => x.Cls)
             .Where(x => x.Length > 0).Distinct().OrderBy(x => x).ToArray();
+
+        return res.Positive.Length > 0;
     }
 
     // ---------- 技术参数：只认这张图真正走过的那一支 ----------

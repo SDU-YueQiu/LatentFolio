@@ -571,7 +571,9 @@ public partial class MainWindow : Window
         if (nameArg >= 0 && nameArg + 1 < args.Length)
         {
             var q = args[nameArg + 1];
-            var hit = Vm.Items.FirstOrDefault(x => x.FileName.Contains(q, StringComparison.OrdinalIgnoreCase));
+            // 先按路径找（能区分同名文件），找不到再按文件名
+            var hit = Vm.Items.FirstOrDefault(x => x.Item.Path.Replace('\\', '/').Contains(q.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                      ?? Vm.Items.FirstOrDefault(x => x.FileName.Contains(q, StringComparison.OrdinalIgnoreCase));
             if (hit is not null)
             {
                 Vm.SelectSingle(hit);

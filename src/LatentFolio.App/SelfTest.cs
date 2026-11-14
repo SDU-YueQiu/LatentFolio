@@ -991,6 +991,34 @@ public static class SelfTest
         Check(renamedRes.Steps is null && renamedRes.Cfg is null, "认不出分支时步数/CFG 也留空",
             $"{renamedRes.Steps} / {renamedRes.Cfg}");
 
+        // 一次排队跑好几条流水线时，提示词也只看这一支：
+        // 别的分支可能挂着同一段提示词的变体（实测 anima-pre_00005_ 把提示词显示成了两遍）
+        const string twoTextJson = """
+        {
+          "10": {"class_type":"SaveImage","inputs":{"filename_prefix":"d/aa","images":["12",0]}},
+          "12": {"class_type":"VAEDecode","inputs":{"samples":["14",0],"vae":["17",0]}},
+          "14": {"class_type":"KSampler","inputs":{"model":["19",0],"positive":["16",0],"negative":["18",0]}},
+          "16": {"class_type":"CLIPTextEncode","inputs":{"text":["20",0],"clip":["19",0]}},
+          "20": {"class_type":"PrimitiveStringMultiline","inputs":{"value":"aa, high quality"}},
+          "18": {"class_type":"CLIPTextEncode","inputs":{"text":"bad"}},
+          "19": {"class_type":"UNETLoader","inputs":{"unet_name":"m1.safetensors"}},
+          "17": {"class_type":"VAELoader","inputs":{"vae_name":"v.safetensors"}},
+          "30": {"class_type":"SaveImage","inputs":{"filename_prefix":"d/bb","images":["32",0]}},
+          "32": {"class_type":"VAEDecode","inputs":{"samples":["34",0],"vae":["17",0]}},
+          "34": {"class_type":"KSampler","inputs":{"model":["39",0],"positive":["36",0],"negative":["18",0]}},
+          "36": {"class_type":"CLIPTextEncode","inputs":{"text":["40",0],"clip":["39",0]}},
+          "40": {"class_type":"PrimitiveStringMultiline","inputs":{"value":"aa, high quality,(flat color)"}},
+          "39": {"class_type":"UNETLoader","inputs":{"unet_name":"m2.safetensors"}}
+        }
+        """;
+        var aaRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(twoTextJson, null,
+            System.IO.Path.Combine(App.Services.LibraryRoot, "d", "aa_00001_.png"));
+        Check(aaRes.Positive == "aa, high quality", "多分支：提示词只取这一支的（不拼别的分支变体）", aaRes.Positive);
+        var bbRes2 = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(twoTextJson, null,
+            System.IO.Path.Combine(App.Services.LibraryRoot, "d", "bb_00001_.png"));
+        Check(bbRes2.Positive == "aa, high quality,(flat color)", "多分支：另一张取的是它那一支的变体",
+            bbRes2.Positive);
+
         // 改名但整张图只有一种模型：可以直接认
         const string singleJson = """
         {
