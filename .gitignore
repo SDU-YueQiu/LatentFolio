@@ -22,3 +22,6 @@ third_party/ngc-probe/
 vsr_out/
 _data/
 *.lnk
+
+# 本地探查脚本/tmp
+tmp/

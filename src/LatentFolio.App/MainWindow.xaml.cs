@@ -93,7 +93,7 @@ public partial class MainWindow : Window
         App.Root.GridReloaded += RestoreGridSelection;
         PreviewKeyDown += OnPreviewKey;
         // 鼠标侧键：后退 = 关查看器 / 清搜索 / 清筛选 / 回总览，前进 = 重新打开当前那张
-        PreviewMouseDown += OnNavMouseDown;
+        // 监听装在 Services.SideButtons（FrameworkElement 类处理），菜单弹层和独立窗口也覆盖
         BigZoom.ZoomChanged += UpdateZoomLabel;
         // VSR 出图后源换了，百分比也要跟着重算
         App.Root.CurrentChangedForViewer += UpdateZoomLabel;
@@ -104,19 +104,19 @@ public partial class MainWindow : Window
         };
     }
 
-    private void OnNavMouseDown(object sender, MouseButtonEventArgs e)
+    /// <summary>侧键：back = 返回，否则前进。除主窗口客户端外，非客户区（标题栏/边框）也走这里。</summary>
+    internal void SideButton(bool back)
     {
-        if (e.ChangedButton == MouseButton.XButton1)
-        {
-            GoBack();
-            e.Handled = true;
-        }
-        else if (e.ChangedButton == MouseButton.XButton2)
-        {
-            GoForward();
-            e.Handled = true;
-        }
+        // 同一次按下可能从两条路进来（客户区路由 + 非客户区钩子），90ms 内的重复按键丢掉
+        long now = Environment.TickCount64;
+        if (now - _lastSideTick < 90) return;
+        _lastSideTick = now;
+
+        if (back) GoBack();
+        else GoForward();
     }
+
+    private long _lastSideTick;
 
     private void GoBack()
     {
@@ -128,7 +128,10 @@ public partial class MainWindow : Window
 
     private void GoForward()
     {
-        if (!Vm.ViewerOpen && Vm.Current is not null) Vm.OpenViewerCommand.Execute(Vm.Current);
+        if (Vm.ViewerOpen) return;
+        // 刚从查看器退出来时 Current 可能已被右栏接手（甚至是 null），回到「刚才看的那张」
+        var target = Vm.LastViewed is { } last && Vm.Items.Contains(last) ? last : Vm.Current;
+        if (target is not null) Vm.OpenViewerCommand.Execute(target);
     }
 
     private void FitToWorkArea()
@@ -282,6 +285,9 @@ public partial class MainWindow : Window
 
     private const int WM_GETMINMAXINFO = 0x0024;
 
+    /// <summary>非客户区（标题栏/边框）上的鼠标侧键。</summary>
+    private const int WM_NCXBUTTONDOWN = 0x00AB;
+
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct POINT
     {
@@ -313,6 +319,14 @@ public partial class MainWindow : Window
     /// </summary>
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        // 标题栏/边框这类非客户区：WPF 不会把它变成 PreviewMouseDown，侧键得在这里接
+        if (msg == WM_NCXBUTTONDOWN)
+        {
+            int xb = (int)((long)wParam >> 16) & 0xFFFF;
+            SideButton(xb == 1);
+            handled = true;
+            return IntPtr.Zero;
+        }
         if (msg != WM_GETMINMAXINFO) return IntPtr.Zero;
 
         var result = DefWindowProc(hwnd, msg, wParam, lParam);
@@ -433,6 +447,10 @@ public partial class MainWindow : Window
         }
         if (args.Contains("--open-first") && Vm.Items.Count > 0)
             Vm.OpenViewerCommand.Execute(Vm.Items[0]);
+        // 开发诊断：--filter-model <模型名> 直接按模型筛，方便截图核对
+        int modelArg = Array.IndexOf(args, "--filter-model");
+        if (modelArg >= 0 && modelArg + 1 < args.Length)
+            Vm.SetTempFilter(One(FieldType.Model, CondOp.Eq, args[modelArg + 1]), "模型");
         if (args.Contains("--show-stats")) ShowStats();
         if (args.Contains("--show-people")) Vm.ShowPeopleGridCommand.Execute(null);
         if (args.Contains("--show-editor") && Vm.Columns.Count > 0)

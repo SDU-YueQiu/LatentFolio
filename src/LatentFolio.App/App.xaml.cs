@@ -45,7 +45,7 @@ public partial class App : Application
                                           or "--bench" or "--show-stats" or "--show-editor"
                                           or "--show-people" or "--show-tags" or "--show-candidates"
                                           or "--show-filter" or "--show-settings" or "--mem-report" or "--retag"
-                                          or "--bench-decode" or "--sort-rating");
+                                          or "--bench-decode" or "--sort-rating" or "--filter-model");
         SuppressTray = diagnostic;
         if (!diagnostic)
         {
@@ -107,11 +107,15 @@ public partial class App : Application
             return;
         }
 
+        // 鼠标侧键挂在 FrameworkElement 的类处理上：主窗口、查看器、菜单弹层、独立窗口都覆盖
+        SideButtons.Install();
+
         var win = new MainWindow();
         MainWindow = win;
         // 注销/关机时别被「收到托盘」挡住
         SessionEnding += (_, _) => win.RequestExit();
-        win.Show();    }
+        win.Show();
+    }
 
     private static void Log(string text)
     {
@@ -467,7 +471,7 @@ public partial class App : Application
                     sb.AppendLine("JSON PARSE FAIL: " + ex.Message);
                 }
 
-                var r = GraphParser.ParseWorkflowApiJson(pj, meta.Workflow);
+                var r = GraphParser.ParseWorkflowApiJson(pj, meta.Workflow, path);
                 sb.AppendLine($"method={r.Method} split={r.Split}");
                 sb.AppendLine($"posClasses={string.Join(",", r.PosClasses)}");
                 sb.AppendLine($"negClasses={string.Join(",", r.NegClasses)}");

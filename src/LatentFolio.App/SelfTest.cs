@@ -366,6 +366,46 @@ public static class SelfTest
             Check(vm.SearchText.Length == 0, "鼠标后退清掉搜索", $"“{vm.SearchText}”");
         }
 
+        // 侧键不只在图墙上有效：查看器里、菜单弹层上、独立窗口里都得有反应。
+        // 以前只挂了主窗口的 PreviewMouseDown，指针一落到菜单/对话框上就彻底没动静。
+        if (window is MainWindow mwSide && vm.Items.Count > 3)
+        {
+            vm.SelectSingle(vm.Items[1]);
+            await Pulse(window);
+            vm.OpenViewerCommand.Execute(vm.Items[1]);
+            await Pulse(window);
+            bool opened = vm.ViewerOpen;
+            Services.SideButtons.PressForTest(true);
+            await Pulse(window);
+            Check(opened && !vm.ViewerOpen, "查看器里按侧键返回能退出来", $"开 {opened} -> {vm.ViewerOpen}");
+
+            Services.SideButtons.PressForTest(false);
+            await Pulse(window);
+            Check(vm.ViewerOpen, "查看器里按侧键前进能再进去", $"开 {vm.ViewerOpen}");
+            Services.SideButtons.PressForTest(true);
+            await Pulse(window);
+
+            // 菜单弹层是独立 HWND，按返回应当先收菜单，不能顺带把底下的页面也换了
+            var menu = new System.Windows.Controls.ContextMenu();
+            menu.Items.Add(new System.Windows.Controls.MenuItem { Header = "测试项" });
+            menu.PlacementTarget = mwSide.GridListForTest;
+            menu.IsOpen = true;
+            await Pulse(window);
+            bool menuOpen = menu.IsOpen;
+            Services.SideButtons.PressForTest(true, menu.Items[0] as IInputElement);
+            await Pulse(window);
+            Check(menuOpen && !menu.IsOpen, "菜单上按侧键先收起菜单", $"开 {menuOpen} -> {menu.IsOpen}");
+            Check(!vm.ViewerOpen, "收菜单时没有连带翻页");
+
+            // 设置/标签/列编辑这些独立窗口：返回 = 关掉它
+            var dlg = new Window { Owner = mwSide, Width = 280, Height = 180, Title = "侧键测试" };
+            dlg.Show();
+            await Pulse(window);
+            Services.SideButtons.PressForTest(true, dlg);
+            await Pulse(window);
+            Check(!dlg.IsVisible, "独立窗口里按侧键返回会关掉它", $"可见 {dlg.IsVisible}");
+        }
+
         // 右栏里每个按钮：屏幕中心点命中的元素必须是它自己（或它的子/父），
         // 用来抓「画出来的位置和能点的位置不重合」——被别的层盖住、或者布局偏了都会失败
         if (window is MainWindow mwHit)
@@ -662,31 +702,47 @@ public static class SelfTest
                 // 右栏只在有当前图时才出现，先选一张，否则列宽根本不会变
                 vm.SelectSingle(vm.Items[0]);
                 vm.PanelCollapsed = true;
-                for (int i = 0; i < 5; i++) await Pulse(window);
+
+                // 等布局真的停下来再取基准：库大了以后虚拟化要好几帧才稳定，
+                // 早先这里只等 5 帧，量到的是过渡态（5 列），下面比「第几行」就必然对不上。
+                async Task Settle()
+                {
+                    int lastCols = -1;
+                    double lastTop = double.NaN;
+                    int stable = 0;
+                    for (int i = 0; i < 60 && stable < 3; i++)
+                    {
+                        await Pulse(window);
+                        if (panel.Columns == lastCols && Math.Abs(panel.FirstChildTop - lastTop) < 0.5) stable++;
+                        else stable = 0;
+                        lastCols = panel.Columns;
+                        lastTop = panel.FirstChildTop;
+                    }
+                }
+
+                await Settle();
                 panel.SetVerticalOffset(900);
-                for (int i = 0; i < 6; i++) await Pulse(window);
+                await Settle();
                 int cols0 = panel.Columns;
                 int idx0 = panel.FirstRealizedIndex;
                 double top0 = panel.FirstChildTop;
                 double ext0 = panel.ExtentHeight;
 
                 vm.PanelCollapsed = false;
-                for (int i = 0; i < 10; i++) await Pulse(window);
+                await Settle();
 
                 // 等高布局里「列数」不是硬指标：变窄可能是行高变小而不是少放一张。
                 // 真正要保证的是「重排了」+「原来那张还锚在视口顶部第一行」。
                 Check(Math.Abs(panel.ExtentHeight - ext0) > 1, "详情栏展开后网格重排了",
-                    $"总高 {ext0:F0} -> {panel.ExtentHeight:F0}，列 {cols0} -> {panel.Columns}");
+                    $"总高 {ext0:F0} -> {panel.ExtentHeight:F0}，列 {cols0} -> {panel.Columns}，行高 {panel.ItemHeight:F0}");
                 Check(Math.Abs(panel.FirstChildTop - top0) < panel.ItemHeight * 0.7,
                     "列数变了之后视口锚在原处", $"Y {top0:F0} -> {panel.FirstChildTop:F0}");
                 int idx1 = panel.FirstRealizedIndex;
-                // 列数一变，换行位置就跟着变：这里锚的是像素位置（顶部那行留在原处）。
-                // 比「第几行」而不是「第几个」—— 列数从 9 变 8 时，同一个像素位置对应的索引能差出
-                // 一整列去，但行没变，那还是锚住了。
-                int row0 = idx0 / Math.Max(1, cols0);
-                int row1 = idx1 / Math.Max(1, panel.Columns);
-                Check(Math.Abs(row0 - row1) <= 1, "重排后顶部那行只挪了不到一行",
-                    $"第 {row0} 行 -> 第 {row1} 行（{cols0} 列 -> {panel.Columns} 列）");
+                // 等高布局的「行高」本身会随列数变（少了列、每张就更宽更高），
+                // 所以「第几行」不是稳定指标；真正要保证的是顶部那张没被甩出一屏。
+                Check(Math.Abs(idx1 - idx0) <= Math.Max(cols0, panel.Columns) + 1,
+                    "重排后视口顶部那张还在原地（差不到一行）",
+                    $"第 {idx0} 张 -> 第 {idx1} 张（{cols0} 列 -> {panel.Columns} 列）");
                 panel.SetVerticalOffset(0);
                 for (int i = 0; i < 4; i++) await Pulse(window);
             }
@@ -822,6 +878,54 @@ public static class SelfTest
         Check(randOnly.Positive == "旧的一轮,b,", "有通配符时退回 ShowText 的值", randOnly.Positive);
         var freshRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(randJson, freshWorkflow);
         Check(freshRes.Positive == "这一轮,b,", "有 workflow 段时以它为准", freshRes.Positive);
+
+        // 一次排队把三条流水线各存一张：图里三个 UNETLoader，只有文件名能说明这张是谁写的。
+        // 以前取「JSON 里第一个出现的 ckpt_name」，于是 MOSS/anima 的图全挂上了 Krea2。
+        const string multiJson = """
+        {
+          "10": {"class_type":"SaveImage","inputs":{"filename_prefix":"2026-11-08/Krea2/Krea2-turbo","images":["12",0]}},
+          "12": {"class_type":"VAEDecode","inputs":{"samples":["14",0],"vae":["17",0]}},
+          "14": {"class_type":"KSampler","inputs":{"seed":["66",0],"steps":8,"cfg":1.0,"sampler_name":"er_sde","scheduler":"sgm_uniform","denoise":1.0,"model":["63",0],"positive":["16",0],"negative":["16",0]}},
+          "63": {"class_type":"Lora Loader Stack (rgthree)","inputs":{"model":["159",0],"lora_01":"zit_fdpo_v1.safetensors"}},
+          "159": {"class_type":"UNETLoader","inputs":{"unet_name":"krea2_turbo_int8_convrot.safetensors"}},
+          "17": {"class_type":"VAELoader","inputs":{"vae_name":"qwen_image_vae.safetensors"}},
+          "16": {"class_type":"CLIPTextEncode","inputs":{"text":"1girl, solo, hanfu"}},
+          "66": {"class_type":"Seed (rgthree)","inputs":{"seed":480503147340163}},
+          "36": {"class_type":"SaveImage","inputs":{"filename_prefix":"2026-11-08/MOSS/MOSS","images":["46",0]}},
+          "46": {"class_type":"VAEDecode","inputs":{"samples":["40",0],"vae":["45",0]}},
+          "40": {"class_type":"KSampler","inputs":{"seed":["66",0],"steps":25,"cfg":2.5,"sampler_name":"er_sde","scheduler":"simple","denoise":1.0,"model":["49",0],"positive":["43",0],"negative":["43",0]}},
+          "49": {"class_type":"Lora Loader Stack (rgthree)","inputs":{"model":["42",0]}},
+          "42": {"class_type":"UNETLoader","inputs":{"unet_name":"moss_image_sft_int8_convrot.safetensors"}},
+          "45": {"class_type":"VAELoader","inputs":{"vae_name":"flux2-vae.safetensors"}},
+          "43": {"class_type":"CLIPTextEncode","inputs":{"text":"1boy, suit"}}
+        }
+        """;
+        var mossPath = System.IO.Path.Combine(App.Services.LibraryRoot, "2026-11-08", "MOSS", "MOSS_00054_.png");
+        var mossRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(multiJson, null, mossPath);
+        Check(mossRes.Model == "moss_image_sft_int8_convrot.safetensors", "多流水线：按文件名认出是 MOSS 那条",
+            mossRes.Model ?? "null");
+        Check(mossRes.Steps == 25 && Math.Abs((mossRes.Cfg ?? 0) - 2.5) < 1e-6,
+            "多流水线：步数/CFG 也跟这条走", $"{mossRes.Steps} / {mossRes.Cfg}");
+        Check(mossRes.Seed == 480503147340163, "多流水线：种子顺着连线取到", mossRes.Seed?.ToString() ?? "null");
+
+        var kreaRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(multiJson, null,
+            System.IO.Path.Combine(App.Services.LibraryRoot, "2026-11-08", "Krea2", "Krea2-turbo_00010_.png"));
+        Check(kreaRes.Model == "krea2_turbo_int8_convrot.safetensors", "多流水线：Krea2 那张仍认 Krea2",
+            kreaRes.Model ?? "null");
+        Check(kreaRes.Steps == 8, "多流水线：Krea2 那张的步数没被 MOSS 抢走", kreaRes.Steps?.ToString() ?? "null");
+
+        // 只放大、没采样的图（SeedVR 超分）：放大模型不是出图模型，宁可不填
+        const string upJson = """
+        {
+          "1": {"class_type":"UpscaleModelLoader","inputs":{"model_name":"4x-UltraSharpV2.safetensors"}},
+          "2": {"class_type":"ImageUpscaleWithModel","inputs":{"upscale_model":["1",0],"image":["3",0]}},
+          "3": {"class_type":"LoadImage","inputs":{"image":"src.png"}},
+          "4": {"class_type":"SaveImage","inputs":{"filename_prefix":"up","images":["2",0]}}
+        }
+        """;
+        var upRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(upJson, null,
+            System.IO.Path.Combine(App.Services.LibraryRoot, "up", "up_00001_.png"));
+        Check(upRes.Model is null, "放大模型的图不会把放大模型当成出图模型", upRes.Model ?? "null");
 
         // ---------- 21. 左栏可拖宽 ----------
         double w0 = vm.LeftWidth;

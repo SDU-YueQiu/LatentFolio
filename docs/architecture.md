@@ -55,6 +55,11 @@
   两边都在、又必须用快照时以 `workflow` 为准（实测 `Krea2-turbo_00047_`：`prompt` 写着上一轮的
   `arched bangs, trilby, harness`，画出来的却是 `workflow` 里那身 `silvery white, teal, kimono skirt`）
 - 解析器逻辑改了要 `ParserVersion++`：老库下次启动会强制重解析一遍元数据（不是只重打标）
+- 一张图里可能并排放着几条完整流水线（一次排队把 Krea2 / anima / MOSS 各存一张）。模型、步数、CFG、
+  种子这些**只认这张图真正走过的那一支**：先按文件名对 `SaveImage` 的 `filename_prefix` 认出输出节点
+  （同一前缀挂在多个保存点上时它们算一起），再顺着 `model` 连线找到加载器。以前取「JSON 里第一个
+  `ckpt_name`」，于是 1,950 张图的模型是别的分支的；`UpscaleModelLoader` / SeedVR 这类放大模型也不再
+  被当成出图模型（纯放大出来的图模型留空）
 - 都没有时退化为「全图找文本」，再按节点类型猜正负
 - 正面里内嵌 `Negative prompt:` 分隔符时自动切开
 

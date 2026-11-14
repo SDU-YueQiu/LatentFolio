@@ -543,7 +543,7 @@ public sealed partial class AppVm : ObservableObject
     private async Task ScanAsync(bool initial) => await ScanAsyncCore(initial);
 
     /// <summary>解析器改了就 +1，老库下次启动会强制重解析一遍元数据。</summary>
-    public const int ParserVersion = 7;
+    public const int ParserVersion = 8;
 
     /// <summary>角色/画师识别逻辑改了就 +1，老库下次启动会整库重打标并重建候选池。</summary>
     public const int RetagVersion = 5;
@@ -1391,6 +1391,7 @@ public sealed partial class AppVm : ObservableObject
     {
         if (vm is null) return;
         Current = vm;
+        LastViewed = vm;
         ViewerOpen = true;
         ShowOriginal = false;
         VsrBadge = "";
@@ -1549,6 +1550,12 @@ public sealed partial class AppVm : ObservableObject
         if (WorkflowText.Length == 0 || WorkflowText.StartsWith("这张图没有")) return;
         CopyText(WorkflowText);
     }
+
+    /// <summary>
+    /// 最近一次在查看器里看过的图。退出查看器后 Current 会被右栏接手（可能是 null），
+    /// 光靠 Current 侧键「前进」就回不去了 —— 留一个记号。
+    /// </summary>
+    public ImageVm? LastViewed { get; private set; }
 
     [RelayCommand]
     private void CloseViewer()

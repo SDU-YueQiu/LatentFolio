@@ -376,7 +376,11 @@ public static partial class GraphParser
         }
     }
 
-    public static ParseResult ParseWorkflowApiJson(string promptJson, string? workflowJson = null)
+    /// <summary>
+    /// imagePath 是这张 PNG 自己的路径。同一份图里可能并排放着好几条流水线
+    /// （一次排队把 Krea2 / anima / MOSS 各存一张），只有文件名能说明哪一条生成了这一张。
+    /// </summary>
+    public static ParseResult ParseWorkflowApiJson(string promptJson, string? workflowJson = null, string? imagePath = null)
     {
         var res = new ParseResult();
         if (string.IsNullOrWhiteSpace(promptJson)) return res;
@@ -402,6 +406,7 @@ public static partial class GraphParser
             CollectSnapshots(e);
             ApplyWorkflowTexts(e, workflowJson);
             Fill(e, res);
+            FillTechnical(e, res, imagePath);
         }
         return res;
     }
@@ -499,14 +504,155 @@ public static partial class GraphParser
             .Where(x => x.Length > 0).Distinct().OrderBy(x => x).ToArray();
         res.NegClasses = found.Where(x => x.Role == "negative").Select(x => x.Cls)
             .Where(x => x.Length > 0).Distinct().OrderBy(x => x).ToArray();
+    }
 
-        // 技术参数
+    // ---------- 技术参数：只认这张图真正走过的那一支 ----------
+
+    private static readonly string[] ModelKeys = ["ckpt_name", "unet_name", "model_name", "checkpoint"];
+
+    /// <summary>放大/超分/锐化模型不是「出图模型」。</summary>
+    [GeneratedRegex("upscale|seedvr|esrgan|\\bvsr\\b|ultra", RegexOptions.IgnoreCase)]
+    private static partial Regex NotGenModelRe();
+
+    [GeneratedRegex("sampler", RegexOptions.IgnoreCase)]
+    private static partial Regex SamplerRe();
+
+    /// <summary>
+    /// 一张图里并排几条流水线时，每条都有自己的 SaveImage 和自己的 ckpt。
+    /// 以前是「JSON 里第一个出现的 ckpt_name 赢」，于是 MOSS/anima 的图全挂上了 Krea2 的模型名。
+    /// 只有 filename_prefix 能说明这个文件是哪条流水线写出来的。
+    /// 同一个前缀会挂在好几个保存点上（一次排队存好几张），它们一起返回。
+    /// </summary>
+    private static List<string> PickOutputs(Eval e, string? imagePath)
+    {
+        var hits = new List<string>(4);
+        if (string.IsNullOrEmpty(imagePath)) return hits;
+        var stem = Path.GetFileNameWithoutExtension(imagePath);
+        var dir = Path.GetDirectoryName(imagePath) ?? "";
+
+        int best = 0;
         foreach (var node in e.G.Values)
         {
-            var ins = node.Inputs;
-            if (res.Model is null)
+            if (!node.Inputs.TryGetValue("images", out var iv) || iv is not Link) continue;
+            if (!node.ClassType.Contains("save", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!node.Inputs.TryGetValue("filename_prefix", out var pv) || pv is not string pref) continue;
+            pref = pref.Trim();
+            if (pref.Length == 0) continue;
+
+            var seg = LastSegment(pref);
+            int score = 0;
+            if (seg.Length > 0 && stem.StartsWith(seg, StringComparison.OrdinalIgnoreCase)) score += 100 + seg.Length;
+            var pdir = PrefixDir(pref);
+            if (pdir.Length > 0 && DirEndsWith(dir, pdir)) score += 30;
+            if (score == 0) continue;
+
+            if (score > best) { best = score; hits.Clear(); hits.Add(node.Id); }
+            else if (score == best) hits.Add(node.Id);
+        }
+        return hits;
+    }
+
+    private static string LastSegment(string prefix)
+    {
+        var s = prefix.Replace('\\', '/');
+        int i = s.LastIndexOf('/');
+        return i >= 0 ? s[(i + 1)..] : s;
+    }
+
+    private static string PrefixDir(string prefix)
+    {
+        var s = prefix.Replace('\\', '/');
+        int i = s.LastIndexOf('/');
+        return i > 0 ? s[..i] : "";
+    }
+
+    private static bool DirEndsWith(string dir, string tail)
+    {
+        var a = dir.Replace('\\', '/').TrimEnd('/');
+        var b = tail.Replace('\\', '/').Trim('/');
+        if (b.Length == 0) return false;
+        return a.Equals(b, StringComparison.OrdinalIgnoreCase)
+            || a.EndsWith("/" + b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>上游可达的全部节点（含起点）：分支 = 这个输出的整棵子树。</summary>
+    private static HashSet<string> Ancestors(Eval e, string startId)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal) { startId };
+        var stack = new Stack<string>();
+        stack.Push(startId);
+        while (stack.Count > 0)
+        {
+            var id = stack.Pop();
+            if (!e.G.TryGetValue(id, out var node)) continue;
+            foreach (var v in node.Inputs.Values)
+                if (v is Link l && seen.Add(l.NodeId)) stack.Push(l.NodeId);
+        }
+        return seen;
+    }
+
+    /// <summary>
+    /// 取参数的优先级：模型链最前，其次采样器，再次本分支其余节点，最后才是全图（老行为）。
+    /// </summary>
+    private static List<Node> PriorityOrder(Eval e, string? imagePath)
+    {
+        var order = new List<Node>(64);
+        var added = new HashSet<string>(StringComparer.Ordinal);
+
+        var outputs = PickOutputs(e, imagePath);
+        if (outputs.Count > 0)
+        {
+            var branch = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var id in outputs) branch.UnionWith(Ancestors(e, id));
+
+            var samplers = new List<Node>();
+            foreach (var node in e.G.Values)
+                if (branch.Contains(node.Id) && LooksLikeSampler(node)) samplers.Add(node);
+
+            foreach (var s in samplers) AddModelChain(e, s, order, added);
+            foreach (var s in samplers) if (added.Add(s.Id)) order.Add(s);
+            foreach (var node in e.G.Values)
+                if (branch.Contains(node.Id) && added.Add(node.Id)) order.Add(node);
+        }
+
+        foreach (var node in e.G.Values) if (added.Add(node.Id)) order.Add(node);
+        return order;
+    }
+
+    private static bool LooksLikeSampler(Node node) =>
+        SamplerRe().IsMatch(node.ClassType) && !node.ClassType.Contains("samplers", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>顺着 model / model_2 … 往回走，模型加载器就在这条链上。</summary>
+    private static void AddModelChain(Eval e, Node from, List<Node> order, HashSet<string> added)
+    {
+        var stack = new Stack<(string Id, int Depth)>();
+        foreach (var (k, v) in from.Inputs)
+        {
+            var kl = k.ToLowerInvariant();
+            if (v is Link l && (kl == "model" || kl.StartsWith("model_"))) stack.Push((l.NodeId, 1));
+        }
+
+        while (stack.Count > 0)
+        {
+            var (id, depth) = stack.Pop();
+            if (depth > 12 || !added.Add(id) || !e.G.TryGetValue(id, out var node)) continue;
+            order.Add(node);
+            foreach (var (k, v) in node.Inputs)
             {
-                foreach (var k in (string[])["ckpt_name", "unet_name", "model_name", "checkpoint"])
+                var kl = k.ToLowerInvariant();
+                if (v is Link l && (kl == "model" || kl.StartsWith("model_"))) stack.Push((l.NodeId, depth + 1));
+            }
+        }
+    }
+
+    private static void FillTechnical(Eval e, ParseResult res, string? imagePath)
+    {
+        foreach (var node in PriorityOrder(e, imagePath))
+        {
+            var ins = node.Inputs;
+            if (res.Model is null && !NotGenModelRe().IsMatch(node.ClassType))
+            {
+                foreach (var k in ModelKeys)
                 {
                     if (ins.TryGetValue(k, out var v) && v is string s && s.Trim().Length > 0
                         && !s.Equals("none", StringComparison.OrdinalIgnoreCase))
@@ -521,21 +667,43 @@ public static partial class GraphParser
             if (res.Scheduler is null && ins.TryGetValue("scheduler", out var sh) && sh is string shs && shs.Trim().Length > 0)
                 res.Scheduler = shs;
 
-            if (res.Steps is null && ins.TryGetValue("steps", out var st))
-                res.Steps = st switch { long l => (int)l, double d => (int)d, _ => res.Steps };
-            if (res.Cfg is null && ins.TryGetValue("cfg", out var cf))
-                res.Cfg = cf switch { long l => l, double d => d, _ => res.Cfg };
+            if (res.Steps is null && ins.TryGetValue("steps", out var st) && TryNum(e, st, 0, out var sv))
+                res.Steps = (int)Math.Round(sv);
+            if (res.Cfg is null && ins.TryGetValue("cfg", out var cf) && TryNum(e, cf, 0, out var cv)) res.Cfg = cv;
             if (res.Seed is null)
             {
-                if (ins.TryGetValue("seed", out var sd)) res.Seed = sd switch { long l => l, double d => (long)d, _ => null };
-                if (res.Seed is null && ins.TryGetValue("noise_seed", out var ns))
-                    res.Seed = ns switch { long l => l, double d => (long)d, _ => null };
+                if (ins.TryGetValue("seed", out var sd) && TryNum(e, sd, 0, out var sdv)) res.Seed = (long)sdv;
+                else if (ins.TryGetValue("noise_seed", out var ns) && TryNum(e, ns, 0, out var nsv)) res.Seed = (long)nsv;
             }
-            if (res.Denoise is null && ins.TryGetValue("denoise", out var de))
-                res.Denoise = de switch { long l => l, double d => d, _ => res.Denoise };
-            if (res.Width is null && ins.TryGetValue("width", out var w) && w is long wl) res.Width = (int)wl;
-            if (res.Height is null && ins.TryGetValue("height", out var h) && h is long hl) res.Height = (int)hl;
+            if (res.Denoise is null && ins.TryGetValue("denoise", out var de) && TryNum(e, de, 0, out var dv)) res.Denoise = dv;
         }
+
+        // 宽高沿用全图顺序：空 latent 一般最先出现，别让缩放节点上的 width/height 抢了
+        foreach (var node in e.G.Values)
+        {
+            if (res.Width is null && node.Inputs.TryGetValue("width", out var w) && w is long wl) res.Width = (int)wl;
+            if (res.Height is null && node.Inputs.TryGetValue("height", out var h) && h is long hl) res.Height = (int)hl;
+        }
+    }
+
+    /// <summary>数值可能是个连线（种子常接在 Seed 节点上），顺着连线取。只认明确的数值键，别乱猜。</summary>
+    private static bool TryNum(Eval e, object? v, int depth, out double d)
+    {
+        d = 0;
+        switch (v)
+        {
+            case long l: d = l; return true;
+            case int i: d = i; return true;
+            case double x: d = x; return true;
+        }
+        if (v is not Link link || depth >= 4 || !e.G.TryGetValue(link.NodeId, out var node)) return false;
+        foreach (var (k, val) in node.Inputs)
+        {
+            if (k.ToLowerInvariant() is not ("seed" or "noise_seed" or "steps" or "cfg" or "denoise" or "value" or "int" or "float"))
+                continue;
+            if (TryNum(e, val, depth + 1, out d)) return true;
+        }
+        return false;
     }
 
     [GeneratedRegex("neg", RegexOptions.IgnoreCase)]
