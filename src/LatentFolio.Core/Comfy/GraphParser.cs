@@ -541,7 +541,7 @@ public static partial class GraphParser
 
             var seg = LastSegment(pref);
             int score = 0;
-            if (seg.Length > 0 && stem.StartsWith(seg, StringComparison.OrdinalIgnoreCase)) score += 100 + seg.Length;
+            if (StemMatches(stem, seg)) score += 100 + seg.Length;
             var pdir = PrefixDir(pref);
             if (pdir.Length > 0 && DirEndsWith(dir, pdir)) score += 30;
             if (score == 0) continue;
@@ -550,6 +550,23 @@ public static partial class GraphParser
             else if (score == best) hits.Add(node.Id);
         }
         return hits;
+    }
+
+    /// <summary>
+    /// ComfyUI 存图叫「前缀_00001_.png」。要求前缀后面紧跟数字，不能只是「以它开头」：
+    /// 文件被改名过（比如 animaMIX_00001_ 只跟 anima 共用一个开头）时不该算到 anima 那条流水线头上。
+    /// </summary>
+    private static bool StemMatches(string stem, string seg)
+    {
+        if (seg.Length == 0 || stem.Length <= seg.Length) return false;
+        if (!stem.StartsWith(seg, StringComparison.OrdinalIgnoreCase)) return false;
+
+        int i = seg.Length;
+        while (i < stem.Length && stem[i] == '_') i++;
+        int start = i;
+        while (i < stem.Length && char.IsAsciiDigit(stem[i])) i++;
+        if (i == start) return false;
+        return i == stem.Length || stem[i] == '_';
     }
 
     private static string LastSegment(string prefix)
@@ -592,30 +609,23 @@ public static partial class GraphParser
     }
 
     /// <summary>
-    /// 取参数的优先级：模型链最前，其次采样器，再次本分支其余节点，最后才是全图（老行为）。
+    /// 一条流水线的取值顺序：模型链最前，其次采样器，再次这条分支的其余节点。
+    /// 故意不补全图 —— 这条分支没有模型时就得是空，不能顺手从别的分支抓一个。
     /// </summary>
-    private static List<Node> PriorityOrder(Eval e, string? imagePath)
+    private static List<Node> BranchOrder(Eval e, string outputId)
     {
         var order = new List<Node>(64);
         var added = new HashSet<string>(StringComparer.Ordinal);
+        var branch = Ancestors(e, outputId);
 
-        var outputs = PickOutputs(e, imagePath);
-        if (outputs.Count > 0)
-        {
-            var branch = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var id in outputs) branch.UnionWith(Ancestors(e, id));
+        var samplers = new List<Node>();
+        foreach (var node in e.G.Values)
+            if (branch.Contains(node.Id) && LooksLikeSampler(node)) samplers.Add(node);
 
-            var samplers = new List<Node>();
-            foreach (var node in e.G.Values)
-                if (branch.Contains(node.Id) && LooksLikeSampler(node)) samplers.Add(node);
-
-            foreach (var s in samplers) AddModelChain(e, s, order, added);
-            foreach (var s in samplers) if (added.Add(s.Id)) order.Add(s);
-            foreach (var node in e.G.Values)
-                if (branch.Contains(node.Id) && added.Add(node.Id)) order.Add(node);
-        }
-
-        foreach (var node in e.G.Values) if (added.Add(node.Id)) order.Add(node);
+        foreach (var s in samplers) AddModelChain(e, s, order, added);
+        foreach (var s in samplers) if (added.Add(s.Id)) order.Add(s);
+        foreach (var node in e.G.Values)
+            if (branch.Contains(node.Id) && added.Add(node.Id)) order.Add(node);
         return order;
     }
 
@@ -645,37 +655,122 @@ public static partial class GraphParser
         }
     }
 
-    private static void FillTechnical(Eval e, ParseResult res, string? imagePath)
+    /// <summary>一条流水线的技术参数。宽高单独处理（空 latent 优先），不放进来。</summary>
+    private sealed record BranchTech(
+        string? Model, string? Sampler, string? Scheduler, int? Steps, double? Cfg, long? Seed, double? Denoise);
+
+    private static BranchTech TechOf(Eval e, List<Node> order)
     {
-        foreach (var node in PriorityOrder(e, imagePath))
+        string? model = null, sampler = null, scheduler = null;
+        int? steps = null;
+        double? cfg = null, denoise = null;
+        long? seed = null;
+
+        foreach (var node in order)
         {
             var ins = node.Inputs;
-            if (res.Model is null && !NotGenModelRe().IsMatch(node.ClassType))
+            if (model is null && !NotGenModelRe().IsMatch(node.ClassType))
             {
                 foreach (var k in ModelKeys)
                 {
                     if (ins.TryGetValue(k, out var v) && v is string s && s.Trim().Length > 0
                         && !s.Equals("none", StringComparison.OrdinalIgnoreCase))
                     {
-                        res.Model = s;
+                        model = s;
                         break;
                     }
                 }
             }
-            if (res.Sampler is null && ins.TryGetValue("sampler_name", out var sa) && sa is string sas && sas.Trim().Length > 0)
-                res.Sampler = sas;
-            if (res.Scheduler is null && ins.TryGetValue("scheduler", out var sh) && sh is string shs && shs.Trim().Length > 0)
-                res.Scheduler = shs;
+            if (sampler is null && ins.TryGetValue("sampler_name", out var sa) && sa is string sas && sas.Trim().Length > 0)
+                sampler = sas;
+            if (scheduler is null && ins.TryGetValue("scheduler", out var sh) && sh is string shs && shs.Trim().Length > 0)
+                scheduler = shs;
 
-            if (res.Steps is null && ins.TryGetValue("steps", out var st) && TryNum(e, st, 0, out var sv))
-                res.Steps = (int)Math.Round(sv);
-            if (res.Cfg is null && ins.TryGetValue("cfg", out var cf) && TryNum(e, cf, 0, out var cv)) res.Cfg = cv;
-            if (res.Seed is null)
+            if (steps is null && ins.TryGetValue("steps", out var st) && TryNum(e, st, 0, out var sv))
+                steps = (int)Math.Round(sv);
+            if (cfg is null && ins.TryGetValue("cfg", out var cf) && TryNum(e, cf, 0, out var cv)) cfg = cv;
+            if (seed is null)
             {
-                if (ins.TryGetValue("seed", out var sd) && TryNum(e, sd, 0, out var sdv)) res.Seed = (long)sdv;
-                else if (ins.TryGetValue("noise_seed", out var ns) && TryNum(e, ns, 0, out var nsv)) res.Seed = (long)nsv;
+                if (ins.TryGetValue("seed", out var sd) && TryNum(e, sd, 0, out var sdv)) seed = (long)sdv;
+                else if (ins.TryGetValue("noise_seed", out var ns) && TryNum(e, ns, 0, out var nsv)) seed = (long)nsv;
             }
-            if (res.Denoise is null && ins.TryGetValue("denoise", out var de) && TryNum(e, de, 0, out var dv)) res.Denoise = dv;
+            if (denoise is null && ins.TryGetValue("denoise", out var de) && TryNum(e, de, 0, out var dv)) denoise = dv;
+        }
+
+        return new BranchTech(model, sampler, scheduler, steps, cfg, seed, denoise);
+    }
+
+    /// <summary>几张图都指向同一条流水线时才敢写；有一条对不上就空着，不猜。</summary>
+    private static T? Agree<T>(List<T?> vals) where T : class
+    {
+        if (vals.Count == 0) return null;
+        var first = vals[0];
+        foreach (var v in vals) if (!Equals(v, first)) return null;
+        return first;
+    }
+
+    private static T? AgreeNum<T>(List<T?> vals) where T : struct
+    {
+        if (vals.Count == 0) return null;
+        var first = vals[0];
+        foreach (var v in vals) if (!Equals(v, first)) return null;
+        return first;
+    }
+
+    /// <summary>全图出现过的出图模型（不含放大模型）。</summary>
+    private static HashSet<string> DistinctModels(Eval e)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var node in e.G.Values)
+        {
+            if (NotGenModelRe().IsMatch(node.ClassType)) continue;
+            foreach (var k in ModelKeys)
+            {
+                if (node.Inputs.TryGetValue(k, out var v) && v is string s && s.Trim().Length > 0
+                    && !s.Equals("none", StringComparison.OrdinalIgnoreCase))
+                {
+                    set.Add(s);
+                    break;
+                }
+            }
+        }
+        return set;
+    }
+
+    private static void FillTechnical(Eval e, ParseResult res, string? imagePath)
+    {
+        // 名字只用来找「这个文件是哪个 SaveImage 写的」，模型本身永远来自那条流水线里的加载器。
+        // 认不出来（文件被改名、或同一个前缀挂了几条不同模型的流水线）就空着，绝不拿别的分支顶上。
+        var outputs = PickOutputs(e, imagePath);
+        if (outputs.Count > 0)
+        {
+            var techs = new List<BranchTech>(outputs.Count);
+            foreach (var id in outputs)
+                techs.Add(TechOf(e, BranchOrder(e, id)));
+
+            res.Model = Agree(techs.Select(t => t.Model).ToList());
+            res.Sampler = Agree(techs.Select(t => t.Sampler).ToList());
+            res.Scheduler = Agree(techs.Select(t => t.Scheduler).ToList());
+            res.Steps = AgreeNum(techs.Select(t => t.Steps).ToList());
+            res.Cfg = AgreeNum(techs.Select(t => t.Cfg).ToList());
+            res.Seed = AgreeNum(techs.Select(t => t.Seed).ToList());
+            res.Denoise = AgreeNum(techs.Select(t => t.Denoise).ToList());
+        }
+        else
+        {
+            // 文件名对不上任何保存点：整张图只有一种模型才敢认，参数沿用老的全图扫描
+            var models = DistinctModels(e);
+            if (models.Count == 1)
+            {
+                var t = TechOf(e, [.. e.G.Values]);
+                res.Model = t.Model;
+                res.Sampler = t.Sampler;
+                res.Scheduler = t.Scheduler;
+                res.Steps = t.Steps;
+                res.Cfg = t.Cfg;
+                res.Seed = t.Seed;
+                res.Denoise = t.Denoise;
+            }
         }
 
         // 宽高沿用全图顺序：空 latent 一般最先出现，别让缩放节点上的 width/height 抢了

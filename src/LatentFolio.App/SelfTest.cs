@@ -927,6 +927,68 @@ public static class SelfTest
             System.IO.Path.Combine(App.Services.LibraryRoot, "up", "up_00001_.png"));
         Check(upRes.Model is null, "放大模型的图不会把放大模型当成出图模型", upRes.Model ?? "null");
 
+        // 文件名只是「哪个保存点写的」的线索，不是模型名。改过名、或者同一个前缀挂在两条不同模型的
+        // 流水线上时，认不出就留空 —— 不能拿别的分支顶上。
+        const string twinJson = """
+        {
+          "1": {"class_type":"SaveImage","inputs":{"filename_prefix":"mix/x","images":["3",0]}},
+          "2": {"class_type":"SaveImage","inputs":{"filename_prefix":"mix/x","images":["13",0]}},
+          "3": {"class_type":"VAEDecode","inputs":{"samples":["4",0],"vae":["8",0]}},
+          "4": {"class_type":"KSampler","inputs":{"seed":1,"steps":20,"cfg":4.0,"sampler_name":"euler","model":["5",0],"positive":["6",0],"negative":["6",0]}},
+          "5": {"class_type":"UNETLoader","inputs":{"unet_name":"model-a.safetensors"}},
+          "6": {"class_type":"CLIPTextEncode","inputs":{"text":"1girl"}},
+          "8": {"class_type":"VAELoader","inputs":{"vae_name":"v.safetensors"}},
+          "13": {"class_type":"VAEDecode","inputs":{"samples":["14",0],"vae":["8",0]}},
+          "14": {"class_type":"KSampler","inputs":{"seed":1,"steps":20,"cfg":4.0,"sampler_name":"euler","model":["15",0],"positive":["6",0],"negative":["6",0]}},
+          "15": {"class_type":"UNETLoader","inputs":{"unet_name":"model-b.safetensors"}}
+        }
+        """;
+        var twinRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(twinJson, null,
+            System.IO.Path.Combine(App.Services.LibraryRoot, "mix", "x_00007_.png"));
+        Check(twinRes.Model is null, "同一个前缀挂着两条不同模型的流水线时留空（不猜）", twinRes.Model ?? "null");
+
+        var renamedRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(multiJson, null,
+            System.IO.Path.Combine(App.Services.LibraryRoot, "随便改的名字.png"));
+        Check(renamedRes.Model is null, "文件改名后不把别的分支的模型填进来", renamedRes.Model ?? "null");
+        Check(renamedRes.Steps is null && renamedRes.Cfg is null, "认不出分支时步数/CFG 也留空",
+            $"{renamedRes.Steps} / {renamedRes.Cfg}");
+
+        // 改名但整张图只有一种模型：可以直接认
+        const string singleJson = """
+        {
+          "1": {"class_type":"SaveImage","inputs":{"filename_prefix":"solo/s","images":["3",0]}},
+          "3": {"class_type":"VAEDecode","inputs":{"samples":["4",0],"vae":["8",0]}},
+          "4": {"class_type":"KSampler","inputs":{"seed":9,"steps":12,"cfg":3.5,"sampler_name":"dpmpp_2m","model":["5",0],"positive":["6",0],"negative":["6",0]}},
+          "5": {"class_type":"UNETLoader","inputs":{"unet_name":"only-model.safetensors"}},
+          "6": {"class_type":"CLIPTextEncode","inputs":{"text":"1girl"}},
+          "8": {"class_type":"VAELoader","inputs":{"vae_name":"v.safetensors"}}
+        }
+        """;
+        var singleRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(singleJson, null,
+            System.IO.Path.Combine(App.Services.LibraryRoot, "solo", "改过的名字.png"));
+        Check(singleRes.Model == "only-model.safetensors", "改名了但全图只有一种模型，照样认得",
+            singleRes.Model ?? "null");
+
+        // 前缀相同时不能靠「以它开头」蒙：anima 不该认领 animaMIX_00001_
+        const string prefixTrapJson = """
+        {
+          "1": {"class_type":"SaveImage","inputs":{"filename_prefix":"p/anima","images":["3",0]}},
+          "2": {"class_type":"SaveImage","inputs":{"filename_prefix":"p/other","images":["13",0]}},
+          "3": {"class_type":"VAEDecode","inputs":{"samples":["4",0],"vae":["8",0]}},
+          "4": {"class_type":"KSampler","inputs":{"model":["5",0],"positive":["6",0],"negative":["6",0]}},
+          "5": {"class_type":"UNETLoader","inputs":{"unet_name":"model-a.safetensors"}},
+          "6": {"class_type":"CLIPTextEncode","inputs":{"text":"1girl"}},
+          "8": {"class_type":"VAELoader","inputs":{"vae_name":"v.safetensors"}},
+          "13": {"class_type":"VAEDecode","inputs":{"samples":["14",0],"vae":["8",0]}},
+          "14": {"class_type":"KSampler","inputs":{"model":["15",0],"positive":["6",0],"negative":["6",0]}},
+          "15": {"class_type":"UNETLoader","inputs":{"unet_name":"model-b.safetensors"}}
+        }
+        """;
+        var trapRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(prefixTrapJson, null,
+            System.IO.Path.Combine(App.Services.LibraryRoot, "p", "animaMIX_00001_.png"));
+        Check(trapRes.Model is null, "前缀只是开头相同（anima vs animaMIX）不算同一个保存点",
+            trapRes.Model ?? "null");
+
         // ---------- 21. 左栏可拖宽 ----------
         double w0 = vm.LeftWidth;
         vm.SetLeftWidth(320);
