@@ -1086,10 +1086,16 @@ public sealed partial class AppVm : ObservableObject
     public void ShowFolder(FolderVm? f)
     {
         if (f is null) return;
+        ShowFolderPath(f.Path);
+    }
+
+    /// <summary>按路径直接切到某个目录（浏览历史回退用，不依赖左栏里还有这个节点）。</summary>
+    public void ShowFolderPath(string path)
+    {
         LeaveViewer();
         View = ViewKind.Folder;
-        ViewFolder = f.Path;
-        Title = f.Path.Length == 0 ? "根目录" : f.Path;
+        ViewFolder = path;
+        Title = path.Length == 0 ? "根目录" : path;
         RefreshGrid();
     }
 
@@ -1391,7 +1397,6 @@ public sealed partial class AppVm : ObservableObject
     {
         if (vm is null) return;
         Current = vm;
-        LastViewed = vm;
         ViewerOpen = true;
         ShowOriginal = false;
         VsrBadge = "";
@@ -1550,12 +1555,6 @@ public sealed partial class AppVm : ObservableObject
         if (WorkflowText.Length == 0 || WorkflowText.StartsWith("这张图没有")) return;
         CopyText(WorkflowText);
     }
-
-    /// <summary>
-    /// 最近一次在查看器里看过的图。退出查看器后 Current 会被右栏接手（可能是 null），
-    /// 光靠 Current 侧键「前进」就回不去了 —— 留一个记号。
-    /// </summary>
-    public ImageVm? LastViewed { get; private set; }
 
     [RelayCommand]
     private void CloseViewer()

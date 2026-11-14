@@ -356,14 +356,52 @@ public static class SelfTest
         await Pulse(window);
         Check(vm.Items.Count == all, "清筛选后恢复", $"{vm.Items.Count}");
 
-        // 鼠标侧键：后退要先清搜索（查看器关着的时候）
+        // 鼠标侧键：后退回到上一步（搜索之前的状态）
         if (window is MainWindow mwNav)
         {
             vm.SearchText = "zzzz";
+            mwNav.NavFlushForTest();
             await Pulse(window);
             mwNav.NavBackForTest();
             await Pulse(window);
             Check(vm.SearchText.Length == 0, "鼠标后退清掉搜索", $"“{vm.SearchText}”");
+        }
+
+        // 侧键要像浏览器那样来回：总览 → 图片 → 总览 → 统计 → 总览，再前进应当回到统计页，
+        // 而不是「刚才看的那张图」。以前 GoBack 是一条写死的链子，历史全靠猜。
+        if (window is MainWindow mwHist && vm.Items.Count > 3)
+        {
+            vm.ShowOverviewCommand.Execute(null);
+            mwHist.NavFlushForTest();
+            await Pulse(window);
+
+            vm.OpenViewerCommand.Execute(vm.Items[0]);
+            mwHist.NavFlushForTest();
+            await Pulse(window);
+            mwHist.NavBackForTest();
+            await Pulse(window);
+            Check(!vm.ViewerOpen, "历史：从图片返回总览");
+
+            mwHist.ShowStatsForTest();
+            mwHist.NavFlushForTest();
+            await Pulse(window);
+            Check(mwHist.StatsVisibleForTest, "历史：进入统计页");
+
+            mwHist.NavBackForTest();
+            await Pulse(window);
+            Check(mwHist.StatsVisibleForTest == false && !vm.ViewerOpen, "历史：从统计页返回总览");
+
+            mwHist.NavForwardForTest();
+            await Pulse(window);
+            Check(mwHist.StatsVisibleForTest, "历史：前进回到统计页（不是那张图）", $"统计 {mwHist.StatsVisibleForTest}");
+
+            mwHist.NavForwardForTest();
+            await Pulse(window);
+            Check(mwHist.StatsVisibleForTest, "历史：前进到底就停住，不会跳去别处");
+
+            mwHist.NavBackForTest();
+            await Pulse(window);
+            Check(!mwHist.StatsVisibleForTest, "历史：再返回又离开统计页");
         }
 
         // 侧键不只在图墙上有效：查看器里、菜单弹层上、独立窗口里都得有反应。

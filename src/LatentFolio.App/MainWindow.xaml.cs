@@ -39,6 +39,9 @@ public partial class MainWindow : Window
     internal System.Windows.Controls.ListBox ColListForTest => ColList;
     internal void NavBackForTest() => GoBack();
     internal void NavForwardForTest() => GoForward();
+    internal void NavFlushForTest() => FlushNav();
+    internal void ShowStatsForTest() => ShowStats();
+    internal bool StatsVisibleForTest => StatsPane.Visibility == Visibility.Visible;
     internal Panel StatsHostForTest => StatsHost;
     internal Border DetailHostForTest => LibraryDetailHost;
     internal Border DetailEdgeBandForTest => DetailEdgeBand;
@@ -118,20 +121,147 @@ public partial class MainWindow : Window
 
     private long _lastSideTick;
 
+    // ================= 浏览历史（侧键 back / forward） =================
+
+    /// <summary>
+    /// 一屏状态：页面 + 网格条件 + 查看器里那张。
+    /// 侧键要的是「浏览器那样」的来去，不是写死的「关查看器 → 清搜索 → 清筛选 → 回总览」——
+    /// 那条链子在「总览 → 图片 → 总览 → 统计 → 总览」这种来回里根本回不到上一页。
+    /// </summary>
+    private sealed record NavStep(
+        bool Stats, bool People, bool Viewer,
+        ViewKind View, long ColumnId, string Folder, string Person,
+        string Search, string FilterName, FilterNode? FilterTree, long ViewerId);
+
+    private readonly List<NavStep> _nav = [];
+    private int _navAt = -1;
+    private bool _navSuppress;
+    private System.Windows.Threading.DispatcherTimer? _navTimer;
+
+    private NavStep CaptureNav() => new(
+        Stats: StatsPane.Visibility == Visibility.Visible,
+        People: Vm.ShowPeoplePane,
+        Viewer: Vm.ViewerOpen,
+        View: Vm.View,
+        ColumnId: Vm.ViewColumnId,
+        Folder: Vm.ViewFolder,
+        Person: Vm.ViewPerson,
+        Search: Vm.SearchText,
+        FilterName: Vm.TempFilterName,
+        FilterTree: Vm.TempFilter,
+        ViewerId: Vm.ViewerOpen ? Vm.Current?.Id ?? 0 : 0);
+
+    /// <summary>状态变了：等它稳一下再记一笔（连续打字只算一次）。</summary>
+    private void NavTouched()
+    {
+        if (_navSuppress) return;
+        if (_navTimer is null)
+        {
+            _navTimer = new System.Windows.Threading.DispatcherTimer(
+                System.Windows.Threading.DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
+            _navTimer.Tick += (_, _) => FlushNav();
+        }
+        _navTimer.Stop();
+        _navTimer.Start();
+    }
+
+    /// <summary>把还没记下的当前状态记进历史（测试里也用它把时序钉住）。</summary>
+    internal void FlushNav()
+    {
+        _navTimer?.Stop();
+        if (_navSuppress) return;
+        PushNav();
+    }
+
+    private void PushNav()
+    {
+        var step = CaptureNav();
+        if (_navAt >= 0 && _navAt < _nav.Count && _nav[_navAt].Equals(step)) return;
+
+        if (_navAt >= 0 && _navAt + 1 < _nav.Count)
+            _nav.RemoveRange(_navAt + 1, _nav.Count - _navAt - 1);
+
+        _nav.Add(step);
+        if (_nav.Count > 150) _nav.RemoveAt(0);
+        _navAt = _nav.Count - 1;
+    }
+
+    private void OnNavPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(AppVm.View) or nameof(AppVm.ViewColumnId) or nameof(AppVm.ViewFolder)
+            or nameof(AppVm.ViewPerson) or nameof(AppVm.SearchText) or nameof(AppVm.TempFilter)
+            or nameof(AppVm.TempFilterName) or nameof(AppVm.ViewerOpen) or nameof(AppVm.Current)
+            or nameof(AppVm.ShowPeoplePane))
+            NavTouched();
+    }
+
     private void GoBack()
     {
-        if (Vm.ViewerOpen) { OnCloseViewer(this, new RoutedEventArgs()); return; }
-        if (Vm.SearchText.Length > 0) { Vm.SearchText = ""; return; }
-        if (Vm.HasTempFilter) { Vm.SetTempFilter(null); return; }
-        OnOverviewClick(this, new RoutedEventArgs());
+        FlushNav();
+        if (_navAt <= 0) return;
+        var target = _nav[_navAt - 1];
+        ApplyNav(target);
+        _navAt--;
+        _navTimer?.Stop();
     }
 
     private void GoForward()
     {
-        if (Vm.ViewerOpen) return;
-        // 刚从查看器退出来时 Current 可能已被右栏接手（甚至是 null），回到「刚才看的那张」
-        var target = Vm.LastViewed is { } last && Vm.Items.Contains(last) ? last : Vm.Current;
-        if (target is not null) Vm.OpenViewerCommand.Execute(target);
+        FlushNav();
+        if (_navAt + 1 >= _nav.Count) return;
+        var target = _nav[_navAt + 1];
+        ApplyNav(target);
+        _navAt++;
+        _navTimer?.Stop();
+    }
+
+    private void ApplyNav(NavStep s)
+    {
+        _navSuppress = true;
+        try
+        {
+            if (s.People)
+            {
+                Vm.ShowPeopleGridCommand.Execute(null);
+            }
+            else
+            {
+                switch (s.View)
+                {
+                    case ViewKind.Column when Vm.Columns.FirstOrDefault(c => c.Id == s.ColumnId) is { } col:
+                        Vm.ShowColumnCommand.Execute(col);
+                        break;
+                    case ViewKind.Folder:
+                        Vm.ShowFolderPath(s.Folder);
+                        break;
+                    case ViewKind.Person:
+                        Vm.ShowPersonByTag(s.Person);
+                        break;
+                    case ViewKind.Deleted:
+                        Vm.ShowDeletedCommand.Execute(null);
+                        break;
+                    default:
+                        Vm.ShowOverviewCommand.Execute(null);
+                        break;
+                }
+            }
+
+            if (Vm.SearchText != s.Search) Vm.SearchText = s.Search;
+            if (!ReferenceEquals(Vm.TempFilter, s.FilterTree) || Vm.TempFilterName != s.FilterName)
+                Vm.SetTempFilter(s.FilterTree, s.FilterName);
+
+            StatsPane.Visibility = s.Stats ? Visibility.Visible : Visibility.Collapsed;
+            if (s.Stats) StatsBuilder.Build(StatsHost, Vm);
+
+            if (s.Viewer && Vm.VmById.TryGetValue(s.ViewerId, out var img))
+                Vm.OpenViewerCommand.Execute(img);
+            else if (Vm.ViewerOpen)
+                Vm.CloseViewerCommand.Execute(null);
+        }
+        finally
+        {
+            _navSuppress = false;
+        }
     }
 
     private void FitToWorkArea()
@@ -367,6 +497,11 @@ public partial class MainWindow : Window
             else Vm.NextImageCommand.Execute(null);
         };
         await Vm.InitAsync();
+        // 浏览历史的起点；从这里开始，页面/搜索/筛选/查看器每变一次就记一笔
+        _nav.Clear();
+        _navAt = -1;
+        Vm.PropertyChanged += OnNavPropertyChanged;
+        PushNav();
         SyncSizeButtons();
         // 关窗口收到托盘（诊断/自检里不这么干，否则收尾的 Close() 会把进程留在托盘里）
         CloseToTray = !App.SuppressTray && App.Services.Store.GetSetting("close_to_tray") != "0";
@@ -1430,9 +1565,14 @@ public partial class MainWindow : Window
         Vm.ClosePeopleGridCommand.Execute(null);
         StatsPane.Visibility = Visibility.Visible;
         StatsBuilder.Build(StatsHost, Vm);
+        NavTouched();
     }
 
     private void OnStatsClick(object sender, RoutedEventArgs e) => ShowStats();
 
-    private void OnCloseStats(object sender, RoutedEventArgs e) => StatsPane.Visibility = Visibility.Collapsed;
+    private void OnCloseStats(object sender, RoutedEventArgs e)
+    {
+        StatsPane.Visibility = Visibility.Collapsed;
+        NavTouched();
+    }
 }
