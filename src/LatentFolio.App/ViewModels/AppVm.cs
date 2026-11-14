@@ -546,7 +546,7 @@ public sealed partial class AppVm : ObservableObject
     public const int ParserVersion = 6;
 
     /// <summary>角色/画师识别逻辑改了就 +1，老库下次启动会整库重打标并重建候选池。</summary>
-    public const int RetagVersion = 4;
+    public const int RetagVersion = 5;
 
     private async Task ScanAsyncCore(bool initial)
     {

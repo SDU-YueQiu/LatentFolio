@@ -472,6 +472,27 @@ public static class SelfTest
         }
         else Ok("候选池", "没有带建议的候选，跳过确认流程");
 
+        // ---------- 13b. 词表 ----------
+        var vocab = LatentFolio.Core.Text.Vocabulary.Instance;
+        vocab.WaitReady(TimeSpan.FromSeconds(30));
+        Check(vocab.CharTags.Count > 230_000, "角色词表加载", $"{vocab.CharTags.Count:N0} 条");
+        Check(vocab.General.Count > 10_000, "通用词表够厚（不再只有几百条手写词）",
+            $"{vocab.General.Count:N0} 条");
+        Check(vocab.Copyright.Count > 10_000, "版权作品表加载", $"{vocab.Copyright.Count:N0} 条");
+
+        var (vTag, vCand) = vocab.MatchCharacter("circe_(first_ascension)_(fate)");        Check(vTag == "circe_(fate)", "角色_(形态)_(作品) 能补回作品那一段",
+            $"{vTag ?? "(空)"} / {vCand ?? "-"}");
+        var (cTag, cCand) = vocab.MatchCharacter("honkai_(series)");
+        Check(cTag is null && cCand is null, "作品标签不会被当成角色", $"{cTag ?? "-"} / {cCand ?? "-"}");
+        var (gTag, gCand) = vocab.MatchCharacter("white_dress");
+        Check(gTag is null && gCand is null, "通用词不会被当成角色/候选", $"{gTag ?? "-"} / {gCand ?? "-"}");
+        var (nTag, _) = vocab.MatchCharacter("shorekeeper_(wuthering_waves)");
+        Check(nTag == "shorekeeper_(wuthering_waves)", "新角色补进词表了", $"{nTag ?? "(空)"}");
+
+        var (artChars, artNames) = vocab.Tag("artist:[yoneyama mai|lam \\(ramdayo\\)], 1girl");
+        Check(artNames.Contains("yoneyama_mai") && artNames.Contains("lam_(ramdayo)"),
+            "artist:[a|b] 能拆成多个画师", string.Join(" | ", artNames) + " / " + string.Join("|", artChars));
+
         // ---------- 14. 我的栏：改名 / 标记色 / 复制 ----------
         if (vm.Columns.Count > 0)
         {

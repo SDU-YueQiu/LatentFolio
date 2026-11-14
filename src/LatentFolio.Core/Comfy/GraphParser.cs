@@ -589,11 +589,51 @@ public static partial class GraphParser
         var t = BreakRe().Replace(text, ",");
         foreach (var raw in SplitRe().Split(t))
         {
-            var (tag, art) = NormalizeTag(raw);
-            if (tag.Length is > 0 and <= 90) tags.Add(tag);
-            if (!string.IsNullOrEmpty(art) && art.Length is > 1 and <= 90) artists.Add(art);
+            foreach (var piece in ExpandArtistWrapper(raw))
+            {
+                var (tag, art) = NormalizeTag(piece);
+                if (tag.Length is > 0 and <= 90) tags.Add(tag);
+                if (!string.IsNullOrEmpty(art) && art.Length is > 1 and <= 90) artists.Add(art);
+            }
         }
         return (tags, artists);
+    }
+
+    /// <summary>
+    /// 有的工作流把画师写成 `artist:[a|b|c]` 或 `[artist:name]`（NovelAI 那套括号语法）。
+    /// 整段当一个 token 的话，方括号和竖线会把名字糊在一起，一个画师都认不出来。
+    /// </summary>
+    private static IEnumerable<string> ExpandArtistWrapper(string raw)
+    {
+        var s = raw.Trim();
+        int colon = s.IndexOf(':');
+        if (colon <= 0)
+        {
+            yield return raw;
+            yield break;
+        }
+
+        var head = s[..colon].Trim().TrimStart('[').Trim();
+        if (!head.Equals("artist", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return raw;
+            yield break;
+        }
+
+        var body = s[(colon + 1)..].Trim();
+        body = body.TrimEnd(']').Trim();
+        if (body.StartsWith('[')) body = body[1..].Trim();
+        if (body.Length == 0)
+        {
+            yield return raw;
+            yield break;
+        }
+
+        foreach (var part in body.Split('|'))
+        {
+            var p = part.Trim();
+            if (p.Length > 0) yield return p;
+        }
     }
 
     /// <summary>归一化后的检索文本（用空格分隔 token）。</summary>

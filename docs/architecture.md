@@ -83,6 +83,40 @@
 裸名（`solo`、`blue_eyes` 这种）进**候选池**，标了建议的正式 tag，可以逐条或批量确认/忽略，
 确认后写进本地别名表，以后同一写法自动命中。「重新识别全库」会重打一遍标，不用重扫文件。
 
+## 词表
+
+`Assets/` 下四张表，加载在 `Core/Text/Vocabulary.cs`（后台线程，7 MB 文本约 30 ms）：
+
+| 文件 | 内容 | 规模 |
+| --- | --- | --- |
+| `characters.tsv` | `tag<TAB>名字` | 233,236 |
+| `artists.txt` | 每行一个画师 tag | 387,187 |
+| `general_tags.txt` | 通用 tag（`white_dress` / `smile` / `solo`） | 19,304 |
+| `copyright_tags.txt` | 作品 tag（`honkai:_star_rail` / `fate`） | 25,979 |
+
+`tools/build-vocab.py` 从 `_data/` 重建这四张表（`characters.csv` / `artists.csv` 是旧图库逆向导出的
+Danbooru 全量，`danbooru_tags.csv` 是 DominikDoom/a1111-sd-webui-tagcomplete 的快照）。
+**safebooru / danbooru 的 API 直连被 Cloudflare 挡了**（`Just a moment...`，脚本拿不到 403 之外的东西），
+所以走的是 GitHub 上维护的快照。
+
+三个规则，都是踩过坑的：
+
+1. **通用词先挡**：角色表里有一堆「裸名也像普通词」的条目（`emerald` / `coral` / `plum` / `fedora` /
+   `jungle` / `train`）。通用词表只有 530 条手写词时，库里 40 条待确认候选有 27 条是这种噪声；
+   扩到 1.9 万条后候选池降到 10 条，剩下的确实是「真有同名角色」的（`jinx`、`tinker_bell`、`joy`）。
+2. **`角色_(形态)_(作品)` 三段式**：`firefly_(spring_missive)_(honkai:_star_rail)` 光靠剥后缀
+   只能剥到 `firefly`，认不出来。拿版权表认出最后一段是作品，把作品接回去就是
+   `firefly_(honkai:_star_rail)`。实测 122 个 token / 98 张图靠这条才命中。
+3. **作品标签不是角色**：`kirby_(series)` 剥后缀会剥成 `kirby`，于是「星之卡比这个作品」
+   被当成角色 Kirby。版权表命中就直接判空。
+
+画师还有个格式坑：有的工作流写 `artist:[a|b|c]`（NovelAI 语法），方括号和竖线会把名字糊成一坨，
+一个画师都认不出来。`GraphParser.ExpandArtistWrapper` 把它拆成多个名字——库里 114 张这样的图，
+现在 111 张能认出画师（每张 5–8 位）。
+
+整库重打标会**重建**待确认候选（`ImageStore.PruneCandidates`）：只清 `state=0`，
+用户确认/忽略过的记录一条不动。不然词表变准了，旧噪声还会赖在池子里。
+
 ## 「我的栏」是布尔单元，不是筛选开关
 
 每一栏有自己的名字、条件树、命中集合和缓存计数，可以有任意多个。

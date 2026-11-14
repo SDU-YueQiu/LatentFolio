@@ -403,6 +403,39 @@ public sealed class ImageStore(Db db)
         c.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// 整库重打标之后清掉「这一轮根本没人再提」的待确认候选。
+    /// 不清理的话词表变准了，旧的噪声还挂在候选池里（实测：通用词表从 530 条扩到 1.9 万条后，
+    /// 40 条待确认里 27 条已经是普通词了，却还赖着）。只有 state=0（待确认）会被清，
+    /// 用户「已确认 / 已忽略」的记录一条都不动。
+    /// </summary>
+    public int PruneCandidates(IEnumerable<string> keep)
+    {
+        var alive = new HashSet<string>(keep, StringComparer.Ordinal);
+        var dead = new List<string>();
+        using (var q = db.Cmd("SELECT key FROM cand WHERE state=0"))
+        using (var r = q.ExecuteReader())
+        {
+            while (r.Read())
+            {
+                var k = r.GetString(0);
+                if (!alive.Contains(k)) dead.Add(k);
+            }
+        }
+        if (dead.Count == 0) return 0;
+
+        using var tx = db.NewTx();
+        using var d = db.Cmd("DELETE FROM cand WHERE key=$k");
+        var pk = d.Parameters.Add("$k", Microsoft.Data.Sqlite.SqliteType.Text);
+        foreach (var k in dead)
+        {
+            pk.Value = k;
+            d.ExecuteNonQuery();
+        }
+        tx.Commit();
+        return dead.Count;
+    }
+
     public int CandidateCount(int state = 0)
         => ScalarInt("SELECT COUNT(*) FROM cand WHERE state=$s", state);
 

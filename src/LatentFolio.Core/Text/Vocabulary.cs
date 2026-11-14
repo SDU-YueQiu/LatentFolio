@@ -3,7 +3,7 @@ namespace LatentFolio.Core.Text;
 using LatentFolio.Core.Comfy;
 
 /// <summary>角色 / 画师词表。从 Assets 里的紧凑词表加载，后台线程预热。</summary>
-public sealed class Vocabulary
+public sealed partial class Vocabulary
 {
     public HashSet<string> CharTags { get; private set; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> CharByName { get; private set; } = new(StringComparer.Ordinal);
@@ -21,6 +21,13 @@ public sealed class Vocabulary
     /// <summary>算得上是「角色」但不是人的条目（怪物、机甲、宝可梦），不往人物栏里塞。</summary>
     public HashSet<string> NotPeople { get; private set; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> ZhNames { get; private set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 作品（Danbooru 的 copyright）标签。作用有二：
+    /// 一是 honkai_(series) 这种 token 明显不是角色，别往候选池里塞；
+    /// 二是认「角色_(形态)_(作品)」三段式时，靠它知道哪一段才是作品。
+    /// </summary>
+    public HashSet<string> Copyright { get; private set; } = new(StringComparer.Ordinal);
 
     public bool Ready { get; private set; }
     public string? Error { get; private set; }
@@ -71,6 +78,7 @@ public sealed class Vocabulary
                     // 这两张表是可选的：老的资源目录里没有也不该让整份词表加载失败
                     General = ReadOptional(Path.Combine(assetsDir, "general_tags.txt"));
                     NotPeople = ReadOptional(Path.Combine(assetsDir, "not_people.txt"));
+                    Copyright = ReadOptional(Path.Combine(assetsDir, "copyright_tags.txt"));
 
                     var zh = ReadPairs(Path.Combine(assetsDir, "zh_names.tsv"));
                     var zd = new Dictionary<string, string>(zh.Count, StringComparer.Ordinal);
@@ -110,6 +118,9 @@ public sealed class Vocabulary
         // 不挡的话整库的 "solo" 会被认成《龙战士》的 Solo（用户实测就是这么被污染的）。
         if (General.Count > 0 && !CharTags.Contains(token) && General.Contains(token)) return (null, null);
 
+        // 作品标签（honkai_(series) / fate_(series)）：根本不是角色
+        if (Copyright.Count > 0 && Copyright.Contains(token)) return (null, null);
+
         if (Alias.TryGetValue(token, out var aliased)) return (aliased, null);
         if (CharTags.Contains(token)) return (token, null);
 
@@ -133,12 +144,48 @@ public sealed class Vocabulary
             t = t2;
         }
 
+        // 「角色_(形态)_(作品)」：circe_(first_ascension)_(fate) 这种三段式，
+        // 去掉形态、把作品那段接回来就是 circe_(fate)。哪一段是作品靠版权表认。
+        // 注意要用没被上面剥过的原文，不然括号已经没了。
+        if (token.Count(c => c == '(') >= 2 && TryVariant(spacey ?? token) is { } variant)
+            return (variant, null);
+
         if (!token.Contains('(') && !Ignored.Contains(token))
         {
             var baseName = BaseName(t);
             if (CharByName.TryGetValue(baseName, out var sug)) return (null, sug);
         }
         return (null, null);
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"_\(([^()]*)\)")]
+    private static partial System.Text.RegularExpressions.Regex GroupRe();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(_\([^()]*\))+$")]
+    private static partial System.Text.RegularExpressions.Regex TrailingGroupRe();
+
+    /// <summary>角色_(形态)_(作品) → 角色_(作品)。作品那一段优先，其次从后往前试。</summary>
+    private string? TryVariant(string token)
+    {
+        var groups = new List<string>();
+        foreach (System.Text.RegularExpressions.Match m in GroupRe().Matches(token))
+            groups.Add(m.Groups[1].Value);
+        if (groups.Count < 2) return null;
+
+        var baseName = TrailingGroupRe().Replace(token, "");
+        if (baseName.Length == 0) return null;
+
+        // 版权表里认得的那段最可能是作品；没有的话从后往前（作品一般写在最后）
+        var ordered = groups.Select((g, i) => (g, i))
+            .OrderBy(x => Copyright.Contains(x.g) ? 0 : 1)
+            .ThenByDescending(x => x.i)
+            .Select(x => x.g);
+        foreach (var g in ordered)
+        {
+            var cand = $"{baseName}_({g})";
+            if (CharTags.Contains(cand)) return cand;
+        }
+        return null;
     }
 
     private static List<string> ReadTags(string path)

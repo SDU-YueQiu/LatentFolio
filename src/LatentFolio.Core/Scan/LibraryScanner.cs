@@ -295,6 +295,9 @@ public sealed class LibraryScanner(Db.Db db, ImageStore store, ThumbCache thumbs
             tx.Commit();
         }
         if (cand.Count > 0) store.MergeCandidates(cand.Select(kv => (kv.Key, kv.Value.Suggest, kv.Value.Hits)));
+        // 整库重打标 = 这一轮的候选就是全部；没再出现的待确认项直接清掉，
+        // 否则词表变准以后旧的噪声会一直挂在候选池里
+        if (!onlyMissing) store.PruneCandidates(cand.Keys);
         return (n, cand.Count);
     }
 
