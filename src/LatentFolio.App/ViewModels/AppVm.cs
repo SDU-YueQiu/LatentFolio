@@ -543,7 +543,7 @@ public sealed partial class AppVm : ObservableObject
     private async Task ScanAsync(bool initial) => await ScanAsyncCore(initial);
 
     /// <summary>解析器改了就 +1，老库下次启动会强制重解析一遍元数据。</summary>
-    public const int ParserVersion = 6;
+    public const int ParserVersion = 7;
 
     /// <summary>角色/画师识别逻辑改了就 +1，老库下次启动会整库重打标并重建候选池。</summary>
     public const int RetagVersion = 5;

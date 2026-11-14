@@ -44,12 +44,16 @@
   `Efficient Loader` 的字符串 widget
 - 通配符（`Wildcards`）和随机分支（`easy anythingIndexSwitch`）最后选中哪一条只在运行时才知道，
   图里推不出来。`ShowText|pysssss` 会把那次运行实际显示的整段文本写进 `text_0`，
-  所以链路上遇到带快照的节点就直接采用它 —— 不然只能拼出半截（实测：一条 wildcard 工作流的
+  所以**子树里有随机源时**才采用它 —— 不然只能拼出半截（实测：一条 wildcard 工作流的
   正向词从 80 字符修成完整的 208 字符）
-- 但 `prompt` 段里的 `text_0` 是**排队那一刻**控件上的字，也就是上一张的取值：通配符执行时才抽，
-  抽完才写回控件。所以同一个节点的文字要以 `workflow` 段（保存时控件的样子）为准，
-  `prompt` 段只用来兜底（实测 `Krea2-turbo_00047_`：`prompt` 写着上一轮的 `arched bangs, trilby,
-  harness`，画出来的却是 `workflow` 里那身 `silvery white, teal, behive hairdo, kimono skirt`）
+- 但 `text_0` 是**控件上现在显示的字**，不一定是这次运行喂进去的：ShowText 只是挂在链路上的显示节点时，
+  它的值可能是很久以前留下的。所以图**能算出确定结果**（字面量拼接）时以图为准，只有子树里有
+  通配符/随机分支（`ShowText` 才有可能被刷新、图才算不出来）才信快照。
+  实测反例：`ComfyUI_02052_` 和 `02054_` 两张图的 ShowText 都写着同一段 `ligne claire…`，
+  而 `02054` 真正喂给 `CLIPTextEncode` 的是 `node 94` 里那串 `hanfu / silver wolf`
+- `workflow` 段里的控件值比 `prompt` 段新（通配符抽完写回控件，保存时 workflow 段已更新），
+  两边都在、又必须用快照时以 `workflow` 为准（实测 `Krea2-turbo_00047_`：`prompt` 写着上一轮的
+  `arched bangs, trilby, harness`，画出来的却是 `workflow` 里那身 `silvery white, teal, kimono skirt`）
 - 解析器逻辑改了要 `ParserVersion++`：老库下次启动会强制重解析一遍元数据（不是只重打标）
 - 都没有时退化为「全图找文本」，再按节点类型猜正负
 - 正面里内嵌 `Negative prompt:` 分隔符时自动切开

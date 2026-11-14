@@ -776,23 +776,39 @@ public static class SelfTest
         var c4Res = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(c4Json);
         Check(c4Res.Positive == "1,2,3,4,", "四段拼接（text_c/text_d）也接上", c4Res.Positive);
 
-        // prompt 段里 ShowText 的 text_0 是上一轮的文字，workflow 段才是这次画的。两边都在时以 workflow 为准。
-        const string staleJson = """
+        // ShowText 的 text_0 是「控件上现在显示的字」，不一定是这次运行喂进去的：
+        // 图能算出来（字面量拼接）就以图为准，实测 02052/02054 两张图都写着同一段旧文字。
+        const string literalJson = """
         {
           "1": {"class_type":"KSampler","inputs":{"positive":["2",0],"negative":["5",0]}},
           "2": {"class_type":"CLIPTextEncode","inputs":{"text":["3",0]}},
           "3": {"class_type":"StringConcatenate","inputs":{"string_a":"a,","string_b":"b,","delimiter":","}},
-          "4": {"class_type":"ShowText|pysssss","inputs":{"text_0":"上一轮的文字","text":["3",0]}},
+          "4": {"class_type":"ShowText|pysssss","inputs":{"text_0":"上一轮留下的字","text":["3",0]}},
+          "5": {"class_type":"CLIPTextEncode","inputs":{"text":"worst quality"}}
+        }
+        """;
+        var literalRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(literalJson);
+        Check(literalRes.Positive == "a,,b,", "字面量拼接以图为准（不采信 ShowText 的旧值）",
+            literalRes.Positive);
+
+        // 有随机源时才必须信 ShowText：这时图算不出确定结果，workflow 段又比 prompt 段新
+        const string randJson = """
+        {
+          "1": {"class_type":"KSampler","inputs":{"positive":["2",0],"negative":["5",0]}},
+          "2": {"class_type":"CLIPTextEncode","inputs":{"text":["3",0]}},
+          "3": {"class_type":"StringConcatenate","inputs":{"string_a":["6",0],"string_b":"b,","delimiter":","}},
+          "6": {"class_type":"Wildcards","inputs":{"textfile":"x.txt"}},
+          "4": {"class_type":"ShowText|pysssss","inputs":{"text_0":"旧的一轮,b,","text":["3",0]}},
           "5": {"class_type":"CLIPTextEncode","inputs":{"text":"worst quality"}}
         }
         """;
         const string freshWorkflow = """
-        { "nodes": [ { "id": 4, "type": "ShowText|pysssss", "widgets_values": ["这一轮的文字"] } ], "links": [] }
+        { "nodes": [ { "id": 4, "type": "ShowText|pysssss", "widgets_values": ["这一轮,b,"] } ], "links": [] }
         """;
-        var staleOnly = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(staleJson);
-        Check(staleOnly.Positive == "上一轮的文字", "只有 prompt 段时退回 text_0", staleOnly.Positive);
-        var freshRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(staleJson, freshWorkflow);
-        Check(freshRes.Positive == "这一轮的文字", "有 workflow 段时以它为准", freshRes.Positive);
+        var randOnly = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(randJson);
+        Check(randOnly.Positive == "旧的一轮,b,", "有通配符时退回 ShowText 的值", randOnly.Positive);
+        var freshRes = LatentFolio.Core.Comfy.GraphParser.ParseWorkflowApiJson(randJson, freshWorkflow);
+        Check(freshRes.Positive == "这一轮,b,", "有 workflow 段时以它为准", freshRes.Positive);
 
         // ---------- 21. 左栏可拖宽 ----------
         double w0 = vm.LeftWidth;

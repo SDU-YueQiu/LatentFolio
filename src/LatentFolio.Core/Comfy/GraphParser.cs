@@ -134,6 +134,9 @@ public static partial class GraphParser
 
         /// <summary>节点 id → ShowText 在那次运行里实际显示的文字。</summary>
         public Dictionary<string, string> Snapshot { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>节点 id → 这棵子树里有没有随机源（通配符 / 随机分支）。记忆化，免得重复走图。</summary>
+        public Dictionary<string, bool> RandomMemo { get; } = new(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -249,14 +252,46 @@ public static partial class GraphParser
         return ResolveNodeText(e, node, depth + 1, seen);
     }
 
+    [GeneratedRegex("wildcard|indexswitch|random|shuffle|choice|pick", RegexOptions.IgnoreCase)]
+    private static partial Regex RandomNodeRe();
+
+    /// <summary>这棵子树里有没有随机源（通配符、随机分支）。有的话图算不出确定结果，只能信 ShowText。</summary>
+    private static bool HasRandom(Eval e, string nodeId, int depth = 0)
+    {
+        if (e.RandomMemo.TryGetValue(nodeId, out var memo)) return memo;
+        if (depth > 12) return false;
+        if (!e.G.TryGetValue(nodeId, out var node)) return false;
+
+        if (RandomNodeRe().IsMatch(node.ClassType) && !node.ClassType.Contains("ShowText", StringComparison.OrdinalIgnoreCase))
+        {
+            e.RandomMemo[nodeId] = true;
+            return true;
+        }
+
+        e.RandomMemo[nodeId] = false;   // 先按没有记，防环
+        foreach (var (_, v) in node.Inputs)
+        {
+            if (v is not Link l) continue;
+            if (HasRandom(e, l.NodeId, depth + 1))
+            {
+                e.RandomMemo[nodeId] = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static string ResolveNodeText(Eval e, Node node, int depth, HashSet<string> seen)
     {
         var ins = node.Inputs;
 
-        // 这个节点有一次运行的实际输出（ShowText 记的），比从图里推的完整：
-        // 通配符 / 随机分支推不出来，硬推会得到断断续续的半截文本
-        if (e.Snapshot.TryGetValue(node.Id, out var snap) && snap.Length > 0)
-            return snap;
+        // ShowText 自己被连到编码器时，先算它连着的上游：text_0 只是控件上显示的字，可能过期
+        if (node.ClassType.Contains("ShowText", StringComparison.OrdinalIgnoreCase)
+            && ins.TryGetValue("text", out var tv) && tv is Link tl)
+        {
+            var upstream = ResolveValue(e, tl, depth, [.. seen]);
+            if (!string.IsNullOrWhiteSpace(upstream)) return upstream;
+        }
 
         bool isConcat = ConcatRe().IsMatch(node.ClassType)
                         || ins.ContainsKey("string_a") || ins.ContainsKey("string_b");
@@ -287,6 +322,17 @@ public static partial class GraphParser
                     break;
                 }
             }
+        }
+
+        // ShowText 记下的「这次运行实际显示的文字」只在图算不出确定结果时才有用：
+        // 通配符 / 随机分支选哪条只有运行时知道。图能算出来的（一段字面量拼接）就以图为准——
+        // 那个控件值经常是上一次运行留下的，实测同一套工作流里 02052 和 02054 两张图
+        // 的 ShowText 都写着同一段旧文字（ligne claire…），而 02054 真正喂给编码器的
+        // 是 node 94 里那串 hanfu / silver wolf。
+        if (e.Snapshot.TryGetValue(node.Id, out var snap) && snap.Length > 0)
+        {
+            if (HasRandom(e, node.Id)) return snap;
+            if (normal.Length == 0) return snap;
         }
 
         return normal;
