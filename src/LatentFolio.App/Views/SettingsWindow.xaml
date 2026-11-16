@@ -107,7 +107,7 @@
         <TextBlock Text="设置" Style="{StaticResource T.Page}" />
         <Border Grid.Row="1" Style="{StaticResource HLine}" Margin="0,12,0,0" />
 
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,14,0,0">
+        <ScrollViewer x:Name="Body" Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,14,0,0">
             <StackPanel>
                 <!-- 图库与导入 -->
                 <Border Style="{StaticResource P.Set.Card}">

@@ -1625,24 +1625,30 @@ public sealed partial class AppVm : ObservableObject
     /// <summary>
     /// 把图片本身放进剪贴板。同时给 CF_DIB（位图）和 PNG 两种格式：
     /// 聊天框、Office、画图吃位图，浏览器和一些工具优先读 PNG（无损、带透明）。
+    /// 查看器里正看着 RTX VSR 结果时，复制的是**屏幕上那张**，不是磁盘上的原图。
     /// </summary>
     public void CopyImage(ImageVm? vm)
     {
         if (vm is null) return;
+        bool processed = IsVsrResultShown(vm);
         var data = BuildImageData(vm);
         if (data is null)
         {
             FlashStatus("这张图读不出来，没法复制");
             return;
         }
-        if (SetClipboard(data)) FlashStatus("已复制图片");
+        if (SetClipboard(data)) FlashStatus(processed ? "已复制 VSR 处理后的图" : "已复制图片");
         else FlashStatus("复制失败：剪贴板被别的程序占着");
     }
 
+    /// <summary>查看器里此刻显示的是不是这张图的 VSR 结果（而不是原图）。</summary>
+    public bool IsVsrResultShown(ImageVm? vm) =>
+        vm is not null && ViewerOpen && !ShowOriginal && Current?.Id == vm.Id && ViewerImage is not null;
+
     /// <summary>自检用：只拼数据，不动剪贴板（免得把用户手里的内容顶掉）。</summary>
-    public DataObject? BuildImageData(ImageVm vm)
+    public DataObject? BuildImageData(ImageVm vm, System.Windows.Media.Imaging.BitmapSource? shown = null)
     {
-        var src = ThumbService.DecodeFile(vm.Item.Path);
+        var src = shown ?? ShownBitmap(vm) ?? ThumbService.DecodeFile(vm.Item.Path);
         if (src is null) return null;
         if (src.CanFreeze && !src.IsFrozen) src.Freeze();
 
@@ -1660,6 +1666,13 @@ public sealed partial class AppVm : ObservableObject
         }
         catch { }
         return data;
+    }
+
+    /// <summary>查看器里显示中的那张位图（原图时返回 null，让调用方去读文件）。</summary>
+    private System.Windows.Media.Imaging.BitmapSource? ShownBitmap(ImageVm vm)
+    {
+        if (!IsVsrResultShown(vm)) return null;
+        return ViewerImage?.Source as System.Windows.Media.Imaging.BitmapSource;
     }
 
     /// <summary>复制文件（资源管理器里能直接粘贴）。</summary>

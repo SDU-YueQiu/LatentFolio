@@ -614,6 +614,7 @@ public partial class MainWindow : Window
         if (args.Contains("--show-settings"))
         {
             var win = new SettingsWindow(Vm) { Owner = this };
+            if (args.Contains("--scroll-bottom")) win.Loaded += (_, _) => win.ScrollToBottom();
             win.ShowDialog();
         }
     }
@@ -1410,9 +1411,12 @@ public partial class MainWindow : Window
     /// <summary>Ctrl+C / Ctrl+Shift+C：选中一张复制图片本身，多张（或按了 Shift）复制文件。</summary>
     internal void CopyTargets(bool asFiles)
     {
-        var vms = Vm.Selection.Count > 0
-            ? Vm.Selection.ToList()
-            : (Vm.Current is null ? new List<ImageVm>() : [Vm.Current]);
+        // 查看器开着就是「复制我正在看的这张」，别被网格里另外选中的几张带跑
+        var vms = Vm.ViewerOpen && Vm.Current is not null
+            ? new List<ImageVm> { Vm.Current }
+            : Vm.Selection.Count > 0
+                ? Vm.Selection.ToList()
+                : (Vm.Current is null ? new List<ImageVm>() : [Vm.Current]);
         if (vms.Count == 0) return;
 
         if (asFiles || vms.Count > 1) Vm.CopyFiles(vms);
@@ -1498,7 +1502,9 @@ public partial class MainWindow : Window
         menu.Items.Add(new Separator());
         // 图片本身：位图进剪贴板（聊天框/Office 直接粘）、文件进剪贴板（资源管理器里粘）、路径纯文本
         bool single = targets.Count == 1;
-        Item("复制图片", () => { if (single) Vm.CopyImage(targets[0]); }, "Ctrl+C", single);
+        // 查看器里正看着 RTX VSR 结果时，复制的是处理后的那张
+        bool vsrShown = single && Vm.IsVsrResultShown(targets[0]);
+        Item(vsrShown ? "复制图片（VSR 处理结果）" : "复制图片", () => { if (single) Vm.CopyImage(targets[0]); }, "Ctrl+C", single);
         Item("复制文件", () => Vm.CopyFiles(targets), "Ctrl+Shift+C", targets.Count > 0);
         Item("复制完整路径", () => { if (single) Vm.CopyPath(targets[0]); }, null, single);
 

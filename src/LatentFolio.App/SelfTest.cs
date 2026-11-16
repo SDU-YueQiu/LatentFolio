@@ -354,7 +354,8 @@ public static class SelfTest
         Check(vm.Chips.Contains("评分 ≥ 4"), "筛选条件显示成钉", string.Join(" | ", vm.Chips));
         vm.ClearFilterCommand.Execute(null);
         await Pulse(window);
-        Check(vm.Items.Count == all, "清筛选后恢复", $"{vm.Items.Count}");
+        // 图库目录是活的，自检跑的过程中可能刚好又落一张新图；差 1–2 张不算清筛选没恢复
+        Check(Math.Abs(vm.Items.Count - all) <= 2, "清筛选后恢复", $"{all} -> {vm.Items.Count}");
 
         // 鼠标侧键：后退回到上一步（搜索之前的状态）
         if (window is MainWindow mwNav)
@@ -511,6 +512,38 @@ public static class SelfTest
                     try { if (prev is not null) Clipboard.SetText(prev); } catch { }
                 }
                 else Ok("剪贴板回读", "设 LF_CLIP_TEST=1 才动真剪贴板");
+
+                // 查看器里看着 VSR 结果时，复制的是处理后的那张（不是磁盘上的原图）
+                var vsrTarget = vm.Items[0];
+                vm.SelectSingle(vsrTarget);
+                var origBmp = Services.ThumbService.DecodeFile(vsrTarget.Item.Path);
+                var upscaled = new System.Windows.Media.Imaging.TransformedBitmap(
+                    origBmp!, new ScaleTransform(2, 2));
+                upscaled.Freeze();
+                vm.ViewerOpen = true;
+                vm.ShowOriginal = false;
+                vm.ViewerImage = new AppVm.ImageSourceHolder(upscaled);
+                await Pulse(window);
+                Check(vm.IsVsrResultShown(vsrTarget), "查看器里的 VSR 结果能认出来");
+
+                var vsrMenu = mwCopy.BuildMenuForTest(gallery: false);
+                var vsrCopy = vsrMenu.Items.OfType<System.Windows.Controls.MenuItem>()
+                    .Select(i => i.Header?.ToString() ?? "")
+                    .FirstOrDefault(h => h.StartsWith("复制图片", StringComparison.Ordinal)) ?? "";
+                Check(vsrCopy.StartsWith("复制图片（VSR", StringComparison.Ordinal),
+                    "看着 VSR 结果时菜单写「复制图片（VSR 处理结果）」", vsrCopy);
+
+                var vsrData = vm.BuildImageData(vsrTarget);
+                var copied = vsrData?.GetImage() as System.Windows.Media.Imaging.BitmapSource;
+                Check(copied is not null && copied.PixelWidth == upscaled.PixelWidth
+                      && copied.PixelWidth > origBmp!.PixelWidth,
+                    "复制 VSR 结果时用的是处理后那张的尺寸",
+                    $"{copied?.PixelWidth}x{copied?.PixelHeight}（原图 {origBmp.PixelWidth}x{origBmp.PixelHeight}）");
+
+                mwCopy.CopyTargets(asFiles: false);
+                Check(vm.StatusLeft == "已复制 VSR 处理后的图", "Ctrl+C 也给 VSR 结果", vm.StatusLeft);
+                vm.CloseViewerCommand.Execute(null);
+                await Pulse(window);
 
                 vm.Selection.Clear();
                 foreach (var v in keep) vm.Selection.Add(v);
@@ -1473,6 +1506,22 @@ public static class SelfTest
         Check(App.Services.Store.GetSetting("vsr_quality") == "9", "档位记进设置",
             App.Services.Store.GetSetting("vsr_quality") ?? "未设置");
         vm.VsrQuality = q0;
+
+        // 设置里的名字直接用 SDK 原文，不做中文翻译
+        Check(Views.SettingsWindow.ModeLabelFor(0) == "VSR"
+              && Views.SettingsWindow.ModeLabelFor(1) == "DENOISE"
+              && Views.SettingsWindow.ModeLabelFor(3) == "HIGHBITRATE",
+            "VSR 模式用 SDK 原文（VSR / DENOISE / HIGHBITRATE）",
+            string.Join(",", Enumerable.Range(0, 5).Select(Views.SettingsWindow.ModeLabelFor)));
+        Check(string.Join(",", Views.SettingsWindow.LevelLabelsFor(2)) == "LOW,MEDIUM,HIGH,ULTRA",
+            "档位用 LOW / MEDIUM / HIGH / ULTRA",
+            string.Join(",", Views.SettingsWindow.LevelLabelsFor(2)));
+        Check(string.Join(",", Views.SettingsWindow.LevelLabelsFor(4)) == "MEDIUM,ULTRA",
+            "STREAMING 只有 MEDIUM / ULTRA，不摆空档位",
+            string.Join(",", Views.SettingsWindow.LevelLabelsFor(4)));
+        Check(Enumerable.Range(0, 5).All(g => Views.SettingsWindow.LevelLabelsFor(g)
+                .All(l => l.All(ch => ch < 0x4e00 || ch > 0x9fff))),
+            "档位名里没有中文", string.Join(" | ", Enumerable.Range(0, 5).Select(g => string.Join(",", Views.SettingsWindow.LevelLabelsFor(g)))));
 
         // ---------- 性能 / 内存 ----------
         // 自检一路上会重建好几次 VM、跑 VSR、开查看器，先收一遍垃圾再读数，

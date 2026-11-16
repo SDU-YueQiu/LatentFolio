@@ -18,6 +18,12 @@ public partial class SettingsWindow : Window
         _loading = false;
     }
 
+    /// <summary>自检/截图用：滚到最底下（RTX VSR 那张卡片在最后）。</summary>
+    internal void ScrollToBottom()
+    {
+        Body.ScrollToEnd();
+    }
+
     private void Refresh()
     {
         RootText.Text = _vm.LibraryRoot;
@@ -48,18 +54,46 @@ public partial class SettingsWindow : Window
         BuildVsrChips();
     }
 
-    private static readonly string[] LevelLabels = ["低", "中", "高", "极"];
-
-    private static readonly string[] ModeLabels = ["放大", "降噪", "锐化", "高清", "直播"];
-
     private static readonly string[] ModeTips =
     [
-        "超分放大，2× / 4×（对压缩视频源的通用模型）",
-        "同分辨率去噪，去掉压缩噪点和大块伪影",
-        "同分辨率去模糊，把糊的地方拉清晰",
-        "干净源（无损 / 高码率）专用放大，不压细节",
-        "直播画面用的放大模型",
+        "LOW / MEDIUM / HIGH / ULTRA：超分放大，2× / 4×（对压缩视频源的通用模型）",
+        "DENOISE_*：同分辨率去噪，去掉压缩噪点和大块伪影",
+        "DEBLUR_*：同分辨率去模糊，把糊的地方拉清晰",
+        "HIGHBITRATE_*：干净源（无损 / 高码率）专用放大，不压细节",
+        "STREAMING_*：直播画面用的放大模型（只有 MEDIUM / ULTRA）",
     ];
+
+    /// <summary>
+    /// 界面上的名字直接用 NVIDIA Video Effects SDK 的 QualityLevel 原文，
+    /// 不翻译：VSR / DENOISE / DEBLUR / HIGHBITRATE / STREAMING。
+    /// </summary>
+    internal static string ModeLabelFor(int group)
+    {
+        foreach (var v in LatentFolio.Vsr.VsrEngine.QualityGroups[group].Values)
+        {
+            if (v <= 0) continue;
+            var name = LatentFolio.Vsr.VsrEngine.QualityName(v);
+            int i = name.IndexOf('_');
+            return i > 0 ? name[..i] : "VSR";
+        }
+        return "VSR";
+    }
+
+    /// <summary>档位名同样用原文：LOW / MEDIUM / HIGH / ULTRA；这组没有的档位不摆出来。</summary>
+    internal static List<string> LevelLabelsFor(int group)
+    {
+        var list = new List<string>();
+        foreach (var v in LatentFolio.Vsr.VsrEngine.QualityGroups[group].Values)
+            if (v > 0) list.Add(LevelOf(v));
+        return list;
+    }
+
+    private static string LevelOf(int quality)
+    {
+        var name = LatentFolio.Vsr.VsrEngine.QualityName(quality);
+        int i = name.IndexOf('_');
+        return i >= 0 ? name[(i + 1)..] : name;
+    }
 
     /// <summary>档位属于哪一组（-1 = 这组没有这个强度）。</summary>
     private static int GroupIndex(int quality)
@@ -67,14 +101,7 @@ public partial class SettingsWindow : Window
         var groups = LatentFolio.Vsr.VsrEngine.QualityGroups;
         for (int i = 0; i < groups.Length; i++)
             if (Array.IndexOf(groups[i].Values, quality) >= 0) return i;
-        return 3;   // 认不出来就归到「高清放大」
-    }
-
-    /// <summary>档位在这一组里的位置；这组没有这个强度就返回 -1。</summary>
-    private static int LevelIndex(int quality, int group)
-    {
-        int i = Array.IndexOf(LatentFolio.Vsr.VsrEngine.QualityGroups[group].Values, quality);
-        return i;
+        return 3;   // 认不出来就归到 HIGHBITRATE
     }
 
     private void BuildVsrChips()
@@ -90,47 +117,35 @@ public partial class SettingsWindow : Window
             int gi = i;
             var b = new Button
             {
-                Content = ModeLabels[i],
-                ToolTip = ModeTips[i],
+                Content = ModeLabelFor(gi),
+                ToolTip = ModeTips[gi],
                 Style = (Style)FindResource(gi == group ? "P.Set.SegOn" : "P.Set.Seg"),
             };
             b.Click += (_, _) =>
             {
-                // 换组时保留当前强度，这组没有就看第一个可用的
-                int level = LevelIndex(_vm.VsrQuality, gi);
-                var vals = groups[gi].Values;
-                if (level < 0 || vals[level] < 0)
-                {
-                    level = 0;
-                    while (level < vals.Length && vals[level] < 0) level++;
-                }
-                if (level < vals.Length && vals[level] > 0)
-                {
-                    _vm.VsrQuality = vals[level];
-                    BuildVsrChips();
-                }
+                // 换组时保同名档位（ULTRA → ULTRA），这组没有就取最高的一档
+                string want = LevelOf(_vm.VsrQuality);
+                var vals = groups[gi].Values.Where(v => v > 0).ToArray();
+                if (vals.Length == 0) return;
+                int pick = Array.FindIndex(vals, v => LevelOf(v) == want);
+                if (pick < 0) pick = vals.Length - 1;
+                _vm.VsrQuality = vals[pick];
+                BuildVsrChips();
             };
             ModeBar.Children.Add(b);
         }
 
-        int cur = LevelIndex(_vm.VsrQuality, group);
-        for (int i = 0; i < LevelLabels.Length; i++)
+        // 只摆这一组真有的档位：STREAMING 只有 MEDIUM / ULTRA，就别留两个空格子
+        var levels = groups[group].Values.Where(v => v > 0).ToArray();
+        foreach (var value in levels)
         {
-            int li = i;
-            int value = groups[group].Values[i];
+            int v = value;
             var b = new Button
             {
-                Content = LevelLabels[i],
-                Style = (Style)FindResource(li == cur ? "P.Set.SegOn" : "P.Set.Seg"),
-                IsEnabled = value > 0,
+                Content = LevelOf(v),
+                Style = (Style)FindResource(v == _vm.VsrQuality ? "P.Set.SegOn" : "P.Set.Seg"),
             };
-            b.Click += (_, _) =>
-            {
-                int v = groups[group].Values[li];
-                if (v <= 0) return;
-                _vm.VsrQuality = v;
-                BuildVsrChips();
-            };
+            b.Click += (_, _) => { _vm.VsrQuality = v; BuildVsrChips(); };
             LevelBar.Children.Add(b);
         }
 
