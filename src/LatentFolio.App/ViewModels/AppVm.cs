@@ -1636,6 +1636,7 @@ public sealed partial class AppVm : ObservableObject
             return;
         }
         if (SetClipboard(data)) FlashStatus("已复制图片");
+        else FlashStatus("复制失败：剪贴板被别的程序占着");
     }
 
     /// <summary>自检用：只拼数据，不动剪贴板（免得把用户手里的内容顶掉）。</summary>
@@ -1673,6 +1674,7 @@ public sealed partial class AppVm : ObservableObject
         }
         if (SetClipboard(data))
             FlashStatus(vms.Count == 1 ? "已复制文件" : $"已复制 {vms.Count} 个文件");
+        else FlashStatus("复制失败：剪贴板被别的程序占着");
     }
 
     public DataObject? BuildFileData(IReadOnlyList<ImageVm> vms)
@@ -1689,8 +1691,8 @@ public sealed partial class AppVm : ObservableObject
     public void CopyPath(ImageVm? vm)
     {
         if (vm is null) return;
-        if (SetClipboard(TextData(vm.Item.Path)))
-            FlashStatus("已复制路径");
+        if (SetClipboard(TextData(vm.Item.Path))) FlashStatus("已复制路径");
+        else FlashStatus("复制失败：剪贴板被别的程序占着");
     }
 
     private static DataObject TextData(string text)
