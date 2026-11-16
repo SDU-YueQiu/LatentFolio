@@ -444,6 +444,84 @@ public static class SelfTest
             Check(!dlg.IsVisible, "独立窗口里按侧键返回会关掉它", $"可见 {dlg.IsVisible}");
         }
 
+        // 右键复制：图片本身（位图 + PNG）、文件（资源管理器能粘）、完整路径、用默认程序打开
+        if (window is MainWindow mwCopy && vm.Items.Count > 2)
+        {
+            // 自检不真的写剪贴板，只看「会复制什么」
+            AppVm.ClipboardWritesEnabled = false;
+            try
+            {
+                vm.SelectSingle(vm.Items[0]);
+                await Pulse(window);
+
+                var menu = mwCopy.BuildMenuForTest(gallery: true);
+                var headers = menu.Items.OfType<System.Windows.Controls.MenuItem>()
+                    .Select(i => i.Header?.ToString() ?? "").ToList();
+                Check(headers.Contains("复制图片") && headers.Contains("复制文件") && headers.Contains("复制完整路径")
+                      && headers.Contains("用默认程序打开"),
+                    "右键菜单有复制图片 / 复制文件 / 复制路径 / 默认程序打开", string.Join(" | ", headers));
+
+                var viewerMenu = mwCopy.BuildMenuForTest(gallery: false);
+                var vHeaders = viewerMenu.Items.OfType<System.Windows.Controls.MenuItem>()
+                    .Select(i => i.Header?.ToString() ?? "").ToList();
+                Check(vHeaders.Contains("复制图片") && vHeaders.Contains("复制文件") && !vHeaders.Contains("打开"),
+                    "查看器右键也有复制项（没有网格专属的「打开」）", string.Join(" | ", vHeaders));
+
+                var data = vm.BuildImageData(vm.Items[0]);
+                bool hasBitmap = data?.GetDataPresent(DataFormats.Bitmap) == true;
+                bool hasPng = data?.GetDataPresent("PNG") == true;
+                Check(hasBitmap && hasPng, "复制图片同时给位图和 PNG 两种格式（聊天框/Office 都认）",
+                    $"bitmap={hasBitmap} png={hasPng}");
+
+                var fileData = vm.BuildFileData([vm.Items[0], vm.Items[1]]);
+                var drop = fileData?.GetData(DataFormats.FileDrop) as string[];
+                Check(drop is { Length: 2 } && drop.All(File.Exists), "复制文件带的是两个真文件（资源管理器可直接粘贴）",
+                    drop is null ? "null" : string.Join(", ", drop.Select(Path.GetFileName)));
+
+                // Ctrl+C 的选择：一张 = 复制图片，多张 = 复制文件
+                var keep = vm.Selection.ToList();
+                vm.Selection.Clear();
+                vm.Selection.Add(vm.Items[0]);
+                await Pulse(window);
+                mwCopy.CopyTargets(asFiles: false);
+                Check(vm.StatusLeft == "已复制图片", "Ctrl+C 一张：复制图片本身", vm.StatusLeft);
+
+                vm.Selection.Add(vm.Items[1]);
+                mwCopy.CopyTargets(asFiles: false);
+                Check(vm.StatusLeft.StartsWith("已复制 2 个文件", StringComparison.Ordinal),
+                    "多选 Ctrl+C：复制文件而不是一张位图", vm.StatusLeft);
+
+                var m2 = mwCopy.BuildMenuForTest(gallery: true);
+                var copyImg = m2.Items.OfType<System.Windows.Controls.MenuItem>()
+                    .FirstOrDefault(i => i.Header?.ToString() == "复制图片");
+                Check(copyImg is { IsEnabled: false }, "多选时「复制图片」置灰（复制文件照旧可用）",
+                    copyImg?.IsEnabled.ToString() ?? "没找到");
+
+                // 真写一次剪贴板再读回来（默认不动，免得把用户手里复制的东西顶掉）
+                if (Environment.GetEnvironmentVariable("LF_CLIP_TEST") == "1")
+                {
+                    string? prev = null;
+                    try { prev = Clipboard.ContainsText() ? Clipboard.GetText() : null; } catch { }
+                    AppVm.ClipboardWritesEnabled = true;
+                    vm.CopyImage(vm.Items[0]);
+                    bool ok = Clipboard.ContainsImage() && Clipboard.ContainsData("PNG");
+                    var img = ok ? Clipboard.GetImage() : null;
+                    Check(ok && img is { PixelWidth: > 0 },
+                        "剪贴板真的能读回这张图（位图 + PNG）", $"{img?.PixelWidth}x{img?.PixelHeight}");
+                    try { if (prev is not null) Clipboard.SetText(prev); } catch { }
+                }
+                else Ok("剪贴板回读", "设 LF_CLIP_TEST=1 才动真剪贴板");
+
+                vm.Selection.Clear();
+                foreach (var v in keep) vm.Selection.Add(v);
+                await Pulse(window);
+            }
+            finally
+            {
+                AppVm.ClipboardWritesEnabled = true;
+            }
+        }
+
         // 右栏里每个按钮：屏幕中心点命中的元素必须是它自己（或它的子/父），
         // 用来抓「画出来的位置和能点的位置不重合」——被别的层盖住、或者布局偏了都会失败
         if (window is MainWindow mwHit)

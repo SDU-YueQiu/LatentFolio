@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     internal void NavFlushForTest() => FlushNav();
     internal void ShowStatsForTest() => ShowStats();
     internal bool StatsVisibleForTest => StatsPane.Visibility == Visibility.Visible;
+    internal ContextMenu BuildMenuForTest(bool gallery) => BuildMenu(gallery);
     internal Panel StatsHostForTest => StatsHost;
     internal Border DetailHostForTest => LibraryDetailHost;
     internal Border DetailEdgeBandForTest => DetailEdgeBand;
@@ -588,6 +589,21 @@ public partial class MainWindow : Window
         int modelArg = Array.IndexOf(args, "--filter-model");
         if (modelArg >= 0 && modelArg + 1 < args.Length)
             Vm.SetTempFilter(One(FieldType.Model, CondOp.Eq, args[modelArg + 1]), "模型");
+        // 开发诊断：--show-menu 直接把右键菜单打开，方便截图核对
+        if (args.Contains("--show-menu") && Vm.Items.Count > 0)
+        {
+            var first = Vm.Items[0];
+            Vm.Selection.Clear();
+            Vm.Selection.Add(first);
+            GridList.SelectedItems.Clear();
+            GridList.SelectedItems.Add(first);
+            var menuShot = BuildMenu(gallery: true);
+            menuShot.PlacementTarget = GridList;
+            menuShot.Placement = System.Windows.Controls.Primitives.PlacementMode.RelativePoint;
+            menuShot.HorizontalOffset = 150;
+            menuShot.VerticalOffset = 150;
+            menuShot.IsOpen = true;
+        }
         if (args.Contains("--show-stats")) ShowStats();
         if (args.Contains("--show-people")) Vm.ShowPeopleGridCommand.Execute(null);
         if (args.Contains("--show-editor") && Vm.Columns.Count > 0)
@@ -1363,6 +1379,13 @@ public partial class MainWindow : Window
 
     private void OnGridKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.C && (Keyboard.Modifiers is ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift))
+            && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase)
+        {
+            CopyTargets(asFiles: Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Enter && GridList.SelectedItem is ImageVm vm)
         {
             Vm.OpenViewerCommand.Execute(vm);
@@ -1382,6 +1405,18 @@ public partial class MainWindow : Window
             else Vm.MoveToDeleted(Vm.Selection);
             e.Handled = true;
         }
+    }
+
+    /// <summary>Ctrl+C / Ctrl+Shift+C：选中一张复制图片本身，多张（或按了 Shift）复制文件。</summary>
+    internal void CopyTargets(bool asFiles)
+    {
+        var vms = Vm.Selection.Count > 0
+            ? Vm.Selection.ToList()
+            : (Vm.Current is null ? new List<ImageVm>() : [Vm.Current]);
+        if (vms.Count == 0) return;
+
+        if (asFiles || vms.Count > 1) Vm.CopyFiles(vms);
+        else Vm.CopyImage(vms[0]);
     }
 
     /// <summary>右键先把光标下的格子选中，再弹菜单。</summary>
@@ -1461,6 +1496,13 @@ public partial class MainWindow : Window
         Item("始终使用 RTX VSR", () => Vm.ToggleAlwaysVsrCommand.Execute(null), null, vsrOk, Vm.AlwaysVsr);
 
         menu.Items.Add(new Separator());
+        // 图片本身：位图进剪贴板（聊天框/Office 直接粘）、文件进剪贴板（资源管理器里粘）、路径纯文本
+        bool single = targets.Count == 1;
+        Item("复制图片", () => { if (single) Vm.CopyImage(targets[0]); }, "Ctrl+C", single);
+        Item("复制文件", () => Vm.CopyFiles(targets), "Ctrl+Shift+C", targets.Count > 0);
+        Item("复制完整路径", () => { if (single) Vm.CopyPath(targets[0]); }, null, single);
+
+        menu.Items.Add(new Separator());
         Item("复制正向提示词", () => { if (targets.Count > 0) Vm.CopyPrompt(targets[0]); });
         Item("复制负面提示词", () => { if (targets.Count > 0) Vm.CopyNegative(targets[0]); });
         Item("复制元数据", () => { if (targets.Count > 0) Vm.CopyParams(targets[0]); });
@@ -1471,6 +1513,7 @@ public partial class MainWindow : Window
 
         menu.Items.Add(new Separator());
         Item("在文件夹中显示", () => { if (targets.Count > 0) Vm.RevealInExplorerCommand.Execute(targets[0]); });
+        Item("用默认程序打开", () => { if (single) Vm.OpenExternal(targets[0]); }, null, single);
         if (gallery)
         {
             if (Vm.View == ViewKind.Deleted)
@@ -1548,6 +1591,13 @@ public partial class MainWindow : Window
     private void OnPreviewKey(object sender, KeyEventArgs e)
     {
         if (!Vm.ViewerOpen) return;
+        if (e.Key == Key.C && (Keyboard.Modifiers is ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift))
+            && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase)
+        {
+            CopyTargets(asFiles: Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Escape)
         {
             // 正在看 VSR 结果时 Esc 先切回原图（设计稿 §12.1「显示原图 Esc 同效」），

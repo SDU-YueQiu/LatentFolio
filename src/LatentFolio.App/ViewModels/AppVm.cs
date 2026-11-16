@@ -1620,6 +1620,138 @@ public sealed partial class AppVm : ObservableObject
         CopyText($"模型 {it.Model ?? "—"}\n采样器 {it.Sampler ?? "—"} / {it.Scheduler ?? "—"}\n步数 {it.Steps?.ToString() ?? "—"}  CFG {it.Cfg?.ToString("0.##") ?? "—"}  种子 {it.Seed?.ToString() ?? "—"}\n{it.Resolution}");
     }
 
+    // ================= 剪贴板：图片本身 / 文件 / 路径 =================
+
+    /// <summary>
+    /// 把图片本身放进剪贴板。同时给 CF_DIB（位图）和 PNG 两种格式：
+    /// 聊天框、Office、画图吃位图，浏览器和一些工具优先读 PNG（无损、带透明）。
+    /// </summary>
+    public void CopyImage(ImageVm? vm)
+    {
+        if (vm is null) return;
+        var data = BuildImageData(vm);
+        if (data is null)
+        {
+            FlashStatus("这张图读不出来，没法复制");
+            return;
+        }
+        if (SetClipboard(data)) FlashStatus("已复制图片");
+    }
+
+    /// <summary>自检用：只拼数据，不动剪贴板（免得把用户手里的内容顶掉）。</summary>
+    public DataObject? BuildImageData(ImageVm vm)
+    {
+        var src = ThumbService.DecodeFile(vm.Item.Path);
+        if (src is null) return null;
+        if (src.CanFreeze && !src.IsFrozen) src.Freeze();
+
+        var data = new DataObject();
+        data.SetImage(src);
+        try
+        {
+            var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(src));
+            var ms = new MemoryStream();
+            enc.Save(ms);
+            ms.Position = 0;
+            // 别 dispose：DataObject 里存的就是这个流的引用，外面还要来读
+            data.SetData("PNG", ms);
+        }
+        catch { }
+        return data;
+    }
+
+    /// <summary>复制文件（资源管理器里能直接粘贴）。</summary>
+    public void CopyFiles(IReadOnlyList<ImageVm> vms)
+    {
+        if (vms.Count == 0) return;
+        var data = BuildFileData(vms);
+        if (data is null)
+        {
+            FlashStatus("源文件不在了，没法复制");
+            return;
+        }
+        if (SetClipboard(data))
+            FlashStatus(vms.Count == 1 ? "已复制文件" : $"已复制 {vms.Count} 个文件");
+    }
+
+    public DataObject? BuildFileData(IReadOnlyList<ImageVm> vms)
+    {
+        var paths = new System.Collections.Specialized.StringCollection();
+        foreach (var v in vms)
+            if (File.Exists(v.Item.Path)) paths.Add(v.Item.Path);
+        if (paths.Count == 0) return null;
+        var data = new DataObject();
+        data.SetFileDropList(paths);
+        return data;
+    }
+
+    public void CopyPath(ImageVm? vm)
+    {
+        if (vm is null) return;
+        if (SetClipboard(TextData(vm.Item.Path)))
+            FlashStatus("已复制路径");
+    }
+
+    private static DataObject TextData(string text)
+    {
+        var data = new DataObject();
+        data.SetText(text);
+        return data;
+    }
+
+    /// <summary>自检时关掉真的写剪贴板：不为别的，就是别把用户手里复制的东西顶掉。</summary>
+    internal static bool ClipboardWritesEnabled = true;
+
+    /// <summary>剪贴板可能被别的程序占着，重试几次再放弃。</summary>
+    private static bool SetClipboard(DataObject data)
+    {
+        if (!ClipboardWritesEnabled) return true;
+        for (int i = 0; i < 5; i++)
+        {
+            try
+            {
+                Clipboard.SetDataObject(data, true);
+                return true;
+            }
+            catch
+            {
+                Thread.Sleep(40);
+            }
+        }
+        return false;
+    }
+
+    /// <summary>用系统默认程序打开这张图（不经过本程序）。</summary>
+    public void OpenExternal(ImageVm? vm)
+    {
+        if (vm is null || !File.Exists(vm.Item.Path)) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo(vm.Item.Path) { UseShellExecute = true });
+        }
+        catch { }
+    }
+
+    private System.Windows.Threading.DispatcherTimer? _statusTimer;
+
+    /// <summary>状态栏闪一句就恢复（复制这类操作要个回执，但不该一直挂着）。</summary>
+    private void FlashStatus(string text)
+    {
+        StatusLeft = text;
+        if (_statusTimer is null)
+        {
+            _statusTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+            _statusTimer.Tick += (_, _) =>
+            {
+                _statusTimer.Stop();
+                RefreshSelectionStatus();
+            };
+        }
+        _statusTimer.Stop();
+        _statusTimer.Start();
+    }
+
     [RelayCommand]
     private void ShowStats() => StatsRequested?.Invoke();
 
